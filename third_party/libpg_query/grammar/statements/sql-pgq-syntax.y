@@ -1,272 +1,140 @@
+//select.y 
+GraphTable:
+	IDENT GRAPH_TABLE
+	'(' GraphPattern COLUMNS '(' GraphTableColumnDefinitionList ')' ')'
+	;
 
-<delimiter token> ::=
-	| <bracket right arrow>
-	| <left arrow>
-	| <left arrow bracket>
-	| <minus left bracket>
-	| <right bracket minus>
-	| <multiset alternation operator>
+GraphTableColumnDefinitionList:
+	qualified_name AsIdentOptional
+	| GraphTableColumnDefinitionList ',' qualified_name AsIdentOptional
+	;
 
-<bracket right arrow> ::=
-	]->
+AsIdentOptional:
+	AS IDENT
+	| /* EMPTY */
+	;
 
-<left arrow> ::=
-	<-
+GraphPattern:
+	MATCH PathPatternList
+	GraphPatternWhereClauseOptional
+	;
 
-<left arrow bracket> ::=
-	<-[
+GraphPatternWhereClauseOptional:
+	WHERE a_expr
+	;
 
-<minus left bracket> ::=
-	-[
+PathPatternList:
+	PathPatternNameOptional PathConcatenation
+	| PathPatternList ',' PathPatternNameOptional PathConcatenation
+	;
 
-<right bracket minus> ::=
-	]-
+//Identifier is a Path Name.
+PathPatternNameOptional:
+	IDENT AS
+	| /* EMPTY */
+	;
 
-<multiset alternation operator> ::=
-	|+|
+PathConcatenation:
+	ElementPattern
+	| PathConcatenation ElementPattern
+	;
 
-<reserved word> ::=
-	| GRAPH
-	| GRAPH_TABLE
+ElementPattern:
+	VertexPattern
+	| EdgePattern
+	;
 
-<non-reserved word> ::=
-	| DESTINATION
-	| EDGE
-	| LABEL
-	| NODE
-	| PROPERTY
-	| PROPERTIES
-	| RELATIONSHIP
-	| TABLES
-	| VERTEX
+VertexPattern:
+	'(' GraphPatternVariableDeclarationOptional IsLabelExpressionOptional ')'
+	;
 
-<destination vertex table name> ::=
-	<table name>
+//Ident is a graph pattern variable
+GraphPatternVariableDeclarationOptional:
+	IDENT
+	| /* EMPTY */
+	;
 
-<destination vertex table name short> ::=
-	<identifier>
+//Ident is a label name 
+IsLabelExpressionOptional:
+	IsOrColon IDENT
+	| /* EMPTY */
+	;
 
-<edge table name> ::=
-	<table name>
-
-<edge table name short> ::=
-	<identifier>
-
-<graph name> ::=
-	<schema qualified name>
-
-<graph pattern variable> ::=
-	<identifier>
-
-<label> ::=
-	<identifier>
-
-<label name> ::=
-	<identifier>
-
-<path name> ::=
-	<identifier>
-
-<property graph name> ::=
-	<schema qualified name>
-
-<property name> ::=
-	<identifier>
-
-<source vertex table name> ::=
-	<table name>
-
-<source vertex table name short> ::=
-	<identifier>
-
-<vertex table name> ::=
-	<table name>
-
-<vertex table name short> ::=
-	<identifier>
-
-<non-parenthesized value expression primary> ::=
-	| <property reference>
-
-<table primary> ::=
-	| <graph table> <correlation or recognition>
-
-<graph table> ::=
-	<graph reference> GRAPH_TABLE
-	'(' <graph pattern> <graph table shape> ')'
-
-<graph table shape> ::=
-	<graph table columns clause>
-
-<graph table columns clause> ::=
-	COLUMNS '(' <graph table column definition>
-	 [ { ',' <graph table column definition> }... ] ')'
-
-<graph table column definition> ::=
-	<value expression> [ AS <column name> ]
-
-<graph reference> ::=
-	<graph name>
-
-<graph pattern> ::=
-	MATCH <path pattern list>
-	 [ <graph pattern where clause> ]
-
-<path pattern list> ::=
-	<path pattern> [ { ',' <path pattern> }... ]
-
-<path pattern> ::=
-	[ <path name> AS ] <path pattern expression>
-
-<path pattern expression> ::=
-	<path term>
-	| <path multiset alternation>
-	| <path set disjunction>
-
-<path multiset alternation> ::=
-	<path term> <multiset alternation operator> <path term>
-	 [ { <multiset alternation operator> <path term> }... ]
-
-<path set disjunction> ::=
-	<path term> <vertical bar> <path term> [ { <vertical bar> <path term> }... ]
-
-<path term> ::=
-	<path factor>
-	| <path concatenation>
-
-<path concatenation> ::=
-	<path term> <path factor>
-
-<path factor> ::=
-	<path primary>
-	| <quantified path primary>
-
-<quantified path primary> ::=
-	<path primary> <graph pattern quantifier>
-
-<path primary> ::=
-	<element pattern>
-	| <parenthesized path pattern expression>
-
-<element pattern> ::=
-	<vertex pattern>
-	| <edge pattern>
-
-<vertex pattern> ::=
-	'(' <optional element pattern filler> ')'
-
-<optional element pattern filler> ::=
-	[ <graph pattern variable declaration> ]
-	[ <is label expression> ]
-	[ <element pattern where clause> ]
-
-<graph pattern variable declaration> ::=
-	<graph pattern variable>
-
-<is label expression> ::=
-	<is or colon> <label expression>
-
-<is or colon> ::=
+IsOrColon:
 	IS
-	| <colon>
+	| ':'
+	;
 
-<element pattern where clause> ::=
-	WHERE <search condition>
+MandatoryEdgePatternFiller:
+	GraphPatternVariableDeclaration IsLabelExpressionOptional
+	| IsOrColon IDENT
+	;
 
-<mandatory edge pattern filler> ::=
-	<graph pattern variable declaration> [ <is label expression> ]
-	| <is label expression>
+EdgePattern:
+	FullEdgePattern
+	| AbbreviatedEdgePattern
+	;
 
-<edge pattern> ::=
-	<full edge pattern>
-	| <abbreviated edge pattern>
+FullEdgePattern:
+	FullEdgePointingRight
+	| FullEdgePointingLeft
+	| FullEdgeAnyDirection
+	;
 
-<full edge pattern> ::=
-	<full edge pointing right>
-	| <full edge pointing left>
-	| <full edge: any direction>
+FullEdgePointingRight ::=
+	'-[' GraphPatternVariableDeclarationOptional ']->'
+	| '-' MandatoryEdgePatternFiller '->'
+	;
 
-<full edge pointing right> ::=
-	<minus left bracket> <optional element pattern filler> <bracket right arrow>
-	| <minus sign> <mandatory edge pattern filler> <right arrow>
+FullEdgePointingLeft:
+	'<-[' GraphPatternVariableDeclarationOptional ']-'
+	| '<-' MandatoryEdgePatternFiller '-'
+	;
 
-<full edge pointing left> ::=
-	<left arrow bracket> <optional element pattern filler> <right bracket minus>
-	| <left arrow> <mandatory edge pattern filler> <minus sign>
+FullEdgeAnyDirection:
+	'-[' GraphPatternVariableDeclarationOptional ']-'
+	| '-' MandatoryEdgePatternFiller '-'
+	;
 
-<full edge: any direction> ::=
-	<minus left bracket> <optional element pattern filler> <right bracket minus>
-	| <minus sign> <mandatory edge pattern filler> <minus sign>
+AbbreviatedEdgePattern:
+	'->'
+	| '<-'
+	| '-'
+	;
 
-<abbreviated edge pattern> ::=
-	<right arrow>
-	| <left arrow>
-	| <minus sign>
+// <graph pattern quantifier> ::=
+// 	<asterisk>
+// 	| <plus sign>
+// 	| <question mark>
+// 	| <fixed quantifier>
+// 	| <general quantifier>
 
-<graph pattern quantifier> ::=
-	<asterisk>
-	| <plus sign>
-	| <question mark>
-	| <fixed quantifier>
-	| <general quantifier>
+// <fixed quantifier> ::=
+// 	<left brace> <unsigned integer> <right brace>
 
-<fixed quantifier> ::=
-	<left brace> <unsigned integer> <right brace>
+// <general quantifier> ::=
+// 	<left brace> [ <lower bound> ] ',' [ <upper bound> ] <right brace>
 
-<general quantifier> ::=
-	<left brace> [ <lower bound> ] ',' [ <upper bound> ] <right brace>
+// <lower bound> ::=
+// 	<unsigned integer>
 
-<lower bound> ::=
-	<unsigned integer>
+// <upper bound> ::=
+// 	24 Property Graph Queries (SQL/PGQ)
+// 	10.2 <graph pattern>
+// 	<unsigned integer>
 
-<upper bound> ::=
-	24 Property Graph Queries (SQL/PGQ)
-	10.2 <graph pattern>
-	<unsigned integer>
+// <parenthesized path pattern expression> ::=
+// 	'(' <path pattern expression>
+// 	 [ <parenthesized path pattern where clause> ] ')'
+// 	| '[' <path pattern expression>
+// 	 [ <parenthesized path pattern where clause> ] ']'
 
-<parenthesized path pattern expression> ::=
-	'(' <path pattern expression>
-	 [ <parenthesized path pattern where clause> ] ')'
-	| <left bracket> <path pattern expression>
-	 [ <parenthesized path pattern where clause> ] <right bracket>
+// <parenthesized path pattern where clause> ::=
+// 	WHERE <search condition>
 
-<parenthesized path pattern where clause> ::=
-	WHERE <search condition>
 
-<graph pattern where clause> ::=
-	WHERE <search condition>
-
-<label expression> ::=
-	<label term>
-	| <label disjunction>
-
-<label disjunction> ::=
-	<label expression> <vertical bar> <label term>
-
-<label term> ::=
-	<label factor>
-	| <label conjunction>
-
-<label conjunction> ::=
-	<label term> <ampersand> <label factor>
-
-<label factor> ::=
-	<label primary>
-	| <label negation>
-
-<label negation> ::=
-	<exclamation mark> <label primary>
-
-<label primary> ::=
-	<label>
-	| <parenthesized label expression>
-
-<parenthesized label expression> ::=
-	'(' <label expression> ')'
-	| <left bracket> <label expression> <right bracket>
-
-<schema element> ::=
-	| <property graph definition>
+// <schema element> ::=
+// 	| <property graph definition>
 
 CreatePropertyGraph:
 	CREATE PROPERTY GRAPH IDENT PropertyGraphContent
@@ -288,12 +156,7 @@ VertexTableDefinitionList:
 	;
 
 VertexTableDefinition:
-	qualified_name GraphTableKeyClauseOptional LabelList
-	;
-
-GraphTableKeyClauseOptional:
-	GraphTableKeyClause
-	| /*EMPTY*/
+	qualified_name GraphTableKeyClause LabelList
 	;
 
 // name_list: column list
@@ -313,128 +176,86 @@ LabelEnd:
 
 // EDGE/RELATIONSHIP will be replaced by the lexer with EDGE
 EdgeTablesClause:
-	EDGE TABLES <parenthesized edge table list>
+	EDGE TABLES EdgeTableDefinitionList
 	| /*EMPTY*/
 	;
 
-
-<parenthesized edge table list> ::=
-	<property graph definition>
-	'(' <edge table definition> [ { ',' <edge table definition> }... ] ')'
-
-<edge table definition> ::=
-	qualified_name GraphTableKeyClauseOptional
-	<source vertex table>
-	<destination vertex table>
-	GraphTableLabelAndPropertiesClause
+EdgeTableDefinitionList:
+	EdgeTableDefinition
+	| EdgeTableDefinitionList ',' EdgeTableDefinition
 	;
 
-<source vertex table> ::=
-	SOURCE SourceVertexTableKeyClauseReferencesOptional <source vertex reference>
-
-SourceVertexTableKeyClauseReferencesOptional:
-	GraphTableKeyClause REFERENCES
-	| /*EMPTY*/
+EdgeTableDefinition:
+	qualified_name GraphTableKeyClause
+	SourceVertexTable
+	DestinationVertexTable
+	LabelList
 	;
 
+SourceVertexTable:
+	SOURCE GraphTableKeyClause REFERENCES qualified_name
+	;
 
-<source vertex reference> ::=
-	qualified_name [ '(' <referenced source column list> ')' ]
+DestinationVertexTable:
+	DESTINATION GraphTableKeyClause REFERENCES qualified_name
+	;
 
-<referenced source column list> ::=
-	<column name list>
+// <add graph table definition> ::=
+// 	ADD VertexTablesClause [ ADD EdgeTablesClause ]
+// 	| ADD EdgeTablesClause
 
-<destination vertex table> ::=
-	DESTINATION [ <destination vertex table key clause> REFERENCES ]
-	<destination vertex reference>
+// <drop graph table definition> ::=
+// 	DROP <vertex or edge> TABLES <parenthesized graph table name list> <drop behavior>
 
-<destination vertex table key clause> ::=
-	GraphTableKeyClause
 
-<destination vertex reference> ::=
-	<destination vertex table alternative>
-	 [ '(' <referenced destination column list> ')' ]
 
-<destination vertex table alternative> ::=
-	<destination vertex table name>
-	| <destination vertex table name short>
+// <table name list> ::=
+// 	<table name> [ { ',' <table name> }... ]
 
-<referenced destination column list> ::=
-	<column name list>
+// <alter graph table definition> ::=
+// 	ALTER <vertex or edge> TABLE <graph table name>
+// 	<alter graph table action>
 
-<alter property graph statement> ::=
-	ALTER PROPERTY GRAPH <property graph name>
-	<alter property graph action>
+// <graph table name> ::=
+// 	<table name>
+// 	| <identifier>
 
-<alter property graph action> ::=
-	<add graph table definition>
-	| <drop graph table definition>
-	| <alter graph table definition>
+// <alter graph table action> ::=
+// 	<add graph table label clause>
+// 	| <drop graph table label clause>
+// 	| <alter graph table label properties>
 
-<add graph table definition> ::=
-	ADD VertexTablesClause [ ADD EdgeTablesClause ]
-	| ADD EdgeTablesClause
+// <add graph table label clause> ::=
+// 	<add graph table label>...
 
-<drop graph table definition> ::=
-	DROP <vertex or edge> TABLES <parenthesized graph table name list> <drop behavior>
+// <add graph table label> ::=
+// 	ADD LABEL <label name> <graph table properties clause>
 
-<vertex or edge> ::=
-	<vertex synonym>
-	| <edge synonym>
+// <drop graph table label clause> ::=
+// 	<drop graph table label>...
 
-<parenthesized graph table name list> ::=
-	<parenthesized table name list>
+// <drop graph table label> ::=
+// 	DROP LABEL <label> <drop behavior>
 
-<parenthesized table name list> ::=
-	'(' <table name list> ')'
+// <alter graph table label properties> ::=
+// 	ALTER LABEL <label> <alter label action>
 
-<table name list> ::=
-	<table name> [ { ',' <table name> }... ]
+// <alter label action> ::=
+// 	<add property definition>
+// 	| <drop property definition>
 
-<alter graph table definition> ::=
-	ALTER <vertex or edge> TABLE <graph table name>
-	<alter graph table action>
+// <add property definition> ::=
+// 	ADD PROPERTIES <graph table parenthesized derived property list>
 
-<graph table name> ::=
-	<table name>
-	| <identifier>
+// <drop property definition> ::=
+// 	DROP PROPERTIES <parenthesized property name list> <drop behavior>
 
-<alter graph table action> ::=
-	<add graph table label clause>
-	| <drop graph table label clause>
-	| <alter graph table label properties>
+// <parenthesized property name list> ::=
+// 	'(' <property name list> ')'
 
-<add graph table label clause> ::=
-	<add graph table label>...
+// <property name list> ::=
+// 	<property name> [ { ',' <property name> }... ]
 
-<add graph table label> ::=
-	ADD LABEL <label name> <graph table properties clause>
-
-<drop graph table label clause> ::=
-	<drop graph table label>...
-
-<drop graph table label> ::=
-	DROP LABEL <label> <drop behavior>
-
-<alter graph table label properties> ::=
-	ALTER LABEL <label> <alter label action>
-
-<alter label action> ::=
-	<add property definition>
-	| <drop property definition>
-
-<add property definition> ::=
-	ADD PROPERTIES <graph table parenthesized derived property list>
-
-<drop property definition> ::=
-	DROP PROPERTIES <parenthesized property name list> <drop behavior>
-
-<parenthesized property name list> ::=
-	'(' <property name list> ')'
-
-<property name list> ::=
-	<property name> [ { ',' <property name> }... ]
-
-<drop property graph statement> ::=
-	DROP PROPERTY GRAPH <property graph name> <drop behavior>
+// <drop property graph statement> ::=
+// 	DROP PROPERTY GRAPH <property graph name> <drop behavior>
 	
