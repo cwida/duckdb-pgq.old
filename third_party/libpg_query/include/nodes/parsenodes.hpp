@@ -1641,6 +1641,22 @@ typedef struct PGAlterSeqStmt {
 	bool missing_ok; /* skip error if a role is missing? */
 } PGAlterSeqStmt;
 
+/*
+CREATE Property Graph Statement
+*/
+typedef struct PGPropertyGraphStmt {
+	PGNodeTag type;
+	//??? other params
+	char *name;
+	PGNode *vertex_table;
+	PGList *vertex_table_values;
+	PGNode *edge_table;
+	PGList *edge_table_values;
+	PGNode *property_graph_content;
+	bool if_not_exists; /* just do nothing if schema already exists? */
+} PGPropertyGraphStmt;
+
+
 /* ----------------------
  *		CREATE FUNCTION Statement
  * ----------------------

@@ -136,69 +136,6 @@ AbbreviatedEdgePattern:
 // <schema element> ::=
 // 	| <property graph definition>
 
-CreatePropertyGraph:
-	CREATE PROPERTY GRAPH IDENT PropertyGraphContent
-	;
-
-PropertyGraphContent:
-	VertexTablesClause EdgeTablesClause
-	| /*EMPTY*/
-	;
-
-// NODE/VERTEX in the lexer resolve to VERTEX
-VertexTablesClause:
-	VERTEX TABLES '(' VertexTableDefinitionList ')'
-	;
-	
-VertexTableDefinitionList:
-	VertexTableDefinition
-	| VertexTableDefinitionList ',' VertexTableDefinition
-	;
-
-VertexTableDefinition:
-	qualified_name GraphTableKeyClause LabelList
-	;
-
-// name_list: column list
-GraphTableKeyClause:
-	KEY '(' name_list ')'
-	;
-
-LabelList:
-	LABEL LabelEnd
-	| LabelList LABEL IDENT
-	;
-
-LabelEnd:
-	qualified_name
-	| DEFAULT
-	;
-
-// EDGE/RELATIONSHIP will be replaced by the lexer with EDGE
-EdgeTablesClause:
-	EDGE TABLES EdgeTableDefinitionList
-	| /*EMPTY*/
-	;
-
-EdgeTableDefinitionList:
-	EdgeTableDefinition
-	| EdgeTableDefinitionList ',' EdgeTableDefinition
-	;
-
-EdgeTableDefinition:
-	qualified_name GraphTableKeyClause
-	SourceVertexTable
-	DestinationVertexTable
-	LabelList
-	;
-
-SourceVertexTable:
-	SOURCE GraphTableKeyClause REFERENCES qualified_name
-	;
-
-DestinationVertexTable:
-	DESTINATION GraphTableKeyClause REFERENCES qualified_name
-	;
 
 // <add graph table definition> ::=
 // 	ADD VertexTablesClause [ ADD EdgeTablesClause ]
