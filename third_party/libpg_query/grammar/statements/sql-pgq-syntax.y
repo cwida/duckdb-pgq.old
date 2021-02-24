@@ -1,107 +1,109 @@
-//select.y 
-GraphTable:
-	IDENT GRAPH_TABLE
-	'(' GraphPattern COLUMNS '(' GraphTableColumnDefinitionList ')' ')'
-	;
+/*
+// //select.y 
+// GraphTable:
+// 	IDENT GRAPH_TABLE
+// 	'(' GraphPattern COLUMNS '(' GraphTableColumnDefinitionList ')' ')'
+// 	;
 
-GraphTableColumnDefinitionList:
-	qualified_name AsIdentOptional
-	| GraphTableColumnDefinitionList ',' qualified_name AsIdentOptional
-	;
+// GraphTableColumnDefinitionList:
+// 	qualified_name AsIdentOptional
+// 	| GraphTableColumnDefinitionList ',' qualified_name AsIdentOptional
+// 	;
 
-AsIdentOptional:
-	AS IDENT
-	| /* EMPTY */
-	;
+// AsIdentOptional:
+// 	AS IDENT
+// 	| /* EMPTY */
+// 	;
 
-GraphPattern:
-	MATCH PathPatternList
-	GraphPatternWhereClauseOptional
-	;
+// GraphPattern:
+// 	MATCH PathPatternList
+// 	GraphPatternWhereClauseOptional
+// 	;
 
-GraphPatternWhereClauseOptional:
-	WHERE a_expr
-	;
+// GraphPatternWhereClauseOptional:
+// 	WHERE a_expr
+// 	;
 
-PathPatternList:
-	PathPatternNameOptional PathConcatenation
-	| PathPatternList ',' PathPatternNameOptional PathConcatenation
-	;
+// PathPatternList:
+// 	PathPatternNameOptional PathConcatenation
+// 	| PathPatternList ',' PathPatternNameOptional PathConcatenation
+// 	;
 
-//Identifier is a Path Name.
-PathPatternNameOptional:
-	IDENT AS
-	| /* EMPTY */
-	;
+// //Identifier is a Path Name.
+// PathPatternNameOptional:
+// 	IDENT AS
+// 	| /* EMPTY */
+// 	;
 
-PathConcatenation:
-	ElementPattern
-	| PathConcatenation ElementPattern
-	;
+// PathConcatenation:
+// 	ElementPattern
+// 	| PathConcatenation ElementPattern
+// 	;
 
-ElementPattern:
-	VertexPattern
-	| EdgePattern
-	;
+// ElementPattern:
+// 	VertexPattern
+// 	| EdgePattern
+// 	;
 
-VertexPattern:
-	'(' GraphPatternVariableDeclarationOptional IsLabelExpressionOptional ')'
-	;
+// VertexPattern:
+// 	'(' GraphPatternVariableDeclarationOptional IsLabelExpressionOptional ')'
+// 	;
 
-//Ident is a graph pattern variable
-GraphPatternVariableDeclarationOptional:
-	IDENT
-	| /* EMPTY */
-	;
+// //Ident is a graph pattern variable
+// GraphPatternVariableDeclarationOptional:
+// 	IDENT
+// 	| /* EMPTY */
+// 	;
 
-//Ident is a label name 
-IsLabelExpressionOptional:
-	IsOrColon IDENT
-	| /* EMPTY */
-	;
+// //Ident is a label name 
+// IsLabelExpressionOptional:
+// 	IsOrColon IDENT
+// 	| /* EMPTY */
+// 	;
 
-IsOrColon:
-	IS
-	| ':'
-	;
+// IsOrColon:
+// 	IS
+// 	| ':'
+// 	;
 
-MandatoryEdgePatternFiller:
-	GraphPatternVariableDeclaration IsLabelExpressionOptional
-	| IsOrColon IDENT
-	;
+// MandatoryEdgePatternFiller:
+// 	GraphPatternVariableDeclaration IsLabelExpressionOptional
+// 	| IsOrColon IDENT
+// 	;
 
-EdgePattern:
-	FullEdgePattern
-	| AbbreviatedEdgePattern
-	;
+// EdgePattern:
+// 	FullEdgePattern
+// 	| AbbreviatedEdgePattern
+// 	;
 
-FullEdgePattern:
-	FullEdgePointingRight
-	| FullEdgePointingLeft
-	| FullEdgeAnyDirection
-	;
+// FullEdgePattern:
+// 	FullEdgePointingRight
+// 	| FullEdgePointingLeft
+// 	| FullEdgeAnyDirection
+// 	;
 
-FullEdgePointingRight ::=
-	'-[' GraphPatternVariableDeclarationOptional ']->'
-	| '-' MandatoryEdgePatternFiller '->'
-	;
+// FullEdgePointingRight ::=
+// 	'-[' GraphPatternVariableDeclarationOptional ']->'
+// 	| '-' MandatoryEdgePatternFiller '->'
+// 	;
 
-FullEdgePointingLeft:
-	'<-[' GraphPatternVariableDeclarationOptional ']-'
-	| '<-' MandatoryEdgePatternFiller '-'
-	;
+// FullEdgePointingLeft:
+// 	'<-[' GraphPatternVariableDeclarationOptional ']-'
+// 	| '<-' MandatoryEdgePatternFiller '-'
+// 	;
 
-FullEdgeAnyDirection:
-	'-[' GraphPatternVariableDeclarationOptional ']-'
-	| '-' MandatoryEdgePatternFiller '-'
-	;
+// FullEdgeAnyDirection:
+// 	'-[' GraphPatternVariableDeclarationOptional ']-'
+// 	| '-' MandatoryEdgePatternFiller '-'
+// 	;
 
-AbbreviatedEdgePattern:
-	'->'
-	| '<-'
-	| '-'
-	;
+// AbbreviatedEdgePattern:
+// 	'->'
+// 	| '<-'
+// 	| '-'
+// 	;
 
+// */
 // <graph pattern quantifier> ::=
 // 	<asterisk>
 // 	| <plus sign>
@@ -195,4 +197,3 @@ AbbreviatedEdgePattern:
 
 // <drop property graph statement> ::=
 // 	DROP PROPERTY GRAPH <property graph name> <drop behavior>
-	

@@ -1644,17 +1644,33 @@ typedef struct PGAlterSeqStmt {
 /*
 CREATE Property Graph Statement
 */
-typedef struct PGPropertyGraphStmt {
+typedef struct PGCreatePropertyGraphStmt {
 	PGNodeTag type;
 	//??? other params
 	char *name;
-	PGNode *vertex_table;
-	PGList *vertex_table_values;
-	PGNode *edge_table;
-	PGList *edge_table_values;
-	PGNode *property_graph_content;
+	PGList *vertex_tables;
+	PGList *edge_tables;
+	// PGNode *property_graph_content;
 	bool if_not_exists; /* just do nothing if schema already exists? */
-} PGPropertyGraphStmt;
+} PGCreatePropertyGraphStmt;
+
+typedef struct PGPropertyGraphTable {
+	/* Fields used for both edge and vertex table */
+	PGRangeVar *name;
+
+	PGList *labels; //verify if multi label
+	// PGList *properties;
+	PGList *keys;
+	
+	/* Fields only used for Edge Tables */
+	PGList *source_key;
+	PGRangeVar *source_key_reference;
+	PGList *destination_key;
+	PGRangeVar *destination_key_reference;
+
+	/*TODO: Foreign key constraints */
+} PGPropertyGraphTable;
+
 
 
 /* ----------------------

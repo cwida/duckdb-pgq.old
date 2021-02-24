@@ -328,6 +328,7 @@ typedef enum PGNodeTag {
 	T_PGFetchStmt,
 	T_PGIndexStmt,
 	T_PGCreatePropertyGraphStmt,
+	T_PGPropertyGraphTable,
 	T_PGCreateFunctionStmt,
 	T_PGAlterFunctionStmt,
 	T_PGDoStmt,

@@ -15,4 +15,10 @@ namespace duckdb {
 struct CreatePropertyGraphInfo : public CreateInfo {
     CreatePropertyGraphInfo() : CreateInfo(CatalogType::PROPERTY_GRAPH_ENTRY) {
 	}
+
+    //add second constructor with arguments
+
+    
+    //add copy function
+};
 }
