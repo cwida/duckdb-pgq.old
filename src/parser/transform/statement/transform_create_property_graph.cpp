@@ -14,6 +14,9 @@ unique_ptr<CreateStatement> Transformer::TransformCreatePropertyGraph(PGNode *no
     D_ASSERT(stmt);
 
     auto result = make_unique<CreateStatement>();
+    auto info = make_unique<CreatePropertyGraphInfo>();
+
+    result->info = move(info);
     return result;
 
 }

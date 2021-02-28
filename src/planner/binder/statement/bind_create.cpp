@@ -185,6 +185,15 @@ BoundStatement Binder::Bind(CreateStatement &stmt) {
 		result.plan = move(create_table);
 		break;
 	}
+	// case CatalogType::PROPERTY_GRAPH_ENTRY: {
+		//do nothing for now
+		// auto &base = (CreateViewInfo &)*stmt.info;
+		// bind the schema
+		// auto schema = BindSchema(*stmt.info);
+		// BindCreateViewInfo(base);
+		// result.plan = make_unique<LogicalCreate>(LogicalOperatorType::LOGICAL_CREATE_VIEW, move(stmt.info), schema);
+		// break;
+	// }
 	default:
 		throw Exception("Unrecognized type!");
 	}

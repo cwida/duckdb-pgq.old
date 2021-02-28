@@ -1646,11 +1646,9 @@ CREATE Property Graph Statement
 */
 typedef struct PGCreatePropertyGraphStmt {
 	PGNodeTag type;
-	//??? other params
 	char *name;
 	PGList *vertex_tables;
 	PGList *edge_tables;
-	// PGNode *property_graph_content;
 	bool if_not_exists; /* just do nothing if schema already exists? */
 } PGCreatePropertyGraphStmt;
 

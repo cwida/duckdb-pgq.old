@@ -33,11 +33,13 @@
 // 				$$ = $2;
 // 			}
 // 	;
+ 
 
 CreatePropertyGraphStmt:
 	CREATE_P PROPERTY GRAPH IDENT 
 	vertex_alias TABLES '(' VertexTableDefinitionList ')' 
 	edge_alias TABLES '(' EdgeTableDefinitionList ')'
+	// 
 	{
 		// PGCreatePropertyGraphStmt *n = $5; //PGList ? 
 		PGCreatePropertyGraphStmt *n = makeNode(PGCreatePropertyGraphStmt);
@@ -105,10 +107,7 @@ GraphTableKeyClause:
 
 LabelList:
 	LABEL LabelEnd					{ $$ = list_make1($2); }
-	| LabelList LABEL IDENT		
-		{
-			$$ = lappend($1, $3);
-		}
+	| LabelList LABEL IDENT			{ $$ = lappend($1, $3); }
 	;
 
 LabelEnd:
@@ -141,6 +140,12 @@ EdgeTableDefinition:
 		PGPropertyGraphTable *n = makeNode(PGPropertyGraphTable);
 		n->name = $1;
 		n->keys = $2;
+		// n->labels = $10;
+		// n->source_key = $3;
+		// n->source_key_reference = $5;
+		// n->destination_key = $7;
+		// n->destination_key_reference = $9;
+
 		n->source_key = $4;
 		n->source_key_reference = $6;
 		n->destination_key = $8;
