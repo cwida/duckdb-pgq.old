@@ -7,18 +7,17 @@ namespace duckdb {
 using namespace duckdb_libpgquery;
 
 unique_ptr<CreateStatement> Transformer::TransformCreatePropertyGraph(PGNode *node) {
-    D_ASSERT(node);
-    D_ASSERT(node->type == T_PGCreatePropertyGraphStmt);
+	D_ASSERT(node);
+	D_ASSERT(node->type == T_PGCreatePropertyGraphStmt);
 
-    auto stmt = reinterpret_cast<PGCreatePropertyGraphStmt *>(node);
-    D_ASSERT(stmt);
+	auto stmt = reinterpret_cast<PGCreatePropertyGraphStmt *>(node);
+	D_ASSERT(stmt);
 
-    auto result = make_unique<CreateStatement>();
-    auto info = make_unique<CreatePropertyGraphInfo>();
+	auto result = make_unique<CreateStatement>();
+	auto info = make_unique<CreatePropertyGraphInfo>();
 
-    result->info = move(info);
-    return result;
-
+	result->info = move(info);
+	return result;
 }
 
-} //namespace duckdb
+} // namespace duckdb
