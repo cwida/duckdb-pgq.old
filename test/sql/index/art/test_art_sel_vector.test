@@ -3,10 +3,10 @@
 # group: [art]
 
 statement ok
-CREATE TABLE source(i INTEGER)
+CREATE TABLE vector_source(i INTEGER)
 
 statement ok
-INSERT INTO source VALUES (1), (2), (3), (4), (5), (6)
+INSERT INTO vector_source VALUES (1), (2), (3), (4), (5), (6)
 
 statement ok
 CREATE TABLE integers(i INTEGER)
@@ -16,7 +16,7 @@ CREATE INDEX i_index ON integers using art(i)
 
 # insert with selection vector
 statement ok
-INSERT INTO integers SELECT * FROM source WHERE i % 2 = 0
+INSERT INTO integers SELECT * FROM vector_source WHERE i % 2 = 0
 
 query I
 SELECT * FROM integers WHERE i<3 ORDER BY 1
