@@ -18,6 +18,7 @@
 #include "duckdb/parser/parsed_data/create_view_info.hpp"
 #include "duckdb/parser/parsed_data/drop_info.hpp"
 #include "duckdb/planner/parsed_data/bound_create_table_info.hpp"
+#include "duckdb/planner/parsed_data/create_property_graph_info.hpp"
 #include "duckdb/main/database.hpp"
 #include "duckdb/catalog/dependency_manager.hpp"
 
@@ -55,6 +56,16 @@ CatalogEntry *Catalog::CreateView(ClientContext &context, CreateViewInfo *info) 
 CatalogEntry *Catalog::CreateView(ClientContext &context, SchemaCatalogEntry *schema, CreateViewInfo *info) {
 	ModifyCatalog();
 	return schema->CreateView(context, info);
+}
+
+CatalogEntry *Catalog::CreatePropertyGraph(ClientContext &context, CreatePropertyGraphInfo *info) {
+	auto schema = GetSchema(context, info->schema);
+	return CreatePropertyGraph(context, schema, info);
+}
+
+CatalogEntry *Catalog::CreatePropertyGraph(ClientContext &context, SchemaCatalogEntry *schema, CreatePropertyGraphInfo *info) {
+	ModifyCatalog();
+	return schema->CreatePropertyGraph(context, info);
 }
 
 CatalogEntry *Catalog::CreateSequence(ClientContext &context, CreateSequenceInfo *info) {

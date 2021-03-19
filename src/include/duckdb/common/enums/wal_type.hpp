@@ -33,6 +33,8 @@ enum class WALType : uint8_t {
 	CREATE_MACRO = 11,
 	DROP_MACRO = 12,
 
+	CREATE_PROPERTY_GRAPH = 12,
+
 	ALTER_INFO = 20,
 	// -----------------------------
 	// Data

@@ -1649,7 +1649,7 @@ typedef struct PGCreatePropertyGraphStmt {
 	char *name;
 	PGList *vertex_tables;
 	PGList *edge_tables;
-	bool if_not_exists; /* just do nothing if schema already exists? */
+	// bool if_not_exists; /* just do nothing if schema already exists? */
 } PGCreatePropertyGraphStmt;
 
 typedef struct PGPropertyGraphTable {
@@ -1659,8 +1659,12 @@ typedef struct PGPropertyGraphTable {
 	PGList *labels; //verify if multi label
 	// PGList *properties;
 	PGList *keys;
+
+	bool is_vertex_table;
 	
 	/* Fields only used for Edge Tables */
+	PGConstraint *source;
+	PGConstraint *destination;
 	PGList *source_key;
 	PGRangeVar *source_key_reference;
 	PGList *destination_key;

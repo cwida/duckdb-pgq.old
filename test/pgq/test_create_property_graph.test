@@ -2,21 +2,15 @@
 # description: CREATE PROPERTY GRAPH
 # group: [pgq]
 
-# statement ok
-# CREATE TABLE t (t TEXT);
-
-# statement ok
-# INSERT INTO t VALUES ('foo'), ('bar'), ('baz');
-
-# # unsupported
-# statement error
-# SELECT * INTO t2 FROM t WHERE t LIKE 'b%';
-
 statement ok
 CREATE TABLE customer (CID INTEGER PRIMARY KEY, NAME TEXT, CITY TEXT);
 
 statement ok
 INSERT Into customer VALUES (100, 'Joe', 'Amsterdam'), (200, 'Jane', 'Delft'), (300, 'Jeremy', 'Rotterdam');
+
+statement ok
+CREATE VIEW cust_view as select * from customer; 
+
 
 statement ok
 CREATE TABLE account (AID INTEGER);

@@ -6,6 +6,7 @@
 #include "duckdb/parser/parsed_data/create_index_info.hpp"
 #include "duckdb/parser/parsed_data/create_macro_info.hpp"
 #include "duckdb/parser/parsed_data/create_view_info.hpp"
+#include "duckdb/parser/parsed_data/create_property_graph_info.hpp"
 #include "duckdb/parser/parsed_expression_iterator.hpp"
 #include "duckdb/parser/statement/create_statement.hpp"
 #include "duckdb/planner/binder.hpp"
@@ -63,6 +64,34 @@ void Binder::BindCreateViewInfo(CreateViewInfo &base) {
 	}
 	base.types = query_node.types;
 }
+
+void Binder::BindCreatePropertyGraphInfo(CreatePropertyGraphInfo &base) {
+	// bind the view as if it were a query so we can catch errors
+	// note that we bind the original, and replace the original with a copy
+	// this is because the original has
+	// auto copy = base.Copy();
+	// base.vertex_tables
+	for (auto vertex_table : base.vertex_tables) {
+		// if()
+	
+
+	// if (!param.table_name.empty()) {
+// 			throw BinderException("Invalid parameter name '%s'", param.ToString());
+// 		}
+	
+	}
+	// auto query_node = Bind(*base.query);
+	// base.query = unique_ptr_cast<SQLStatement, SelectStatement>(move(copy));
+	// if (base.aliases.size() > query_node.names.size()) {
+	// 	throw BinderException("More VIEW aliases than columns in query result");
+	// }
+	// fill up the aliases with the remaining names of the bound query
+	// for (idx_t i = base.aliases.size(); i < query_node.names.size(); i++) {
+	// 	base.aliases.push_back(query_node.names[i]);
+	// }
+	// base.types = query_node.types;
+}
+
 
 SchemaCatalogEntry *Binder::BindCreateFunctionInfo(CreateInfo &info) {
 	auto &base = (CreateMacroInfo &)info;
@@ -185,15 +214,15 @@ BoundStatement Binder::Bind(CreateStatement &stmt) {
 		result.plan = move(create_table);
 		break;
 	}
-	// case CatalogType::PROPERTY_GRAPH_ENTRY: {
-	// do nothing for now
-	// auto &base = (CreateViewInfo &)*stmt.info;
-	// bind the schema
-	// auto schema = BindSchema(*stmt.info);
-	// BindCreateViewInfo(base);
-	// result.plan = make_unique<LogicalCreate>(LogicalOperatorType::LOGICAL_CREATE_VIEW, move(stmt.info), schema);
-	// break;
-	// }
+	case CatalogType::PROPERTY_GRAPH_ENTRY: {
+		// do nothing for now
+		auto &bound_info = (CreatePropertyGraphInfo &)*stmt.info;
+		// bind the schema
+		auto schema = BindSchema(bound_info);
+		BindCreatePropertyGraphInfo(schema);
+		result.plan = make_unique<LogicalCreate>(LogicalOperatorType::LOGICAL_CREATE_PROPERTY_GRAPH, move(stmt.info), schema);
+		break;
+	}
 	default:
 		throw Exception("Unrecognized type!");
 	}

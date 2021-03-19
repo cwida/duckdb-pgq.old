@@ -14,6 +14,7 @@
 #include "duckdb/parser/parsed_data/create_view_info.hpp"
 #include "duckdb/planner/binder.hpp"
 #include "duckdb/planner/parsed_data/bound_create_table_info.hpp"
+#include "duckdb/planner/parsed_data/create_property_graph_info.hpp"
 #include "duckdb/common/printer.hpp"
 #include "duckdb/common/string_util.hpp"
 
@@ -42,6 +43,8 @@ private:
 
 	void ReplayCreateView();
 	void ReplayDropView();
+
+	void ReplayCreatePropertyGraph();
 
 	void ReplayCreateSchema();
 	void ReplayDropSchema();
@@ -159,6 +162,9 @@ void ReplayState::ReplayEntry(WALType entry_type) {
 	case WALType::DROP_VIEW:
 		ReplayDropView();
 		break;
+	case WALType::CREATE_PROPERTY_GRAPH:
+		ReplayCreatePropertyGraph();
+		break;
 	case WALType::CREATE_SCHEMA:
 		ReplayCreateSchema();
 		break;
@@ -185,7 +191,7 @@ void ReplayState::ReplayEntry(WALType entry_type) {
 		break;
 	case WALType::INSERT_TUPLE:
 		ReplayInsert();
-		break;
+	break;
 	case WALType::DELETE_TUPLE:
 		ReplayDelete();
 		break;
@@ -360,6 +366,19 @@ void ReplayState::ReplayDropMacro() {
 
 	auto &catalog = Catalog::GetCatalog(context);
 	catalog.DropEntry(context, &info);
+}
+
+//===--------------------------------------------------------------------===//
+// Replay Property Graph
+//===--------------------------------------------------------------------===//
+void ReplayState::ReplayCreatePropertyGraph() {
+	auto entry = CreatePropertyGraphCatalogEntry::Deserialize(source);
+	if (deserialize_only) {
+		return;
+	}
+
+	auto &catalog = Catalog::GetCatalog(context);
+	catalog.CreatePropertyGraph(context, entry.get());
 }
 
 //===--------------------------------------------------------------------===//
