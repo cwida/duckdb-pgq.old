@@ -91,6 +91,7 @@ public:
 	void BindCreateViewInfo(CreateViewInfo &base);
 	SchemaCatalogEntry *BindSchema(CreateInfo &info);
 	SchemaCatalogEntry *BindCreateFunctionInfo(CreateInfo &info);
+	void BindCreatePropertyGraphInfo(CreatePropertyGraphInfo &info);
 
 	//! Check usage, and cast named parameters to their types
 	static void BindNamedParameters(unordered_map<string, LogicalType> &types, unordered_map<string, Value> &values,

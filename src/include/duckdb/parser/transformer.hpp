@@ -24,6 +24,7 @@ class ColumnDefinition;
 struct OrderByNode;
 struct CopyInfo;
 struct CommonTableExpressionInfo;
+struct PropertyGraphTable;	// how else do I allow it to enter ? 
 
 //! The transformer class is responsible for transforming the internal Postgres
 //! parser representation into the DuckDB representation
@@ -179,6 +180,7 @@ private:
 	void TransformCTE(duckdb_libpgquery::PGWithClause *de_with_clause, QueryNode &select);
 	unique_ptr<SelectStatement> TransformRecursiveCTE(duckdb_libpgquery::PGCommonTableExpr *node,
 	                                                  CommonTableExpressionInfo &info);
+	unique_ptr<PropertyGraphTable> TranformPropertyGraphTable(PGPropertyGraphTable *table);												  
 	// Operator String to ExpressionType (e.g. + => OPERATOR_ADD)
 	ExpressionType OperatorToExpressionType(string &op);
 

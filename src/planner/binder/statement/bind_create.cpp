@@ -65,31 +65,69 @@ void Binder::BindCreateViewInfo(CreateViewInfo &base) {
 	base.types = query_node.types;
 }
 
-void Binder::BindCreatePropertyGraphInfo(CreatePropertyGraphInfo &base) {
+void Binder::BindCreatePropertyGraphInfo(CreatePropertyGraphInfo &info) {
 	// bind the view as if it were a query so we can catch errors
 	// note that we bind the original, and replace the original with a copy
 	// this is because the original has
 	// auto copy = base.Copy();
 	// base.vertex_tables
-	for (auto vertex_table : base.vertex_tables) {
-		// if()
+	// for (auto vertex_table : base.vertex_tables) {
+	// 	// if()
+	
+	auto schema_obj = Catalog::GetCatalog(context).GetSchema(context, info.schema);
+
+	// auto bound_table = Bind(*info.table);
+	
+	// for(auto table: info.table_ref_list) {
+
+	// }
+	// auto table = Catalog::GetCatalog(context).GetEntry<TableCatalogEntry>(context, stmt.schema, stmt.table);
+	for (idx_t i = 0; i < info.vertex_tables.size(); i++) {
+		auto &vertex_table = info.vertex_tables[i];
+		// vertex_table->
+		// if (bound_table->type != TableReferenceType::BASE_TABLE) {
+		// 	throw BinderException("Can only delete from base table!");
+		// }
+		// auto &table_binding = (BoundBaseTableRef &)*bound_table;
+	// }
+	
+	auto bound_table = Bind(*vertex_table->table);
+	auto &table_binding = (TableRef &)*bound_table;
+	// table_binding
+	// bound_table.
+	// table_binding.
+	// vertex_table
+	// auto table = Catalog::GetCatalog(context).GetEntry<TableCatalogEntry>(context, stmt.schema, stmt.table);
+
+	auto table = Catalog::GetCatalog(context).GetEntry<TableCatalogEntry>(context, vertex_table->table->schema_name,
+																		 vertex_table->table->table_name);
+	
+	if(!table) {
+		throw BinderException("Table %s doesnot exist", vertex_table->table->table_name);
+	}
+	for(idx_t key_index = 0; key_index < vertex_table->keys.size(); key_index++) {
+		auto entry = table->name_map.find(vertex_table->keys[key_index]);
+	
+		if (entry == table->name_map.end()) {
+			throw BinderException("Column %s not found in table %s", vertex_table->keys[key_index], table->name);
+		}
+	}
+
 	
 
-	// if (!param.table_name.empty()) {
-// 			throw BinderException("Invalid parameter name '%s'", param.ToString());
-// 		}
-	
+
+	// auto table_or_view = Catalog::GetCatalog(context).GetEntry(context, CatalogType::TABLE_ENTRY, ref.schema_name,
+	//                                                            table_binding., false, error_context);
+	//check if underlying tables exist. 
+	// check if columns referneced by tables exist
+	// table_binding ?? 
+	// should I create a column map ? 
+	// primary key constraint checked.
+	// table_catalogue_entry
+	// do a get_catalog_entry 
 	}
-	// auto query_node = Bind(*base.query);
-	// base.query = unique_ptr_cast<SQLStatement, SelectStatement>(move(copy));
-	// if (base.aliases.size() > query_node.names.size()) {
-	// 	throw BinderException("More VIEW aliases than columns in query result");
-	// }
-	// fill up the aliases with the remaining names of the bound query
-	// for (idx_t i = base.aliases.size(); i < query_node.names.size(); i++) {
-	// 	base.aliases.push_back(query_node.names[i]);
-	// }
-	// base.types = query_node.types;
+
+
 }
 
 
@@ -215,12 +253,11 @@ BoundStatement Binder::Bind(CreateStatement &stmt) {
 		break;
 	}
 	case CatalogType::PROPERTY_GRAPH_ENTRY: {
-		// do nothing for now
 		auto &bound_info = (CreatePropertyGraphInfo &)*stmt.info;
 		// bind the schema
 		auto schema = BindSchema(bound_info);
-		BindCreatePropertyGraphInfo(schema);
-		result.plan = make_unique<LogicalCreate>(LogicalOperatorType::LOGICAL_CREATE_PROPERTY_GRAPH, move(stmt.info), schema);
+		BindCreatePropertyGraphInfo(bound_info);
+		result.plan = make_unique<LogicalCreate>(LogicalOperatorType::LOGICAL_CREATE_PROPERTY_GRAPH, move(bound_info), schema);
 		break;
 	}
 	default:

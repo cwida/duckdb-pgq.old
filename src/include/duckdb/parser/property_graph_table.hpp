@@ -9,6 +9,7 @@
 #pragma once
 
 #include "duckdb/common/common.hpp"
+#include "duckdb/parser/tableref/basetableref.hpp"
 // #include "duckdb/common/enums/statement_type.hpp"
 // #include "duckdb/common/exception.hpp"
 // #include "duckdb/common/printer.hpp"
@@ -23,19 +24,24 @@ public:
     PropertyGraphTable(){
 
     }
-    PropertyGraphTable(string name, vector<string> keys, vector<string> labels);
+    PropertyGraphTable(unique_ptr<BaseTableRef> table, vector<string> keys, vector<string> labels);
+
+	PropertyGraphTable(unique_ptr<BaseTableRef> table, vector<string> keys, vector<string> labels, vector<string> source_key, 
+						string source_key_reference, vector<string> destination_key, string destination_key_reference);
 	//! The name of edge/vertex table
 	string name;
+	unique_ptr<BaseTableRef> table;
     vector<string> keys;
 	//! The labels associated with the table
 	vector<string> labels;
 	//! The statement length within the query string
 	vector<string> source_key;
+
     string source_key_reference;
 
-    string destination_key_reference;
+	vector<string> destination_key;
 
-    vector<string> destination_key;
+    string destination_key_reference;
 	// //! The query text that corresponds to this SQL statement
 	// string query;
 
@@ -43,10 +49,11 @@ public:
 	//! Create a copy of this SelectStatement
 	virtual unique_ptr<PropertyGraphTable> Copy() {
         auto result = make_unique<PropertyGraphTable>();
-        // CopyProperties(*result);
-        result->name = name;
-        result->source_key_reference = source_key_reference;
-        result->keys = keys;
+        CopyProperties(*result);
+        // result->name = name;
+        // result->source_key_reference = source_key_reference;
+        // result->keys = keys;
+		return move(result);
     }
 
     

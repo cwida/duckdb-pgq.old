@@ -9,7 +9,9 @@
 #pragma once
 
 #include "duckdb/parser/parsed_data/create_property_graph_info.hpp"
+#include "duckdb/parser/parsed_data/create_info.hpp"
 #include "duckdb/parser/property_graph_table.hpp"
+#include "duckdb/parser/tableref/basetableref.hpp"
 
 namespace duckdb {
 
@@ -21,8 +23,9 @@ struct CreatePropertyGraphInfo : public CreateInfo {
 
 	// add copy function
 	string name;
-	vector<PropertyGraphTable> vertex_tables;
-	vector<PropertyGraphTable> edge_tables;
+	vector<unique_ptr<PropertyGraphTable>> vertex_tables;
+	vector<unique_ptr<PropertyGraphTable>> edge_tables;
+	vector<unique_ptr<BaseTableRef>> table_ref_list;
 	
 public:
 	unique_ptr<CreateInfo> Copy() const override {
