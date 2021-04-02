@@ -2,6 +2,7 @@
 #include "duckdb/parser/transformer.hpp"
 #include "duckdb/parser/parsed_data/create_property_graph_info.hpp"
 #include "duckdb/parser/tableref/basetableref.hpp"
+#include "duckdb/parser/property_graph_table.hpp"
 
 namespace duckdb {
 
@@ -16,6 +17,13 @@ unique_ptr<PropertyGraphTable> Transformer::TranformPropertyGraphTable(PGPropert
 
 	auto qname = TransformQualifiedName(table->name);
 	auto ref = TransformRangeVar(table->name);
+	auto tableref = make_unique<BaseTableRef>();
+	tableref->table_name = table->name->relname;
+	if (table->name->schemaname) {
+		tableref->schema_name = table->name->schemaname;
+	}
+
+
 	for (auto kc = table->keys->head; kc; kc = kc->next) {
 		keys.push_back(string(reinterpret_cast<PGValue *>(kc->data.ptr_value)->val.str));
 	}
@@ -28,7 +36,8 @@ unique_ptr<PropertyGraphTable> Transformer::TranformPropertyGraphTable(PGPropert
 	// 	// info->vertex_tables.push_back()
 	// 	info->vertex_tables.push_back(PropertyGraphTable(qname.name, keys, labels));
 		// return 	make_unique<PropertyGraphTable>(ref, keys, labels);
-		return 	make_unique<PropertyGraphTable>(keys, labels);
+		// return 	make_unique<PropertyGraphTable>(keys, labels);
+		return unique_ptr<PropertyGraphTable>(new PropertyGraphTable(keys, labels));
 	}
 	else {
 		for (auto kc = table->source_key->head; kc; kc = kc->next) {
@@ -41,9 +50,13 @@ unique_ptr<PropertyGraphTable> Transformer::TranformPropertyGraphTable(PGPropert
 
 		destination_key_reference = string(table->destination_key_reference->relname);
 		source_key_reference = string(table->source_key_reference->relname);
+		//Find a way to use reference
 		// return make_unique<PropertyGraphTable>(ref, keys, labels, source_key, source_key_reference, 
 		// destination_key, destination_key_reference);
-		return make_unique<PropertyGraphTable>(source_key_reference, destination_key_reference);
+		// auto pg_table = make_unique<PropertyGraphTable>;
+		// pg_table->ref = move(ref);
+		// return make_unique<PropertyGraphTable>(source_key_reference, destination_key_reference);
+		return unique_ptr<PropertyGraphTable>(new PropertyGraphTable(source_key_reference, destination_key_reference));
 		//look into make_unique. Do we need to modfiy Copy
 		// info->edge_tables.push_back(pg_table);
 	}
@@ -116,6 +129,7 @@ unique_ptr<CreateStatement> Transformer::TransformCreatePropertyGraph(PGNode *no
 			// 	// info->edge_tables.push_back(pg_table);
 			// }
 			*/
+		    break;
 		}
 		default:
 			throw NotImplementedException("ColumnDef type not handled yet");
@@ -130,9 +144,11 @@ unique_ptr<CreateStatement> Transformer::TransformCreatePropertyGraph(PGNode *no
 
 		case T_PGPropertyGraphTable:{
 			auto graph_table = reinterpret_cast<PGPropertyGraphTable *>(c->data.ptr_value);
+			(void) graph_table;
 			// auto qname = TransformQualifiedName(graph_table->name);
-			auto pg_table = TranformPropertyGraphTable(graph_table);
-			info->edge_tables.push_back(move(pg_table));
+			// auto pg_table = TranformPropertyGraphTable(graph_table);
+			// info->edge_tables.push_back(move(pg_table));
+			break; 
 		}
 		default:
 			throw NotImplementedException("ColumnDef type not handled yet");

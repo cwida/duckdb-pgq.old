@@ -12,6 +12,7 @@
 #include "duckdb/catalog/catalog_entry/table_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/table_function_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/view_catalog_entry.hpp"
+#include "duckdb/catalog/catalog_entry/property_graph_catalog_entry.hpp"
 #include "duckdb/catalog/default/default_views.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/parser/parsed_data/alter_table_info.hpp"
@@ -98,6 +99,11 @@ CatalogEntry *SchemaCatalogEntry::CreateView(ClientContext &context, CreateViewI
 	auto view = make_unique<ViewCatalogEntry>(catalog, this, info);
 	return AddEntry(context, move(view), info->on_conflict);
 }
+
+// CatalogEntry *SchemaCatalogEntry::CreatePropertyGraph(ClientContext &context, CreatePropertyGraphInfo *info) {
+// 	auto property_graph = make_unique<PropertyGraphCatalogEntry>(catalog, this, info);
+// 	return AddEntry(context, move(property_graph), info->on_conflict);
+// }
 
 CatalogEntry *SchemaCatalogEntry::CreateIndex(ClientContext &context, CreateIndexInfo *info, TableCatalogEntry *table) {
 	unordered_set<CatalogEntry *> dependencies;

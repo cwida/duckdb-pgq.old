@@ -13,6 +13,7 @@
 #include "duckdb/common/types.hpp"
 #include "duckdb/common/unordered_map.hpp"
 #include "duckdb/parser/qualified_name.hpp"
+#include "duckdb/parser/property_graph_table.hpp"
 #include "duckdb/parser/tokens.hpp"
 
 #include "pg_definitions.hpp"
@@ -24,7 +25,7 @@ class ColumnDefinition;
 struct OrderByNode;
 struct CopyInfo;
 struct CommonTableExpressionInfo;
-struct PropertyGraphTable;	// how else do I allow it to enter ? 
+// struct PropertyGraphTable;	// how else do I allow it to enter ? 
 
 //! The transformer class is responsible for transforming the internal Postgres
 //! parser representation into the DuckDB representation

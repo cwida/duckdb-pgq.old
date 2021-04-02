@@ -19,6 +19,12 @@ struct CreatePropertyGraphInfo : public CreateInfo {
 	CreatePropertyGraphInfo() : CreateInfo(CatalogType::PROPERTY_GRAPH_ENTRY) {
 	}
 
+	// CreateViewInfo() : CreateInfo(CatalogType::VIEW_ENTRY) {
+	// }
+	// CreateViewInfo(string schema, string view_name)
+	//     : CreateInfo(CatalogType::VIEW_ENTRY, schema), view_name(view_name) {
+	// }
+
 	// add second constructor with arguments ???
 
 	// add copy function

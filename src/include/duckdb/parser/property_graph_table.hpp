@@ -25,11 +25,15 @@ public:
 
     }
 
-	PropertyGraphTable(vector<string> keys, vector<string> labels);
+	PropertyGraphTable(vector<string> keys, vector<string> labels){
+
+	}
 
     // PropertyGraphTable(unique_ptr<BaseTableRef> table, vector<string> keys, vector<string> labels);
 
-	PropertyGraphTable(	string source_key_reference, string destination_key_reference);
+	PropertyGraphTable(	string source_key_reference, string destination_key_reference){
+		
+	}
 	// PropertyGraphTable(unique_ptr<BaseTableRef> table, vector<string> keys, vector<string> labels, vector<string> source_key, 
 	// 					string source_key_reference, vector<string> destination_key, string destination_key_reference);
 	//! The name of edge/vertex table
