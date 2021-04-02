@@ -180,7 +180,7 @@ private:
 	void TransformCTE(duckdb_libpgquery::PGWithClause *de_with_clause, QueryNode &select);
 	unique_ptr<SelectStatement> TransformRecursiveCTE(duckdb_libpgquery::PGCommonTableExpr *node,
 	                                                  CommonTableExpressionInfo &info);
-	unique_ptr<PropertyGraphTable> TranformPropertyGraphTable(PGPropertyGraphTable *table);												  
+	unique_ptr<PropertyGraphTable> TranformPropertyGraphTable(duckdb_libpgquery::PGPropertyGraphTable *table);												  
 	// Operator String to ExpressionType (e.g. + => OPERATOR_ADD)
 	ExpressionType OperatorToExpressionType(string &op);
 

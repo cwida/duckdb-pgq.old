@@ -47,14 +47,14 @@ public:
 
 public:
 	//! Create a copy of this SelectStatement
-	virtual unique_ptr<PropertyGraphTable> Copy() {
-        auto result = make_unique<PropertyGraphTable>();
-        CopyProperties(*result);
-        // result->name = name;
-        // result->source_key_reference = source_key_reference;
-        // result->keys = keys;
-		return move(result);
-    }
+	// virtual unique_ptr<PropertyGraphTable> Copy() {
+    //     auto result = make_unique<PropertyGraphTable>();
+    //     // CopyProperties(*result);
+    //     // result->name = name;
+    //     // result->source_key_reference = source_key_reference;
+    //     // result->keys = keys;
+	// 	return move(result);
+    // }
 
     
 		// CopyProperties(*result);

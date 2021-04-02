@@ -37,9 +37,10 @@ unique_ptr<PropertyGraphTable> Transformer::TranformPropertyGraphTable(PGPropert
 		for (auto kc = table->destination_key->head; kc; kc = kc->next) {
 			destination_key.push_back(string(reinterpret_cast<PGValue *>(kc->data.ptr_value)->val.str));
 		}
-		destination_key_reference = string(table->destination_key_reference);
-		source_key_reference = string(table->source_key_reference);
-		return make_unique<PropertyGraphTable>(ref, keys, label, source_key, source_key_reference, 
+
+		destination_key_reference = string(table->destination_key_reference->relname);
+		source_key_reference = string(table->source_key_reference->relname);
+		return make_unique<PropertyGraphTable>(ref, keys, labels, source_key, source_key_reference, 
 		destination_key, destination_key_reference);
 		//look into make_unique. Do we need to modfiy Copy
 		// info->edge_tables.push_back(pg_table);
