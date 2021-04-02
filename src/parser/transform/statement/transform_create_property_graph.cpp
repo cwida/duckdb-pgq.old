@@ -65,7 +65,7 @@ unique_ptr<CreateStatement> Transformer::TransformCreatePropertyGraph(PGNode *no
 		auto node = reinterpret_cast<PGNode *>(c->data.ptr_value);
 		switch (node->type){
 
-		case T_PGPropertyGraphTable:{
+		case T_PGPropertyGraphTable: {
 			auto graph_table = reinterpret_cast<PGPropertyGraphTable *>(c->data.ptr_value);
 			auto qname = TransformQualifiedName(graph_table->name);
 			auto pg_table = TranformPropertyGraphTable(graph_table);
@@ -113,10 +113,11 @@ unique_ptr<CreateStatement> Transformer::TransformCreatePropertyGraph(PGNode *no
 			// 	//look into make_unique. Do we need to modfiy Copy
 			// 	// info->edge_tables.push_back(pg_table);
 			// }
+			*/
 		}
 		default:
 			throw NotImplementedException("ColumnDef type not handled yet");
-		}*/
+		}
 
 
 	}
