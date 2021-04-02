@@ -24,10 +24,14 @@ public:
     PropertyGraphTable(){
 
     }
-    PropertyGraphTable(unique_ptr<BaseTableRef> table, vector<string> keys, vector<string> labels);
 
-	PropertyGraphTable(unique_ptr<BaseTableRef> table, vector<string> keys, vector<string> labels, vector<string> source_key, 
-						string source_key_reference, vector<string> destination_key, string destination_key_reference);
+	PropertyGraphTable(vector<string> keys, vector<string> labels);
+
+    // PropertyGraphTable(unique_ptr<BaseTableRef> table, vector<string> keys, vector<string> labels);
+
+	PropertyGraphTable(	string source_key_reference, string destination_key_reference);
+	// PropertyGraphTable(unique_ptr<BaseTableRef> table, vector<string> keys, vector<string> labels, vector<string> source_key, 
+	// 					string source_key_reference, vector<string> destination_key, string destination_key_reference);
 	//! The name of edge/vertex table
 	string name;
 	unique_ptr<BaseTableRef> table;
@@ -47,14 +51,20 @@ public:
 
 public:
 	//! Create a copy of this SelectStatement
-	// virtual unique_ptr<PropertyGraphTable> Copy() {
-    //     auto result = make_unique<PropertyGraphTable>();
+	virtual unique_ptr<PropertyGraphTable> Copy() {
+        auto result = make_unique<PropertyGraphTable>();
+		
     //     // CopyProperties(*result);
-    //     // result->name = name;
-    //     // result->source_key_reference = source_key_reference;
-    //     // result->keys = keys;
-	// 	return move(result);
-    // }
+        result->name = name;
+		result->labels = labels;
+		// result->table = table;
+		result->destination_key = destination_key;
+		result->destination_key_reference = destination_key_reference;
+        result->source_key = source_key;
+		result->source_key_reference = source_key_reference;
+        result->keys = keys;
+		return move(result);
+    }
 
     
 		// CopyProperties(*result);

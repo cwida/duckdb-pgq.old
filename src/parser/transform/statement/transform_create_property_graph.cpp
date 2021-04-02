@@ -27,7 +27,8 @@ unique_ptr<PropertyGraphTable> Transformer::TranformPropertyGraphTable(PGPropert
 	if(table->is_vertex_table) {
 	// 	// info->vertex_tables.push_back()
 	// 	info->vertex_tables.push_back(PropertyGraphTable(qname.name, keys, labels));
-		return 	make_unique<PropertyGraphTable>(ref, keys, labels);
+		// return 	make_unique<PropertyGraphTable>(ref, keys, labels);
+		return 	make_unique<PropertyGraphTable>(keys, labels);
 	}
 	else {
 		for (auto kc = table->source_key->head; kc; kc = kc->next) {
@@ -40,8 +41,9 @@ unique_ptr<PropertyGraphTable> Transformer::TranformPropertyGraphTable(PGPropert
 
 		destination_key_reference = string(table->destination_key_reference->relname);
 		source_key_reference = string(table->source_key_reference->relname);
-		return make_unique<PropertyGraphTable>(ref, keys, labels, source_key, source_key_reference, 
-		destination_key, destination_key_reference);
+		// return make_unique<PropertyGraphTable>(ref, keys, labels, source_key, source_key_reference, 
+		// destination_key, destination_key_reference);
+		return make_unique<PropertyGraphTable>(source_key_reference, destination_key_reference);
 		//look into make_unique. Do we need to modfiy Copy
 		// info->edge_tables.push_back(pg_table);
 	}
