@@ -32,7 +32,7 @@ struct CreatePropertyGraphInfo : public CreateInfo {
 	vector<unique_ptr<PropertyGraphTable>> vertex_tables;
 	vector<unique_ptr<PropertyGraphTable>> edge_tables;
 	vector<unique_ptr<BaseTableRef>> table_ref_list;
-	
+
 public:
 	unique_ptr<CreateInfo> Copy() const override {
 		auto result = make_unique<CreatePropertyGraphInfo>();

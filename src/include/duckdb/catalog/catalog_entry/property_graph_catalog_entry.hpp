@@ -37,24 +37,22 @@ public:
 	PropertyGraphCatalogEntry(Catalog *catalog, SchemaCatalogEntry *schema, CreatePropertyGraphInfo *info);
 	//! A reference to the underlying storage unit used for this table
 	// std::shared_ptr<DataTable> storage;
-	
-    // vector<PropertyGraphTable> vertex_tables;
+
+	// vector<PropertyGraphTable> vertex_tables;
 	// vector<PropertyGraphTable> edge_tables;
 	string name;
 	vector<unique_ptr<PropertyGraphTable>> vertex_tables;
 	vector<unique_ptr<PropertyGraphTable>> edge_tables;
 	vector<unique_ptr<BaseTableRef>> table_ref_list;
 
-
 public:
-
 	//! Serialize the meta information of the PropertyGraphCatalogEntry a serializer
 	virtual void Serialize(Serializer &serializer);
 	//! Deserializes to a CreatePropertyGraphInfo
 	static unique_ptr<CreatePropertyGraphInfo> Deserialize(Deserializer &source);
-	
+
 	unique_ptr<CatalogEntry> Copy(ClientContext &context) override;
-	
+
 private:
 	void Initialize(CreatePropertyGraphInfo *info);
 };

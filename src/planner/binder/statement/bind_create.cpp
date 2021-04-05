@@ -73,11 +73,11 @@ void Binder::BindCreatePropertyGraphInfo(CreatePropertyGraphInfo &info) {
 	// base.vertex_tables
 	// for (auto vertex_table : base.vertex_tables) {
 	// 	// if()
-	
+
 	auto schema_obj = Catalog::GetCatalog(context).GetSchema(context, info.schema);
 
 	// auto bound_table = Bind(*info.table);
-	
+
 	// for(auto table: info.table_ref_list) {
 
 	// }
@@ -89,47 +89,42 @@ void Binder::BindCreatePropertyGraphInfo(CreatePropertyGraphInfo &info) {
 		// 	throw BinderException("Can only delete from base table!");
 		// }
 		// auto &table_binding = (BoundBaseTableRef &)*bound_table;
-	// }
-	
-	auto bound_table = Bind(*vertex_table->table);
-	auto &table_binding = (TableRef &)*bound_table;
-	// table_binding
-	// bound_table.
-	// table_binding.
-	// vertex_table
-	// auto table = Catalog::GetCatalog(context).GetEntry<TableCatalogEntry>(context, stmt.schema, stmt.table);
+		// }
 
-	auto table = Catalog::GetCatalog(context).GetEntry<TableCatalogEntry>(context, vertex_table->table->schema_name,
-																		 vertex_table->table->table_name);
-	
-	if(!table) {
-		throw BinderException("Table %s doesnot exist", vertex_table->table->table_name);
-	}
-	for(idx_t key_index = 0; key_index < vertex_table->keys.size(); key_index++) {
-		auto entry = table->name_map.find(vertex_table->keys[key_index]);
-	
-		if (entry == table->name_map.end()) {
-			throw BinderException("Column %s not found in table %s", vertex_table->keys[key_index], table->name);
+		auto bound_table = Bind(*vertex_table->table);
+		auto &table_binding = (TableRef &)*bound_table;
+		// table_binding
+		// bound_table.
+		// table_binding.
+		// vertex_table
+		// auto table = Catalog::GetCatalog(context).GetEntry<TableCatalogEntry>(context, stmt.schema, stmt.table);
+
+		auto table = Catalog::GetCatalog(context).GetEntry<TableCatalogEntry>(context, vertex_table->table->schema_name,
+		                                                                      vertex_table->table->table_name);
+
+		if (!table) {
+			throw BinderException("Table %s doesnot exist", vertex_table->table->table_name);
 		}
+		for (idx_t key_index = 0; key_index < vertex_table->keys.size(); key_index++) {
+			auto entry = table->name_map.find(vertex_table->keys[key_index]);
+
+			if (entry == table->name_map.end()) {
+				throw BinderException("Column %s not found in table %s", vertex_table->keys[key_index], table->name);
+			}
+		}
+
+		// auto table_or_view = Catalog::GetCatalog(context).GetEntry(context, CatalogType::TABLE_ENTRY,
+		// ref.schema_name,
+		//                                                            table_binding., false, error_context);
+		// check if underlying tables exist.
+		// check if columns referneced by tables exist
+		// table_binding ??
+		// should I create a column map ?
+		// primary key constraint checked.
+		// table_catalogue_entry
+		// do a get_catalog_entry
 	}
-
-	
-
-
-	// auto table_or_view = Catalog::GetCatalog(context).GetEntry(context, CatalogType::TABLE_ENTRY, ref.schema_name,
-	//                                                            table_binding., false, error_context);
-	//check if underlying tables exist. 
-	// check if columns referneced by tables exist
-	// table_binding ?? 
-	// should I create a column map ? 
-	// primary key constraint checked.
-	// table_catalogue_entry
-	// do a get_catalog_entry 
-	}
-
-
 }
-
 
 SchemaCatalogEntry *Binder::BindCreateFunctionInfo(CreateInfo &info) {
 	auto &base = (CreateMacroInfo &)info;
@@ -259,7 +254,8 @@ BoundStatement Binder::Bind(CreateStatement &stmt) {
 		auto schema = BindSchema(*stmt.info);
 
 		BindCreatePropertyGraphInfo(base);
-		result.plan = make_unique<LogicalCreate>(LogicalOperatorType::LOGICAL_CREATE_PROPERTY_GRAPH, move(stmt.info), schema);
+		result.plan =
+		    make_unique<LogicalCreate>(LogicalOperatorType::LOGICAL_CREATE_PROPERTY_GRAPH, move(stmt.info), schema);
 		break;
 
 		// auto &bound_info = (CreateViewInfo &)*stmt.info;

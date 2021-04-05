@@ -6,9 +6,6 @@
 // #include "duckdb/parser/parsed_data/create_table_info.hpp"
 // #include "duckdb/planner/parsed_data/bound_create_table_info.hpp"
 
-
-
-
 // unique_ptr<BoundCreatePropertyGraphInfo> Binder::BindCreateTableInfo(unique_ptr<CreateInfo> info) {
 // 	auto &base = (CreateMacroInfo &)info;
 

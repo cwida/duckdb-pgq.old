@@ -63,9 +63,8 @@ CatalogEntry *Catalog::CreateView(ClientContext &context, SchemaCatalogEntry *sc
 // 	return CreatePropertyGraph(context, schema, info);
 // }
 
-// CatalogEntry *Catalog::CreatePropertyGraph(ClientContext &context, SchemaCatalogEntry *schema, CreatePropertyGraphInfo *info) {
-// 	ModifyCatalog();
-// 	return schema->CreatePropertyGraph(context, info);
+// CatalogEntry *Catalog::CreatePropertyGraph(ClientContext &context, SchemaCatalogEntry *schema,
+// CreatePropertyGraphInfo *info) { 	ModifyCatalog(); 	return schema->CreatePropertyGraph(context, info);
 // }
 
 CatalogEntry *Catalog::CreateSequence(ClientContext &context, CreateSequenceInfo *info) {

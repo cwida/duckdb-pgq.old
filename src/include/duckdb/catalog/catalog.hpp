@@ -110,7 +110,8 @@ public:
 	//! Creates a collation in the catalog
 	CatalogEntry *CreateCollation(ClientContext &context, SchemaCatalogEntry *schema, CreateCollationInfo *info);
 	//! Creates a property graph in the catalog
-	CatalogEntry *CreatePropertyGraph(ClientContext &context, SchemaCatalogEntry *schema, CreatePropertyGraphInfo *info);
+	CatalogEntry *CreatePropertyGraph(ClientContext &context, SchemaCatalogEntry *schema,
+	                                  CreatePropertyGraphInfo *info);
 
 	//! Drops an entry from the catalog
 	void DropEntry(ClientContext &context, DropInfo *info);

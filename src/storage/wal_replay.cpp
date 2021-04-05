@@ -192,7 +192,7 @@ void ReplayState::ReplayEntry(WALType entry_type) {
 		break;
 	case WALType::INSERT_TUPLE:
 		ReplayInsert();
-	break;
+		break;
 	case WALType::DELETE_TUPLE:
 		ReplayDelete();
 		break;
