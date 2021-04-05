@@ -69,7 +69,7 @@ public:
 		result->source_key = source_key;
 		result->source_key_reference = source_key_reference;
 		result->keys = keys;
-		return move(result);
+		return result;
 	}
 
 	// CopyProperties(*result);
