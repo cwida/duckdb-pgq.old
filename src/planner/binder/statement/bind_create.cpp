@@ -74,7 +74,7 @@ void Binder::BindCreatePropertyGraphInfo(CreatePropertyGraphInfo &info) {
 	// for (auto vertex_table : base.vertex_tables) {
 	// 	// if()
 
-	auto schema_obj = Catalog::GetCatalog(context).GetSchema(context, info.schema);
+	// auto schema_obj = Catalog::GetCatalog(context).GetSchema(context, info.schema);
 
 	// auto bound_table = Bind(*info.table);
 
@@ -92,7 +92,7 @@ void Binder::BindCreatePropertyGraphInfo(CreatePropertyGraphInfo &info) {
 		// }
 
 		auto bound_table = Bind(*vertex_table->table);
-		auto &table_binding = (TableRef &)*bound_table;
+		// auto &table_binding = (TableRef &)*bound_table;
 		// table_binding
 		// bound_table.
 		// table_binding.
