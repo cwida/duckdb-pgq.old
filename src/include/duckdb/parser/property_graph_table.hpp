@@ -57,20 +57,20 @@ public:
 
 public:
 	//! Create a copy of this PropertyGraphStatement
-	virtual unique_ptr<PropertyGraphTable> Copy() {
-		auto result = make_unique<PropertyGraphTable>();
+	// virtual unique_ptr<PropertyGraphTable> Copy() {
+	// 	auto result = make_unique<PropertyGraphTable>();
 
-		//     // CopyProperties(*result);
-		result->name = name;
-		result->labels = labels;
-		// result->table = table;
-		result->destination_key = destination_key;
-		result->destination_key_reference = destination_key_reference;
-		result->source_key = source_key;
-		result->source_key_reference = source_key_reference;
-		result->keys = keys;
-		return result;
-	}
+	// 	//     // CopyProperties(*result);
+	// 	result->name = name;
+	// 	result->labels = labels;
+	// 	// result->table = table;
+	// 	result->destination_key = destination_key;
+	// 	result->destination_key_reference = destination_key_reference;
+	// 	result->source_key = source_key;
+	// 	result->source_key_reference = source_key_reference;
+	// 	result->keys = keys;
+	// 	return result;
+	// }
 
 	// CopyProperties(*result);
 	// result->index_type = index_type;
