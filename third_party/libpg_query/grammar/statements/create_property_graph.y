@@ -11,6 +11,7 @@ CreatePropertyGraphStmt:
 			CREATE_P PROPERTY GRAPH IDENT 
 			vertex_alias TABLES '(' VertexTableDefinitionList ')' 
 			edge_alias TABLES '(' EdgeTableDefinitionList ')'
+			// '('  ')'
 				{
 					PGCreatePropertyGraphStmt *n = makeNode(PGCreatePropertyGraphStmt);
 					n->name = $4;
@@ -82,10 +83,9 @@ EdgeTableDefinitionList:
 		;
 
 EdgeTableDefinition:
-			qualified_name GraphTableKeyClause
-			SOURCE GraphTableKeyClause REFERENCES qualified_name
-			DESTINATION GraphTableKeyClause REFERENCES qualified_name
-			LabelList
+			qualified_name GraphTableKeyClause SOURCE GraphTableKeyClause REFERENCES qualified_name
+			DESTINATION GraphTableKeyClause REFERENCES qualified_name LabelList
+			// 
 				{
 					PGPropertyGraphTable *n = makeNode(PGPropertyGraphTable);
 					n->name = $1;
@@ -100,60 +100,59 @@ EdgeTableDefinition:
 				}
 	;
 
-/*
-For foreign key constraint
-EdgeTableDefinition:
-	qualified_name GraphTableKeyClause
-	SourceVertexTable
-	DestinationVertexTable
-	LabelList
-	{
-		PGPropertyGraphTable *n = makeNode(PGPropertyGraphTable);
-		n->name = $1;
-		n->keys = $2;
-		n->is_vertex_table = false;
-		n->source = $3;
-		n->destination = $4;
-		n->labels = $5;
-		$$ = (PGNode *) n;
-	}
-	;
+
+// For foreign key constraint
+// EdgeTableDefinition:
+// 	qualified_name GraphTableKeyClause
+// 	SourceVertexTable
+// 	DestinationVertexTable
+// 	LabelList
+// 	{
+// 		PGPropertyGraphTable *n = makeNode(PGPropertyGraphTable);
+// 		n->name = $1;
+// 		n->keys = $2;
+// 		n->is_vertex_table = false;
+// 		n->source = $3;
+// 		n->destination = $4;
+// 		n->labels = $5;
+// 		$$ = (PGNode *) n;
+// 	}
+// 	;
 
 
-SourceVertexTable:
-	SOURCE GraphTableKeyClause REFERENCES qualified_name opt_column_list key_match key_actions
-	{
-		// $$ = $2;
-		PGConstraint *n 	= makeNode(PGConstraint);
-		n->contype 			= PG_CONSTR_FOREIGN;
-		n->location 		= @1;
-		n->pktable			= $4;
-		n->fk_attrs			= $2;
-		n->pk_attrs			= $5;
-		n->fk_matchtype		= $6;
-		n->fk_upd_action	= (char) ($7 >> 8);
-		n->fk_del_action	= (char) ($7 & 0xFF);
-		n->skip_validation  = false;
-		n->initially_valid	= true;
-		$$ = (PGNode *)n;
-	}
-	;
+// SourceVertexTable:
+// 	SOURCE GraphTableKeyClause REFERENCES qualified_name opt_column_list key_match key_actions
+// 	{
+// 		// $$ = $2;
+// 		PGConstraint *n 	= makeNode(PGConstraint);
+// 		n->contype 			= PG_CONSTR_FOREIGN;
+// 		n->location 		= @1;
+// 		n->pktable			= $4;
+// 		n->fk_attrs			= $2;
+// 		n->pk_attrs			= $5;
+// 		n->fk_matchtype		= $6;
+// 		n->fk_upd_action	= (char) ($7 >> 8);
+// 		n->fk_del_action	= (char) ($7 & 0xFF);
+// 		n->skip_validation  = false;
+// 		n->initially_valid	= true;
+// 		$$ = (PGNode *)n;
+// 	}
+// 	;
 
-DestinationVertexTable:
-	DESTINATION GraphTableKeyClause REFERENCES qualified_name opt_column_list key_match key_actions
-	{
-		PGConstraint *n 	= makeNode(PGConstraint);
-		n->contype 			= PG_CONSTR_FOREIGN;
-		n->location 		= @1;
-		n->pktable			= $4;
-		n->fk_attrs			= $2;
-		n->pk_attrs			= $5;
-		n->fk_matchtype		= $6;
-		n->fk_upd_action	= (char) ($7 >> 8);
-		n->fk_del_action	= (char) ($7 & 0xFF);
-		n->skip_validation  = false;
-		n->initially_valid	= true;
-		$$ = (PGNode *)n;
-	}
-	;
-*/
+// DestinationVertexTable:
+// 	DESTINATION GraphTableKeyClause REFERENCES qualified_name opt_column_list key_match key_actions
+// 	{
+// 		PGConstraint *n 	= makeNode(PGConstraint);
+// 		n->contype 			= PG_CONSTR_FOREIGN;
+// 		n->location 		= @1;
+// 		n->pktable			= $4;
+// 		n->fk_attrs			= $2;
+// 		n->pk_attrs			= $5;
+// 		n->fk_matchtype		= $6;
+// 		n->fk_upd_action	= (char) ($7 >> 8);
+// 		n->fk_del_action	= (char) ($7 & 0xFF);
+// 		n->skip_validation  = false;
+// 		n->initially_valid	= true;
+// 		$$ = (PGNode *)n;
+// 	}
+// 	;

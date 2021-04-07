@@ -1657,20 +1657,21 @@ typedef struct PGPropertyGraphTable {
 	PGRangeVar *name;
 
 	PGList *labels; //verify if multi label
-	// PGList *properties;
+	
 	PGList *keys;
 
 	bool is_vertex_table;
 	
 	/* Fields only used for Edge Tables */
-	PGConstraint *source;
-	PGConstraint *destination;
+	
 	PGList *source_key;
 	PGRangeVar *source_key_reference;
 	PGList *destination_key;
 	PGRangeVar *destination_key_reference;
 
 	/*TODO: Foreign key constraints */
+	// PGConstraint *source;
+	// PGConstraint *destination;
 } PGPropertyGraphTable;
 
 

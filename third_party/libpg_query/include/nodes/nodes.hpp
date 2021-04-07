@@ -328,7 +328,6 @@ typedef enum PGNodeTag {
 	T_PGFetchStmt,
 	T_PGIndexStmt,
 	T_PGCreatePropertyGraphStmt,
-	T_PGPropertyGraphTable,
 	T_PGCreateFunctionStmt,
 	T_PGAlterFunctionStmt,
 	T_PGDoStmt,
@@ -481,6 +480,7 @@ typedef enum PGNodeTag {
 	T_PGIntervalConstant,
 	T_PGSampleSize,
 	T_PGSampleOptions,
+	T_PGPropertyGraphTable,
 
 	/*
 	 * TAGS FOR REPLICATION GRAMMAR PARSE NODES (replnodes.h)

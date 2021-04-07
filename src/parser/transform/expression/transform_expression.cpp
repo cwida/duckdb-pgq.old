@@ -73,6 +73,8 @@ unique_ptr<ParsedExpression> Transformer::TransformExpression(PGNode *node) {
 		return TransformInterval(reinterpret_cast<PGIntervalConstant *>(node));
 	case T_PGLambdaFunction:
 		return TransformLambda(reinterpret_cast<PGLambdaFunction *>(node));
+	//Put the code here after makeNode works
+	case T_PGPropertyGraphTable:
 	default:
 		throw NotImplementedException("Expr of type %d not implemented\n", (int)node->type);
 	}
