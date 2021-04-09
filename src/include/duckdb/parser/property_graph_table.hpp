@@ -41,6 +41,7 @@ public:
 	//! The name of edge/vertex table
 	string name;
 	unique_ptr<BaseTableRef> table;
+	// struct boundpropertygraph -> call theat in SQL during match,--> be more resilient
 	vector<string> keys;
 	//! The labels associated with the table
 	vector<string> labels;
@@ -54,6 +55,9 @@ public:
 	string destination_key_reference;
 	// //! The query text that corresponds to this SQL statement
 	// string query;
+
+	virtual ~PropertyGraphTable() {
+	}
 
 public:
 	//! Create a copy of this PropertyGraphStatement
@@ -76,5 +80,8 @@ public:
 	// result->index_type = index_type;
 	// result->index_name = index_name;
 	// result->unique = unique;
+	// virtual unique_ptr<PropertyGraphTable> Copy() const;
+	void Serialize(Serializer &serializer) const;
+	static unique_ptr<PropertyGraphTable> Deserialize(Deserializer &source);
 };
 } // namespace duckdb

@@ -96,7 +96,7 @@ private:
 	//! Create a table function within the given schema
 	CatalogEntry *CreateTableFunction(ClientContext &context, CreateTableFunctionInfo *info);
 	//! Create a property graph within the given schema
-	CatalogEntry *CreatePropertyGraph(ClientContext &context, CreatePropertyGraphInfo *info);
+	// CatalogEntry *CreatePropertyGraph(ClientContext &context, CreatePropertyGraphInfo *info);
 	//! Create a copy function within the given schema
 	CatalogEntry *CreateCopyFunction(ClientContext &context, CreateCopyFunctionInfo *info);
 	//! Create a pragma function within the given schema

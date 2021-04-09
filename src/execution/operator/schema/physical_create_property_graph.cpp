@@ -5,7 +5,7 @@ namespace duckdb {
 
 void PhysicalCreatePropertyGraph::GetChunkInternal(ExecutionContext &context, DataChunk &chunk,
                                                    PhysicalOperatorState *state) {
-	Catalog::GetCatalog(context.client).CreatePropertyGraph(context.client, info.get());
+	// Catalog::GetCatalog(context.client).CreatePropertyGraph(context.client, info.get());
 	state->finished = true;
 }
 

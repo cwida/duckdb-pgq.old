@@ -14,7 +14,7 @@ unique_ptr<PropertyGraphTable> Transformer::TranformPropertyGraphTable(PGPropert
 	// info->name = string(stmt->name);
 	vector<string> keys, labels, source_key, destination_key;
 	string name, source_key_reference, destination_key_reference;
-
+	auto pg_table = make_unique<PropertyGraphTable>();
 	auto qname = TransformQualifiedName(table->name);
 	auto ref = TransformRangeVar(table->name);
 	auto tableref = make_unique<BaseTableRef>();
@@ -30,12 +30,19 @@ unique_ptr<PropertyGraphTable> Transformer::TranformPropertyGraphTable(PGPropert
 	for (auto kc = table->labels->head; kc; kc = kc->next) {
 		labels.push_back(string(reinterpret_cast<PGValue *>(kc->data.ptr_value)->val.str));
 	}
-
+	pg_table->name = name;
+	pg_table->keys = keys;
+	pg_table->labels = labels;
+	pg_table->table = move(tableref);
 	if (table->is_vertex_table) {
 		// 	// info->vertex_tables.push_back()
 		// 	info->vertex_tables.push_back(PropertyGraphTable(qname.name, keys, labels));
 		// return 	make_unique<PropertyGraphTable>(keys, labels);
-		return make_unique<PropertyGraphTable>(move(tableref), keys, labels);
+		// pg_table->keys = keys;
+		// pg_table->labels = labels;
+		// pg_table->table = move(tableref);
+		return pg_table;
+		// return make_unique<PropertyGraphTable>(move(tableref), keys, labels);
 		// return unique_ptr<PropertyGraphTable>(new PropertyGraphTable(keys, labels));
 	} else {
 		for (auto kc = table->source_key->head; kc; kc = kc->next) {
@@ -49,8 +56,13 @@ unique_ptr<PropertyGraphTable> Transformer::TranformPropertyGraphTable(PGPropert
 		destination_key_reference = string(table->destination_key_reference->relname);
 		source_key_reference = string(table->source_key_reference->relname);
 		// Find a way to use reference
-		return make_unique<PropertyGraphTable>(move(tableref), keys, labels, source_key, source_key_reference,
-		                                       destination_key, destination_key_reference);
+		pg_table->source_key = source_key;
+		pg_table->source_key_reference = source_key_reference;
+		pg_table->destination_key_reference = destination_key_reference;
+		pg_table->destination_key = destination_key;
+		return pg_table;
+		// return make_unique<PropertyGraphTable>(move(tableref), keys, labels, source_key, source_key_reference,
+		//                                        destination_key, destination_key_reference);
 		// auto pg_table = make_unique<PropertyGraphTable>;
 		// pg_table->ref = move(ref);
 		// return make_unique<PropertyGraphTable>(source_key_reference, destination_key_reference);
@@ -78,14 +90,15 @@ unique_ptr<CreateStatement> Transformer::TransformCreatePropertyGraph(PGNode *no
 	for (auto c = stmt->vertex_tables->head; c != NULL; c = lnext(c)) {
 		// auto node = reinterpret_cast<PGNode *>(c->data.ptr_value);
 		// switch (node->type) {
-		
+
 		// case T_PGPropertyGraphTable: {
-			auto graph_table = reinterpret_cast<PGPropertyGraphTable *>(c->data.ptr_value);
-			auto qname = TransformQualifiedName(graph_table->name);
-			auto pg_table = TranformPropertyGraphTable(graph_table);
-			info->vertex_tables.push_back(move(pg_table));
-			// break;
+		auto graph_table = reinterpret_cast<PGPropertyGraphTable *>(c->data.ptr_value);
+		auto qname = TransformQualifiedName(graph_table->name);
+		auto pg_table = TranformPropertyGraphTable(graph_table);
+		info->vertex_tables.push_back(move(pg_table));
+		// break;
 		// }
+		// printf("%d", node->type);
 		// default:
 		// 	throw NotImplementedException("ColumnDef type not handled yet");
 		// }
@@ -96,12 +109,12 @@ unique_ptr<CreateStatement> Transformer::TransformCreatePropertyGraph(PGNode *no
 		// switch (node->type) {
 
 		// case T_PGPropertyGraphTable: {
-			auto graph_table = reinterpret_cast<PGPropertyGraphTable *>(c->data.ptr_value);
-			// (void)graph_table;
-			auto qname = TransformQualifiedName(graph_table->name);
-			auto pg_table = TranformPropertyGraphTable(graph_table);
-			info->edge_tables.push_back(move(pg_table));
-			// break;
+		auto graph_table = reinterpret_cast<PGPropertyGraphTable *>(c->data.ptr_value);
+		// (void)graph_table;
+		auto qname = TransformQualifiedName(graph_table->name);
+		auto pg_table = TranformPropertyGraphTable(graph_table);
+		info->edge_tables.push_back(move(pg_table));
+		// break;
 		// }
 		// default:
 		// 	throw NotImplementedException("ColumnDef type not handled yet");

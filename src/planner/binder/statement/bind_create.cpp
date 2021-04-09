@@ -91,14 +91,10 @@ void Binder::BindCreatePropertyGraphInfo(CreatePropertyGraphInfo &info) {
 		// auto &table_binding = (BoundBaseTableRef &)*bound_table;
 		// }
 
-		auto bound_table = Bind(*vertex_table->table);
-		// auto &table_binding = (TableRef &)*bound_table;
-		// table_binding
-		// bound_table.
-		// table_binding.
-		// vertex_table
+		// auto bound_table = Bind(*vertex_table->table);
 		// auto table = Catalog::GetCatalog(context).GetEntry<TableCatalogEntry>(context, stmt.schema, stmt.table);
-
+		// DEFAULT_SCHEMA = main
+		// auto table = Catalog::GetCatalog(context).GetEntry<TableCatalogEntry>(context, "", "account");
 		auto table = Catalog::GetCatalog(context).GetEntry<TableCatalogEntry>(context, vertex_table->table->schema_name,
 		                                                                      vertex_table->table->table_name);
 

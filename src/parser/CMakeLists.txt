@@ -24,7 +24,8 @@ add_library_unity(
   query_node.cpp
   result_modifier.cpp
   tableref.cpp
-  transformer.cpp)
+  transformer.cpp
+  property_graph_table.cpp)
 set(ALL_OBJECT_FILES
     ${ALL_OBJECT_FILES} $<TARGET_OBJECTS:duckdb_parser>
     PARENT_SCOPE)

@@ -1653,6 +1653,8 @@ typedef struct PGCreatePropertyGraphStmt {
 } PGCreatePropertyGraphStmt;
 
 typedef struct PGPropertyGraphTable {
+
+	PGNodeTag type;
 	/* Fields used for both edge and vertex table */
 	PGRangeVar *name;
 

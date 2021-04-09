@@ -1,7 +1,7 @@
 //===----------------------------------------------------------------------===//
 //                         DuckDB
 //
-// duckdb/execution/operator/schema/physical_create_view.hpp
+// duckdb/execution/operator/schema/physical_create_property_Graph_info.hpp
 //
 //
 //===----------------------------------------------------------------------===//

@@ -30,6 +30,7 @@ struct CreateInfo;
 struct BoundCreateTableInfo;
 struct BoundCreateFunctionInfo;
 struct CommonTableExpressionInfo;
+struct CreatePropertyGraphInfo;
 
 struct CorrelatedColumnInfo {
 	ColumnBinding binding;
@@ -201,6 +202,7 @@ private:
 	unique_ptr<LogicalOperator> BindTable(TableCatalogEntry &table, BaseTableRef &ref);
 	unique_ptr<LogicalOperator> BindView(ViewCatalogEntry &view, BaseTableRef &ref);
 	unique_ptr<LogicalOperator> BindTableOrView(BaseTableRef &ref);
+	// unique_ptr<LogicalOperator> BindPropertyGraph(PropertyGraphCatalogEntry &pg_table, BaseTableRef &ref);
 
 	BoundStatement BindCopyTo(CopyStatement &stmt);
 	BoundStatement BindCopyFrom(CopyStatement &stmt);

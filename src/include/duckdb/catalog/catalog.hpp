@@ -27,7 +27,7 @@ struct CreateFunctionInfo;
 struct CreateViewInfo;
 struct CreateSequenceInfo;
 struct CreateCollationInfo;
-struct CreatePropertyGraphInfo;
+// struct CreatePropertyGraphInfo;
 
 class ClientContext;
 class Transaction;
@@ -37,6 +37,7 @@ class CollateCatalogEntry;
 class SchemaCatalogEntry;
 class TableCatalogEntry;
 class ViewCatalogEntry;
+class PropertyGraphCatalogEntry;
 class SequenceCatalogEntry;
 class TableFunctionCatalogEntry;
 class CopyFunctionCatalogEntry;
@@ -89,7 +90,7 @@ public:
 	//! Creates a collation in the catalog
 	CatalogEntry *CreateCollation(ClientContext &context, CreateCollationInfo *info);
 	//! Creates a property graph in the catalog
-	CatalogEntry *CreatePropertyGraph(ClientContext &context, CreatePropertyGraphInfo *info);
+	// CatalogEntry *CreatePropertyGraph(ClientContext &context, CreatePropertyGraphInfo *info);
 
 	//! Creates a table in the catalog.
 	CatalogEntry *CreateTable(ClientContext &context, SchemaCatalogEntry *schema, BoundCreateTableInfo *info);
@@ -110,8 +111,8 @@ public:
 	//! Creates a collation in the catalog
 	CatalogEntry *CreateCollation(ClientContext &context, SchemaCatalogEntry *schema, CreateCollationInfo *info);
 	//! Creates a property graph in the catalog
-	CatalogEntry *CreatePropertyGraph(ClientContext &context, SchemaCatalogEntry *schema,
-	                                  CreatePropertyGraphInfo *info);
+	// CatalogEntry *CreatePropertyGraph(ClientContext &context, SchemaCatalogEntry *schema,
+	//                                   CreatePropertyGraphInfo *info);
 
 	//! Drops an entry from the catalog
 	void DropEntry(ClientContext &context, DropInfo *info);

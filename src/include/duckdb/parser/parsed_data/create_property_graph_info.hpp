@@ -31,7 +31,7 @@ struct CreatePropertyGraphInfo : public CreateInfo {
 	string name;
 	vector<unique_ptr<PropertyGraphTable>> vertex_tables;
 	vector<unique_ptr<PropertyGraphTable>> edge_tables;
-	vector<unique_ptr<BaseTableRef>> table_ref_list;
+	// vector<unique_ptr<BaseTableRef>> table_ref_list;
 
 public:
 	unique_ptr<CreateInfo> Copy() const override {

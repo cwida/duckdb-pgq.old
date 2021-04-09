@@ -11,22 +11,15 @@
 #include "duckdb/catalog/standard_entry.hpp"
 #include "duckdb/common/unordered_map.hpp"
 #include "duckdb/parser/property_graph_table.hpp"
-#include "duckdb/parser/constraint.hpp"
 #include "duckdb/planner/bound_constraint.hpp"
 #include "duckdb/planner/expression.hpp"
 
 namespace duckdb {
 
 // class ColumnStatistics;
-class DataTable;
+// class DataTable;
 struct CreatePropertyGraphInfo;
 // struct BoundCreateTableInfo;
-
-// struct RenameColumnInfo;
-// struct AddColumnInfo;
-// struct RemoveColumnInfo;
-// struct SetDefaultInfo;
-// struct ChangeColumnTypeInfo;
 
 //! A table catalog entry
 class PropertyGraphCatalogEntry : public StandardEntry {
@@ -43,7 +36,7 @@ public:
 	string name;
 	vector<unique_ptr<PropertyGraphTable>> vertex_tables;
 	vector<unique_ptr<PropertyGraphTable>> edge_tables;
-	vector<unique_ptr<BaseTableRef>> table_ref_list;
+	// vector<unique_ptr<BaseTableRef>> table_ref_list;
 
 public:
 	//! Serialize the meta information of the PropertyGraphCatalogEntry a serializer
