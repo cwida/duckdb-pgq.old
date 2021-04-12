@@ -58,14 +58,16 @@ CatalogEntry *Catalog::CreateView(ClientContext &context, SchemaCatalogEntry *sc
 	return schema->CreateView(context, info);
 }
 
-// CatalogEntry *Catalog::CreatePropertyGraph(ClientContext &context, CreatePropertyGraphInfo *info) {
-// 	auto schema = GetSchema(context, info->schema);
-// 	return CreatePropertyGraph(context, schema, info);
-// }
+CatalogEntry *Catalog::CreatePropertyGraph(ClientContext &context, CreatePropertyGraphInfo *info) {
+	auto schema = GetSchema(context, info->schema);
+	return CreatePropertyGraph(context, schema, info);
+}
 
-// CatalogEntry *Catalog::CreatePropertyGraph(ClientContext &context, SchemaCatalogEntry *schema,
-// CreatePropertyGraphInfo *info) { 	ModifyCatalog(); 	return schema->CreatePropertyGraph(context, info);
-// }
+CatalogEntry *Catalog::CreatePropertyGraph(ClientContext &context, SchemaCatalogEntry *schema,
+                                           CreatePropertyGraphInfo *info) {
+	ModifyCatalog();
+	return schema->CreatePropertyGraph(context, info);
+}
 
 CatalogEntry *Catalog::CreateSequence(ClientContext &context, CreateSequenceInfo *info) {
 	auto schema = GetSchema(context, info->schema);
@@ -227,6 +229,16 @@ ViewCatalogEntry *Catalog::GetEntry(ClientContext &context, string schema_name, 
 		throw CatalogException("%s is not a view", name);
 	}
 	return (ViewCatalogEntry *)entry;
+}
+
+template <>
+PropertyGraphCatalogEntry *Catalog::GetEntry(ClientContext &context, string schema_name, const string &name,
+                                             bool if_exists, QueryErrorContext error_context) {
+	auto entry = GetEntry(context, CatalogType::PROPERTY_GRAPH_ENTRY, move(schema_name), name, if_exists);
+	if (!entry) {
+		return nullptr;
+	}
+	return (PropertyGraphCatalogEntry *)entry;
 }
 
 template <>

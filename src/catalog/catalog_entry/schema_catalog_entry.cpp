@@ -25,6 +25,7 @@
 #include "duckdb/parser/parsed_data/create_sequence_info.hpp"
 #include "duckdb/parser/parsed_data/create_table_function_info.hpp"
 #include "duckdb/parser/parsed_data/create_view_info.hpp"
+#include "duckdb/parser/parsed_data/create_property_graph_info.hpp"
 #include "duckdb/parser/parsed_data/drop_info.hpp"
 #include "duckdb/planner/parsed_data/bound_create_table_info.hpp"
 #include "duckdb/transaction/transaction.hpp"
@@ -100,10 +101,10 @@ CatalogEntry *SchemaCatalogEntry::CreateView(ClientContext &context, CreateViewI
 	return AddEntry(context, move(view), info->on_conflict);
 }
 
-// CatalogEntry *SchemaCatalogEntry::CreatePropertyGraph(ClientContext &context, CreatePropertyGraphInfo *info) {
-// 	auto property_graph = make_unique<PropertyGraphCatalogEntry>(catalog, this, info);
-// 	return AddEntry(context, move(property_graph), info->on_conflict);
-// }
+CatalogEntry *SchemaCatalogEntry::CreatePropertyGraph(ClientContext &context, CreatePropertyGraphInfo *info) {
+	auto property_graph = make_unique<PropertyGraphCatalogEntry>(catalog, this, info);
+	return AddEntry(context, move(property_graph), info->on_conflict);
+}
 
 CatalogEntry *SchemaCatalogEntry::CreateIndex(ClientContext &context, CreateIndexInfo *info, TableCatalogEntry *table) {
 	unordered_set<CatalogEntry *> dependencies;
@@ -233,6 +234,7 @@ string SchemaCatalogEntry::ToSQL() {
 CatalogSet &SchemaCatalogEntry::GetCatalogSet(CatalogType type) {
 	switch (type) {
 	case CatalogType::VIEW_ENTRY:
+	case CatalogType::PROPERTY_GRAPH_ENTRY:
 	case CatalogType::TABLE_ENTRY:
 		return tables;
 	case CatalogType::INDEX_ENTRY:

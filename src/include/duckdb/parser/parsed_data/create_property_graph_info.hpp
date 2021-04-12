@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include "duckdb/parser/parsed_data/create_property_graph_info.hpp"
+// #include "duckdb/parser/parsed_data/create_property_graph_info.hpp"
 #include "duckdb/parser/parsed_data/create_info.hpp"
 #include "duckdb/parser/property_graph_table.hpp"
 #include "duckdb/parser/tableref/basetableref.hpp"

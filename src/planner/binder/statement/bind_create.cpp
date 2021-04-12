@@ -82,12 +82,14 @@ void Binder::BindCreatePropertyGraphInfo(CreatePropertyGraphInfo &info) {
 
 	// }
 	// auto table = Catalog::GetCatalog(context).GetEntry<TableCatalogEntry>(context, stmt.schema, stmt.table);
+	auto pg_table =
+	    Catalog::GetCatalog(context).GetEntry<PropertyGraphCatalogEntry>(context, info.schema, info.name, true);
+	if (pg_table) {
+		throw BinderException("Property Graph Table %s already exists", info.name);
+	}
 	for (idx_t i = 0; i < info.vertex_tables.size(); i++) {
 		auto &vertex_table = info.vertex_tables[i];
-		// vertex_table->
-		// if (bound_table->type != TableReferenceType::BASE_TABLE) {
-		// 	throw BinderException("Can only delete from base table!");
-		// }
+
 		// auto &table_binding = (BoundBaseTableRef &)*bound_table;
 		// }
 
@@ -108,16 +110,7 @@ void Binder::BindCreatePropertyGraphInfo(CreatePropertyGraphInfo &info) {
 				throw BinderException("Column %s not found in table %s", vertex_table->keys[key_index], table->name);
 			}
 		}
-
-		// auto table_or_view = Catalog::GetCatalog(context).GetEntry(context, CatalogType::TABLE_ENTRY,
-		// ref.schema_name,
-		//                                                            table_binding., false, error_context);
-		// check if underlying tables exist.
-		// check if columns referneced by tables exist
-		// table_binding ??
-		// should I create a column map ?
 		// primary key constraint checked.
-		// table_catalogue_entry
 		// do a get_catalog_entry
 	}
 }
