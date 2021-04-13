@@ -46,6 +46,8 @@ public:
 	//! The labels associated with the table
 	vector<string> labels;
 	//! The statement length within the query string
+	bool is_vertex_table;
+
 	vector<string> source_key;
 
 	string source_key_reference;

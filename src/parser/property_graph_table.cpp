@@ -12,16 +12,16 @@ namespace duckdb {
 void PropertyGraphTable::Serialize(Serializer &serializer) const {
 	serializer.WriteString(name);
 	// serializer.Write<BaseTableRef>(table);
-	serializer.Write<idx_t>(labels.size());
-	for (auto &label : labels) {
-		serializer.WriteString(label);
+	serializer.WriteStringVector(keys);
+	serializer.WriteStringVector(labels);
+	// use bool flag instead ?
+	serializer.Write<bool>(is_vertex_table);
+	if (!is_vertex_table) {
+		serializer.WriteStringVector(source_key);
+		serializer.WriteString(source_key_reference);
+		serializer.WriteStringVector(destination_key);
+		serializer.WriteString(destination_key_reference);
 	}
-	serializer.Write<idx_t>(keys.size());
-	for (auto &key : keys) {
-		serializer.WriteString(key);
-	}
-	// type.Serialize(serializer);
-	// serializer.WriteOptional(default_value);
 }
 
 unique_ptr<PropertyGraphTable> PropertyGraphTable::Deserialize(Deserializer &source) {
@@ -30,13 +30,14 @@ unique_ptr<PropertyGraphTable> PropertyGraphTable::Deserialize(Deserializer &sou
 	// auto default_value = source.ReadOptional<ParsedExpression>();
 	auto pg_table = make_unique<PropertyGraphTable>();
 	pg_table->name = source.Read<string>();
-	auto label_size = source.Read<idx_t>();
-	for (idx_t i = 0; i < label_size; i++) {
-		pg_table->labels.push_back(source.Read<string>());
-	}
-	auto key_size = source.Read<idx_t>();
-	for (idx_t i = 0; i < key_size; i++) {
-		pg_table->keys.push_back(source.Read<string>());
+	source.ReadStringVector(pg_table->keys);
+	source.ReadStringVector(pg_table->labels);
+	pg_table->is_vertex_table = source.Read<bool>();
+	if (!pg_table->is_vertex_table) {
+		source.ReadStringVector(pg_table->source_key);
+		pg_table->source_key_reference = source.Read<string>();
+		source.ReadStringVector(pg_table->destination_key);
+		pg_table->destination_key_reference = source.Read<string>();
 	}
 	return pg_table;
 }

@@ -41,6 +41,7 @@ unique_ptr<PropertyGraphTable> Transformer::TranformPropertyGraphTable(PGPropert
 		// pg_table->keys = keys;
 		// pg_table->labels = labels;
 		// pg_table->table = move(tableref);
+		pg_table->is_vertex_table = true;
 		return pg_table;
 		// return make_unique<PropertyGraphTable>(move(tableref), keys, labels);
 		// return unique_ptr<PropertyGraphTable>(new PropertyGraphTable(keys, labels));
@@ -60,6 +61,7 @@ unique_ptr<PropertyGraphTable> Transformer::TranformPropertyGraphTable(PGPropert
 		pg_table->source_key_reference = source_key_reference;
 		pg_table->destination_key_reference = destination_key_reference;
 		pg_table->destination_key = destination_key;
+		pg_table->is_vertex_table = false;
 		return pg_table;
 		// return make_unique<PropertyGraphTable>(move(tableref), keys, labels, source_key, source_key_reference,
 		//                                        destination_key, destination_key_reference);

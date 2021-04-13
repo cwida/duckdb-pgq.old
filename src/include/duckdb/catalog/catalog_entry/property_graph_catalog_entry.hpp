@@ -28,10 +28,10 @@ public:
 	vector<unique_ptr<PropertyGraphTable>> edge_tables;
 
 public:
-	//! Serialize the meta information of the PropertyGraphCatalogEntry a serializer
-	// virtual void Serialize(Serializer &serializer);
-	// //! Deserializes to a CreatePropertyGraphInfo
-	// static unique_ptr<CreatePropertyGraphInfo> Deserialize(Deserializer &source);
+	// ! Serialize the meta information of the PropertyGraphCatalogEntry a serializer
+	virtual void Serialize(Serializer &serializer);
+	//! Deserializes to a CreatePropertyGraphInfo
+	static unique_ptr<CreatePropertyGraphInfo> Deserialize(Deserializer &source);
 
 	unique_ptr<CatalogEntry> Copy(ClientContext &context) override;
 

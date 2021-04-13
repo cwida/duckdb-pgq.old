@@ -4,6 +4,7 @@
 #include "duckdb/catalog/catalog_entry/schema_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/table_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/view_catalog_entry.hpp"
+#include "duckdb/catalog/catalog_entry/property_graph_catalog_entry.hpp"
 #include "duckdb/main/database.hpp"
 #include "duckdb/parser/parsed_data/alter_table_info.hpp"
 
@@ -158,6 +159,17 @@ void WriteAheadLog::WriteDropView(ViewCatalogEntry *entry) {
 	writer->Write<WALType>(WALType::DROP_VIEW);
 	writer->WriteString(entry->schema->name);
 	writer->WriteString(entry->name);
+}
+
+//===--------------------------------------------------------------------===//
+// PROPERTY GRAPH
+//===--------------------------------------------------------------------===//
+void WriteAheadLog::WriteCreatePropertyGraph(PropertyGraphCatalogEntry *entry) {
+	if (skip_writing) {
+		return;
+	}
+	writer->Write<WALType>(WALType::CREATE_PROPERTY_GRAPH);
+	entry->Serialize(*writer);
 }
 
 //===--------------------------------------------------------------------===//

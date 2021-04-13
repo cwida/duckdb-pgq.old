@@ -45,7 +45,7 @@ private:
 	void ReplayCreateView();
 	void ReplayDropView();
 
-	// void ReplayCreatePropertyGraph();
+	void ReplayCreatePropertyGraph();
 
 	void ReplayCreateSchema();
 	void ReplayDropSchema();
@@ -369,18 +369,18 @@ void ReplayState::ReplayDropMacro() {
 	catalog.DropEntry(context, &info);
 }
 
-//===--------------------------------------------------------------------===//
+// ===--------------------------------------------------------------------===//
 // Replay Property Graph
-//===--------------------------------------------------------------------===//
-// void ReplayState::ReplayCreatePropertyGraph() {
-// 	auto entry = PropertyGraphCatalogEntry::Deserialize(source);
-// 	if (deserialize_only) {
-// 		return;
-// 	}
+// ===--------------------------------------------------------------------===//
+void ReplayState::ReplayCreatePropertyGraph() {
+	auto entry = PropertyGraphCatalogEntry::Deserialize(source);
+	if (deserialize_only) {
+		return;
+	}
 
-// 	auto &catalog = Catalog::GetCatalog(context);
-// 	catalog.CreatePropertyGraph(context, entry.get());
-// }
+	auto &catalog = Catalog::GetCatalog(context);
+	catalog.CreatePropertyGraph(context, entry.get());
+}
 
 //===--------------------------------------------------------------------===//
 // Replay Data
