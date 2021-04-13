@@ -30,8 +30,14 @@ CREATE TABLE transfers (TID INTEGER, FROM_ID INTEGER, TO_ID INTEGER, Transfer_Da
 statement ok
 INSERT Into transfers VALUES (102001, 10, 20, '2020-01-01', 5000), (103001, 10, 30, '2020-01-01', 15000), (302001, 30, 20, '2020-02-01', 3000);
 
-# Error in physical plan when saving to catalog
+# Statement should pass
 statement ok
+CREATE PROPERTY GRAPH aml 
+VERTEX TABLES ( account KEY ( AID ) LABEL account, customer KEY ( CID ) LABEL c )
+EDGE TABLES ( transfers KEY ( from_id ) SOURCE KEY ( from_id ) REFERENCES account DESTINATION KEY ( to_id ) REFERENCES account LABEL t )
+
+#Binder error graph already exists
+statement error
 CREATE PROPERTY GRAPH aml 
 VERTEX TABLES ( account KEY ( AID ) LABEL account, customer KEY ( CID ) LABEL c )
 EDGE TABLES ( transfers KEY ( from_id ) SOURCE KEY ( from_id ) REFERENCES account DESTINATION KEY ( to_id ) REFERENCES account LABEL t )
