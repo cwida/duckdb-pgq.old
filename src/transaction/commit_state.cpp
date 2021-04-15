@@ -78,6 +78,9 @@ void CommitState::WriteCatalogEntry(CatalogEntry *entry, data_ptr_t dataptr) {
 	case CatalogType::MACRO_ENTRY:
 		log->WriteCreateMacro((MacroCatalogEntry *)parent);
 		break;
+	case CatalogType::PROPERTY_GRAPH_ENTRY:
+		log->WriteCreatePropertyGraph((PropertyGraphCatalogEntry *)parent);
+		break;
 	case CatalogType::DELETED_ENTRY:
 		if (entry->type == CatalogType::TABLE_ENTRY) {
 			auto table_entry = (TableCatalogEntry *)entry;
@@ -97,7 +100,6 @@ void CommitState::WriteCatalogEntry(CatalogEntry *entry, data_ptr_t dataptr) {
 			throw NotImplementedException("Don't know how to drop this type!");
 		}
 		break;
-
 	case CatalogType::INDEX_ENTRY:
 	case CatalogType::PREPARED_STATEMENT:
 	case CatalogType::AGGREGATE_FUNCTION_ENTRY:

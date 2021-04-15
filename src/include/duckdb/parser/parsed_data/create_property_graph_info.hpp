@@ -8,10 +8,10 @@
 
 #pragma once
 
-// #include "duckdb/parser/parsed_data/create_property_graph_info.hpp"
 #include "duckdb/parser/parsed_data/create_info.hpp"
 #include "duckdb/parser/property_graph_table.hpp"
 #include "duckdb/parser/tableref/basetableref.hpp"
+#include "duckdb/parser/property_graph_table.hpp"
 
 namespace duckdb {
 
@@ -19,24 +19,27 @@ struct CreatePropertyGraphInfo : public CreateInfo {
 	CreatePropertyGraphInfo() : CreateInfo(CatalogType::PROPERTY_GRAPH_ENTRY) {
 	}
 
-	// CreateViewInfo() : CreateInfo(CatalogType::VIEW_ENTRY) {
-	// }
-	// CreateViewInfo(string schema, string view_name)
-	//     : CreateInfo(CatalogType::VIEW_ENTRY, schema), view_name(view_name) {
-	// }
+	CreatePropertyGraphInfo(string schema, string pg_name)
+	    : CreateInfo(CatalogType::PROPERTY_GRAPH_ENTRY, schema), name(pg_name) {
+	}
 
-	// add second constructor with arguments ???
-
-	// add copy function
+	//! Property Graph name
 	string name;
+	//! List of vertex tabels
 	vector<unique_ptr<PropertyGraphTable>> vertex_tables;
+	//! List of edge tabels
 	vector<unique_ptr<PropertyGraphTable>> edge_tables;
-	// vector<unique_ptr<BaseTableRef>> table_ref_list;
 
 public:
 	unique_ptr<CreateInfo> Copy() const override {
-		auto result = make_unique<CreatePropertyGraphInfo>();
+		auto result = make_unique<CreatePropertyGraphInfo>(schema, name);
 		CopyProperties(*result);
+		for (auto &vertex_table : vertex_tables) {
+			result->vertex_tables.push_back(vertex_table->Copy());
+		}
+		for (auto &edge_table : edge_tables) {
+			result->edge_tables.push_back(edge_table->Copy());
+		}
 		return move(result);
 	}
 };

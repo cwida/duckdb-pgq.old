@@ -22,6 +22,7 @@ class SchemaCatalogEntry;
 class SequenceCatalogEntry;
 class TableCatalogEntry;
 class ViewCatalogEntry;
+class PropertyGraphCatalogEntry;
 
 //! CheckpointManager is responsible for checkpointing the database
 class CheckpointManager {
@@ -47,12 +48,14 @@ private:
 	void WriteView(ViewCatalogEntry &table);
 	void WriteSequence(SequenceCatalogEntry &table);
 	void WriteMacro(MacroCatalogEntry &table);
+	void WritePropertyGraph(PropertyGraphCatalogEntry &table);
 
 	void ReadSchema(ClientContext &context, MetaBlockReader &reader);
 	void ReadTable(ClientContext &context, MetaBlockReader &reader);
 	void ReadView(ClientContext &context, MetaBlockReader &reader);
 	void ReadSequence(ClientContext &context, MetaBlockReader &reader);
 	void ReadMacro(ClientContext &context, MetaBlockReader &reader);
+	void ReadPropertyGraph(ClientContext &context, MetaBlockReader &reader);
 };
 
 } // namespace duckdb

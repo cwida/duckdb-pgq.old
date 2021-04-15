@@ -90,18 +90,12 @@ void Binder::BindCreatePropertyGraphInfo(CreatePropertyGraphInfo &info) {
 	for (idx_t i = 0; i < info.vertex_tables.size(); i++) {
 		auto &vertex_table = info.vertex_tables[i];
 
-		// auto &table_binding = (BoundBaseTableRef &)*bound_table;
-		// }
-
-		// auto bound_table = Bind(*vertex_table->table);
-		// auto table = Catalog::GetCatalog(context).GetEntry<TableCatalogEntry>(context, stmt.schema, stmt.table);
 		// DEFAULT_SCHEMA = main
-		// auto table = Catalog::GetCatalog(context).GetEntry<TableCatalogEntry>(context, "", "account");
-		auto table = Catalog::GetCatalog(context).GetEntry<TableCatalogEntry>(context, vertex_table->table->schema_name,
-		                                                                      vertex_table->table->table_name);
+		// can schema of info and underlying table be different ?
+		auto table = Catalog::GetCatalog(context).GetEntry<TableCatalogEntry>(context, info.schema, vertex_table->name);
 
 		if (!table) {
-			throw BinderException("Table %s doesnot exist", vertex_table->table->table_name);
+			throw BinderException("Table %s doesnot exist", vertex_table->name);
 		}
 		for (idx_t key_index = 0; key_index < vertex_table->keys.size(); key_index++) {
 			auto entry = table->name_map.find(vertex_table->keys[key_index]);

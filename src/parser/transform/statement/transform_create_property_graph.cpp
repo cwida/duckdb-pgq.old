@@ -8,6 +8,15 @@ namespace duckdb {
 
 using namespace duckdb_libpgquery;
 
+// unique_ptr<BaseTableRef> get_table_reference(string name) {
+// 	auto tableref = make_unique<BaseTableRef>();
+// 	tableref->table_name = table->name->relname;
+// 	if (table->name->schemaname) {
+// 		tableref->schema_name = table->name->schemaname;
+// 	}
+// 	return tableref;
+// }
+
 unique_ptr<PropertyGraphTable> Transformer::TranformPropertyGraphTable(PGPropertyGraphTable *table) {
 	// string
 	// auto pg_table = make_unique<PropertyGraphTable>();
@@ -17,11 +26,6 @@ unique_ptr<PropertyGraphTable> Transformer::TranformPropertyGraphTable(PGPropert
 	auto pg_table = make_unique<PropertyGraphTable>();
 	auto qname = TransformQualifiedName(table->name);
 	auto ref = TransformRangeVar(table->name);
-	auto tableref = make_unique<BaseTableRef>();
-	tableref->table_name = table->name->relname;
-	if (table->name->schemaname) {
-		tableref->schema_name = table->name->schemaname;
-	}
 
 	for (auto kc = table->keys->head; kc; kc = kc->next) {
 		keys.push_back(string(reinterpret_cast<PGValue *>(kc->data.ptr_value)->val.str));
@@ -30,10 +34,10 @@ unique_ptr<PropertyGraphTable> Transformer::TranformPropertyGraphTable(PGPropert
 	for (auto kc = table->labels->head; kc; kc = kc->next) {
 		labels.push_back(string(reinterpret_cast<PGValue *>(kc->data.ptr_value)->val.str));
 	}
-	pg_table->name = name;
+	pg_table->name = qname.name;
 	pg_table->keys = keys;
 	pg_table->labels = labels;
-	pg_table->table = move(tableref);
+	// pg_table->table = move(tableref);
 	if (table->is_vertex_table) {
 		// 	// info->vertex_tables.push_back()
 		// 	info->vertex_tables.push_back(PropertyGraphTable(qname.name, keys, labels));
