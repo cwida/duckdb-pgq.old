@@ -45,3 +45,36 @@ statement error
 CREATE PROPERTY GRAPH aml 
 VERTEX TABLES ( account KEY ( AID ) LABEL account, customer KEY ( CID ) LABEL c )
 EDGE TABLES ( transfers KEY ( from_id ) SOURCE KEY ( from_id ) REFERENCES account DESTINATION KEY ( to_id ) REFERENCES account LABEL t )
+
+#incorrect column name of vertex table
+statement error
+CREATE PROPERTY GRAPH aml 
+VERTEX TABLES ( account KEY ( AID1 ) LABEL account, customer KEY ( CID ) LABEL c )
+EDGE TABLES ( transfers KEY ( from_id ) SOURCE KEY ( from_id ) REFERENCES account DESTINATION KEY ( to_id ) REFERENCES account LABEL t )
+
+#missing edge tables
+statement error
+CREATE PROPERTY GRAPH aml 
+VERTEX TABLES ( account KEY ( AID1 ) LABEL account, customer KEY ( CID ) LABEL c )
+
+#label account repeated in vertex tables
+statement error
+CREATE PROPERTY GRAPH aml2 
+VERTEX TABLES ( account KEY ( AID ) LABEL account, customer KEY ( CID ) LABEL account )
+EDGE TABLES ( transfers KEY ( from_id ) SOURCE KEY ( from_id ) REFERENCES account DESTINATION KEY ( to_id ) REFERENCES account LABEL t )
+
+#label c repeated in edge and vertex tables
+statement error
+CREATE PROPERTY GRAPH aml1 
+VERTEX TABLES ( account KEY ( AID ) LABEL account, customer KEY ( CID ) LABEL c )
+EDGE TABLES ( transfers KEY ( from_id ) SOURCE KEY ( from_id ) REFERENCES account DESTINATION KEY ( to_id ) REFERENCES account LABEL c )
+
+
+# statement ok
+# PRAGMA table_info('aml')
+
+
+
+
+
+

@@ -12,6 +12,8 @@
 #include "duckdb/common/enums/expression_type.hpp"
 #include "duckdb/common/types.hpp"
 #include "duckdb/common/unordered_map.hpp"
+#include "duckdb/common/unordered_set.hpp"
+
 #include "duckdb/parser/qualified_name.hpp"
 #include "duckdb/parser/property_graph_table.hpp"
 #include "duckdb/parser/tokens.hpp"
@@ -181,7 +183,7 @@ private:
 	void TransformCTE(duckdb_libpgquery::PGWithClause *de_with_clause, QueryNode &select);
 	unique_ptr<SelectStatement> TransformRecursiveCTE(duckdb_libpgquery::PGCommonTableExpr *node,
 	                                                  CommonTableExpressionInfo &info);
-	unique_ptr<PropertyGraphTable> TranformPropertyGraphTable(duckdb_libpgquery::PGPropertyGraphTable *table);
+	unique_ptr<PropertyGraphTable> TranformPropertyGraphTable(duckdb_libpgquery::PGPropertyGraphTable *table, unordered_set<string> &labels_set);
 	// Operator String to ExpressionType (e.g. + => OPERATOR_ADD)
 	ExpressionType OperatorToExpressionType(string &op);
 

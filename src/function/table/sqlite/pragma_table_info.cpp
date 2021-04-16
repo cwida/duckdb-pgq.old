@@ -3,6 +3,8 @@
 #include "duckdb/catalog/catalog.hpp"
 #include "duckdb/catalog/catalog_entry/table_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/view_catalog_entry.hpp"
+#include "duckdb/catalog/catalog_entry/property_graph_catalog_entry.hpp"
+
 #include "duckdb/parser/qualified_name.hpp"
 #include "duckdb/planner/constraints/bound_not_null_constraint.hpp"
 #include "duckdb/planner/constraints/bound_unique_constraint.hpp"
@@ -155,6 +157,38 @@ static void pragma_table_info_view(PragmaTableOperatorData &data, ViewCatalogEnt
 	data.offset = next;
 }
 
+static void pragma_table_info_property_graph(PragmaTableOperatorData &data, PropertyGraphCatalogEntry *pg_table, DataChunk &output) {
+	if (data.offset >= pg_table->types.size()) {
+		// finished returning values
+		return;
+	}
+	// start returning values
+	// either fill up the chunk or return all the remaining columns
+	idx_t next = MinValue<idx_t>(data.offset + STANDARD_VECTOR_SIZE, pg_table->types.size());
+	output.SetCardinality(next - data.offset);
+
+	// for (idx_t i = data.offset; i < next; i++) {
+	// 	auto index = i - data.offset;
+	// 	auto type = view->types[index];
+	// 	auto &name = view->aliases[index];
+	// 	// return values:
+	// 	// "cid", PhysicalType::INT32
+
+	// 	output.SetValue(0, index, Value::INTEGER((int32_t)index));
+	// 	// "name", PhysicalType::VARCHAR
+	// 	output.SetValue(1, index, Value(name));
+	// 	// "type", PhysicalType::VARCHAR
+	// 	output.SetValue(2, index, Value(type.ToString()));
+	// 	// "notnull", PhysicalType::BOOL
+	// 	output.SetValue(3, index, Value::BOOLEAN(false));
+	// 	// "dflt_value", PhysicalType::VARCHAR
+	// 	output.SetValue(4, index, Value());
+	// 	// "pk", PhysicalType::BOOL
+	// 	output.SetValue(5, index, Value::BOOLEAN(false));
+	// }
+	// data.offset = next;
+}
+
 static void pragma_table_info(ClientContext &context, const FunctionData *bind_data_,
                               FunctionOperatorData *operator_state, DataChunk &output) {
 	auto &bind_data = (PragmaTableFunctionData &)*bind_data_;
@@ -165,6 +199,9 @@ static void pragma_table_info(ClientContext &context, const FunctionData *bind_d
 		break;
 	case CatalogType::VIEW_ENTRY:
 		pragma_table_info_view(state, (ViewCatalogEntry *)bind_data.entry, output);
+		break;
+	case CatalogType::PROPERTY_GRAPH_ENTRY:
+		pragma_table_info_property_graph(state, (PropertyGraphCatalogEntry *) bind_data.entry, output);
 		break;
 	default:
 		throw NotImplementedException("Unimplemented catalog type for pragma_table_info");

@@ -1,6 +1,6 @@
 // //select.y 
 GraphTable:
-	IDENT GRAPH_TABLE
+	IDENT GRAPH_TABLE               { }
 	'(' GraphPattern COLUMNS '(' GraphTableColumnDefinitionList ')' ')'
 	;
 
@@ -17,11 +17,23 @@ AsIdentOptional:
 GraphPattern:
 	MATCH PathPatternList
 	GraphPatternWhereClauseOptional
+    ColumnsClauseOptional
 	;
 
 GraphPatternWhereClauseOptional:
 	WHERE a_expr
 	;
+
+// Columns optional
+ColumnsClauseOptional:
+    COLUMNS '(' ColumnList ')'
+    | ;
+
+ColumnList:
+			ColumnsElement  									{ $$ = list_make1($1); }
+			| ColumnList ',' ColumnElement 	                    { $$ = lappend($1, $3); }
+
+ColumnElement: qualified_name AS IDENT
 
 PathPatternList:
 	PathPatternNameOptional PathConcatenation
@@ -66,8 +78,8 @@ IsOrColon:
 	;
 
 MandatoryEdgePatternFiller:
-	GraphPatternVariableDeclaration IsLabelExpressionOptional
-	| IsOrColon IDENT
+	GraphPatternVariableDeclaration IsLabelExpressionOptional   
+	| IsOrColon IDENT                   
 	;
 
 EdgePattern:

@@ -27,6 +27,8 @@ public:
 	vector<unique_ptr<PropertyGraphTable>> vertex_tables;
 	vector<unique_ptr<PropertyGraphTable>> edge_tables;
 
+	vector<LogicalType> types;
+
 public:
 	// ! Serialize the meta information of the PropertyGraphCatalogEntry a serializer
 	virtual void Serialize(Serializer &serializer);

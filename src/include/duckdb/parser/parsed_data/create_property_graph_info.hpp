@@ -29,6 +29,8 @@ struct CreatePropertyGraphInfo : public CreateInfo {
 	vector<unique_ptr<PropertyGraphTable>> vertex_tables;
 	//! List of edge tabels
 	vector<unique_ptr<PropertyGraphTable>> edge_tables;
+	//! Labels map
+	unordered_set<string> labels_set;
 
 public:
 	unique_ptr<CreateInfo> Copy() const override {

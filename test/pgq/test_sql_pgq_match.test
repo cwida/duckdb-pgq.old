@@ -1,0 +1,32 @@
+# name: test/pgq/test_sql_pgq_match.test
+# description: MATCH 
+# group: [pgq]
+
+# statement ok
+# CREATE TABLE customer (CID INTEGER PRIMARY KEY, NAME TEXT, CITY TEXT);
+
+# select c1id, c2id, c3id 
+# from GRAPH_TABLE (aml, 
+# MATCH 
+#     (c1 IS customer)-[IS transfers]->
+#     (c2 IS customer)-[IS transfers]->
+#     (c3 is customer)-[IS transfers]->(c1)
+#     COLUMNS (
+#         c1.cid AS c1id,
+#         c2.cid AS c2id,
+#         c3.cid AS c3id
+#     )
+# )
+
+
+# transformed to 
+
+# Create AST of this query
+# (select c1.cid as c1id, c2.cid as c2id, c3.cid as c3id
+# from customer c1
+# JOIN transfers t1 ON c1.cid = t1.from_id
+# JOIN customer c2 ON c2.cid = t1.to_id
+# JOIN transfers t2 ON c2.cid = t2.from_id
+# JOIN customer c3 ON c3.cid = t2.to_id
+# JOIN transfers t3 ON t3.from_id = c3.cid AND t3.to_id = c1.cid) gt
+

@@ -3,6 +3,7 @@
 #include "duckdb/parser/parsed_data/create_property_graph_info.hpp"
 #include "duckdb/parser/tableref/basetableref.hpp"
 #include "duckdb/parser/property_graph_table.hpp"
+#include "duckdb/common/unordered_set.hpp"
 
 namespace duckdb {
 
@@ -17,7 +18,7 @@ using namespace duckdb_libpgquery;
 // 	return tableref;
 // }
 
-unique_ptr<PropertyGraphTable> Transformer::TranformPropertyGraphTable(PGPropertyGraphTable *table) {
+unique_ptr<PropertyGraphTable> Transformer::TranformPropertyGraphTable(PGPropertyGraphTable *table, unordered_set<string> &label_set) {
 	// string
 	// auto pg_table = make_unique<PropertyGraphTable>();
 	// info->name = string(stmt->name);
@@ -32,7 +33,16 @@ unique_ptr<PropertyGraphTable> Transformer::TranformPropertyGraphTable(PGPropert
 	}
 
 	for (auto kc = table->labels->head; kc; kc = kc->next) {
-		labels.push_back(string(reinterpret_cast<PGValue *>(kc->data.ptr_value)->val.str));
+		
+		auto label = string(reinterpret_cast<PGValue *>(kc->data.ptr_value)->val.str);
+		auto entry = label_set.find(label);
+		if (entry == label_set.end()) {
+			labels.push_back(label);
+			label_set.insert(label);	
+		}
+		else {
+			throw Exception("Labels need to be unique in PropertyGraph table. Label " + label + " has been repeated.");
+		} 			
 	}
 	pg_table->name = qname.name;
 	pg_table->keys = keys;
@@ -88,45 +98,46 @@ unique_ptr<CreateStatement> Transformer::TransformCreatePropertyGraph(PGNode *no
 
 	auto result = make_unique<CreateStatement>();
 	auto info = make_unique<CreatePropertyGraphInfo>();
+	unordered_set<string> label_set;
 
 	info->name = string(stmt->name);
 	info->on_conflict = OnCreateConflict::ERROR_ON_CONFLICT;
 	// TransformExpressionList(stmt->vertex_tables);
 
 	for (auto c = stmt->vertex_tables->head; c != NULL; c = lnext(c)) {
-		// auto node = reinterpret_cast<PGNode *>(c->data.ptr_value);
-		// switch (node->type) {
+		auto node = reinterpret_cast<PGNode *>(c->data.ptr_value);
+		switch (node->type) {
 
-		// case T_PGPropertyGraphTable: {
-		auto graph_table = reinterpret_cast<PGPropertyGraphTable *>(c->data.ptr_value);
-		auto qname = TransformQualifiedName(graph_table->name);
-		auto pg_table = TranformPropertyGraphTable(graph_table);
-		info->vertex_tables.push_back(move(pg_table));
-		// break;
-		// }
+		case T_PGPropertyGraphTable: {
+			auto graph_table = reinterpret_cast<PGPropertyGraphTable *>(c->data.ptr_value);
+			auto qname = TransformQualifiedName(graph_table->name);
+			auto pg_table = TranformPropertyGraphTable(graph_table, label_set);
+			info->vertex_tables.push_back(move(pg_table));
+			break;
+		}
 		// printf("%d", node->type);
-		// default:
-		// 	throw NotImplementedException("ColumnDef type not handled yet");
-		// }
+		default:
+			throw NotImplementedException("Node type not handled yet");
+		}
 	}
 
 	for (auto c = stmt->edge_tables->head; c != NULL; c = lnext(c)) {
-		// auto node = reinterpret_cast<PGNode *>(c->data.ptr_value);
-		// switch (node->type) {
+		auto node = reinterpret_cast<PGNode *>(c->data.ptr_value);
+		switch (node->type) {
 
-		// case T_PGPropertyGraphTable: {
-		auto graph_table = reinterpret_cast<PGPropertyGraphTable *>(c->data.ptr_value);
-		// (void)graph_table;
-		auto qname = TransformQualifiedName(graph_table->name);
-		auto pg_table = TranformPropertyGraphTable(graph_table);
-		info->edge_tables.push_back(move(pg_table));
-		// break;
-		// }
-		// default:
-		// 	throw NotImplementedException("ColumnDef type not handled yet");
-		// }
+		case T_PGPropertyGraphTable: {
+			auto graph_table = reinterpret_cast<PGPropertyGraphTable *>(c->data.ptr_value);
+			// (void)graph_table;
+			auto qname = TransformQualifiedName(graph_table->name);
+			auto pg_table = TranformPropertyGraphTable(graph_table, label_set);
+			info->edge_tables.push_back(move(pg_table));
+			break;
+		}
+		default:
+			throw NotImplementedException("ColumnDef type not handled yet");
+		}
 	}
-
+	info->labels_set = label_set;
 	result->info = move(info);
 	return result;
 }
