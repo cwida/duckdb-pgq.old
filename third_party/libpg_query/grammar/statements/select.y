@@ -215,6 +215,10 @@ simple_select:
 				{
 					$$ = makeSetOp(PG_SETOP_EXCEPT, $3, $1, $4);
 				}
+			// | SELECT opt_target_list FROM GraphTableStmt
+			// 	{
+			// 		$$ = $4;
+			// 	}
 		;
 
 /*
@@ -717,6 +721,7 @@ values_clause:
 
 from_clause:
 			FROM from_list							{ $$ = $2; }
+			| FROM GRAPH_TABLE GraphTableStmt		{ $$ = $3; }
 			| /*EMPTY*/								{ $$ = NIL; }
 		;
 

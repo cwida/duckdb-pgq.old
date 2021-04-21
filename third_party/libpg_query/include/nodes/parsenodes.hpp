@@ -1641,9 +1641,10 @@ typedef struct PGAlterSeqStmt {
 	bool missing_ok; /* skip error if a role is missing? */
 } PGAlterSeqStmt;
 
-/*
-CREATE Property Graph Statement
-*/
+/* ----------------------
+ *		CREATE PROPERTY GRAPH Statement
+ * ----------------------
+ */
 typedef struct PGCreatePropertyGraphStmt {
 	PGNodeTag type;
 	char *name;
@@ -1676,6 +1677,19 @@ typedef struct PGPropertyGraphTable {
 	// PGConstraint *destination;
 } PGPropertyGraphTable;
 
+typedef struct PGMatchPattern {
+	char *name;
+	char *pg_name;
+	PGNode *pattern;
+	PGNode *where_clause;
+	PGList *columns;
+
+} PGMatchPattern;
+
+typedef struct PGVertexPattern {
+	char *variable_name;
+	char *alias;
+} PGVertexPattern;
 
 
 /* ----------------------

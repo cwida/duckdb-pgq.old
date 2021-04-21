@@ -481,6 +481,7 @@ typedef enum PGNodeTag {
 	T_PGSampleSize,
 	T_PGSampleOptions,
 	T_PGPropertyGraphTable,
+	T_PGMatchPattern, 
 
 	/*
 	 * TAGS FOR REPLICATION GRAMMAR PARSE NODES (replnodes.h)

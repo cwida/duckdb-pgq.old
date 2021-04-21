@@ -32,3 +32,4 @@ VariableResetStmt
 VariableSetStmt
 VariableShowStmt
 ViewStmt
+GraphTableStmt
