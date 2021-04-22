@@ -10,7 +10,7 @@ GraphTableStmt:
     ColumnsClauseOptional
      ')' qualified_name
     {
-        // PGMatchPattern *n = makeNode(PGMatchPattern);
+        PGMatchPattern *n = makeNode(PGMatchPattern);
         n->pg_name = $2;
         n->pattern = $5;
         n->where_clause = $6;
@@ -92,7 +92,7 @@ PathPatternList:
 // Identifier is a Path Name.
 PathPatternNameOptional:
 	IDENT AS                                            {$$ = $1; }
-	| /* EMPTY */                                       {$$ = NIL;}
+	| /* EMPTY */                                       {$$ = NULL;}
 	;
 
 PathConcatenation:
@@ -108,25 +108,25 @@ ElementPattern:
 VertexPattern:
 	'(' GraphPatternVariableDeclarationOptional IsLabelExpressionOptional ')' 
     { 
-        // PGVertexPattern *n = makeNode(PGVertexPattern);
-        // n->variable_name = $2;
-        // n->alias = $3;
-        // $$ = (PGNode *) n;
-        $2->alias = makeAlias($3, NIL);
-			$$ = $2;
+        PGVertexPattern *n = makeNode(PGVertexPattern);
+        n->variable_name = $2;
+        n->alias = $3;
+        $$ = (PGNode *) n;
+        // $2->alias = makeAlias($3, NIL);
+		// 	$$ = $2;
         }
 	;
 
 //Ident is a graph pattern variable
 GraphPatternVariableDeclarationOptional:
 	IDENT                                   { $$ = $1; }
-	| /* EMPTY */                           { $$ = NIL; }
+	| /* EMPTY */                           { $$ = NULL; }
 	;
 
 //Ident is a label name 
 IsLabelExpressionOptional:
 	IsOrColon IDENT                     { $$ = $2; }
-	| /* EMPTY */                       { $$ = NIL; }
+	| /* EMPTY */                       { $$ = NULL; }
 	;
 
 IsOrColon:
@@ -138,29 +138,33 @@ IsOrColon:
 MandatoryEdgePatternFiller:
 	IDENT IsLabelExpressionOptional   
     { 
-        // PGVertexPattern *n = makeNode(PGVertexPattern);
-        // n->variable_name = $1;
-        // n->alias = $2;
-        // $$ = (PGNode *) n;
+        PGVertexPattern *n = makeNode(PGVertexPattern);
+        n->variable_name = $1;
+        n->alias = $2;
+        $$ = (PGNode *) n;
         // // $$ = $1;
-            $1->alias = makeAlias($2, NIL);
-			$$ = $1;
+        // $$ = makeNode(PGAlias);
+		// $$->aliasname = $2;
+            // $1->alias = makeAlias($2, NIL);
+			// $$ = $1;
     }
 	| 
     IsOrColon IDENT                                       
     { 
-        // PGVertexPattern *n = makeNode(PGVertexPattern);
-        // n->variable_name = $2;
+        PGVertexPattern *n = makeNode(PGVertexPattern);
+        n->variable_name = $2;
         // // n->alias = $2;
-        // $$ = (PGNode *) n;
-        $$ = $2; 
+        $$ = (PGNode *) n;
+        // $$ = $2; 
+        // $$ = makeNode(PGAlias);
+		// $$->aliasname = $2;
     }
 // 	;
 
 EdgePattern:
 	FullEdgePattern                                         {$$ = $1;}
 	| 
-    AbbreviatedEdgePattern                                {$$ = $1;}
+    AbbreviatedEdgePattern                                {$$ = (PGNode *) makeString($1);}
 	;
 
 FullEdgePattern:
@@ -170,17 +174,17 @@ FullEdgePattern:
 	;
 
 FullEdgePointingRight:
-	"-[" GraphPatternVariableDeclarationOptional "]->"      { $$ = $2;}
+	"-[" GraphPatternVariableDeclarationOptional "]->"      { $$ = (PGNode *) makeString($2);}
 	| '-' MandatoryEdgePatternFiller "->"                   { $$ = $2;}
 	;
 
 FullEdgePointingLeft:
-	"<-[" GraphPatternVariableDeclarationOptional "]-"      { $$ = $2;}
+	"<-[" GraphPatternVariableDeclarationOptional "]-"      { $$ = (PGNode *) makeString($2);}
 	| "<-" MandatoryEdgePatternFiller '-'                   { $$ = $2;}
 	;
 
 FullEdgeAnyDirection:
-	'-' '[' GraphPatternVariableDeclarationOptional ']' '-'       { $$ = $3;}
+	'-' '[' GraphPatternVariableDeclarationOptional ']' '-'       { $$ = (PGNode *) makeString($3);}
 	| '-' MandatoryEdgePatternFiller '-'                    { $$ = $2;}
 	;
 

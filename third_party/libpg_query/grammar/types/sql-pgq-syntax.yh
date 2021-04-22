@@ -1,0 +1,16 @@
+%type <list> ColumnList 
+%type <list> ColumnsClauseOptional
+%type <list> PathPatternList
+%type <str> PathPatternNameOptional 
+%type <node> ElementPattern 
+%type <list> PathConcatenation
+%type <node> VertexPattern
+%type <str> IsLabelExpressionOptional 
+%type <str> GraphPatternVariableDeclarationOptional
+%type <node> EdgePattern
+%type <node> MandatoryEdgePatternFiller 
+%type <node> FullEdgeAnyDirection 
+%type <node> FullEdgePointingRight 
+%type <node> FullEdgePointingLeft
+%type <node> FullEdgePattern 
+%type <str> AbbreviatedEdgePattern

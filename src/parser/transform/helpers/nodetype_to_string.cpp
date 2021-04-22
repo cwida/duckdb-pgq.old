@@ -501,6 +501,8 @@ std::string Transformer::NodetypeToString(PGNodeTag type) {
 		return "T_PropertyGraphTable"; // needs to be moved above
 	case T_PGMatchPattern:
 		return "T_PGMatchPattern";
+	case T_PGVertexPattern:
+		return "T_PGVertexPattern";
 	case T_PGCreateFunctionStmt:
 		return "T_CreateFunctionStmt";
 	case T_PGAlterFunctionStmt:

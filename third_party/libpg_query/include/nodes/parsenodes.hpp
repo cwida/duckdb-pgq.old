@@ -1678,9 +1678,9 @@ typedef struct PGPropertyGraphTable {
 } PGPropertyGraphTable;
 
 typedef struct PGMatchPattern {
-	char *name;
+	PGRangeVar *name;
 	char *pg_name;
-	PGNode *pattern;
+	PGList *pattern;
 	PGNode *where_clause;
 	PGList *columns;
 

@@ -721,7 +721,7 @@ values_clause:
 
 from_clause:
 			FROM from_list							{ $$ = $2; }
-			| FROM GRAPH_TABLE GraphTableStmt		{ $$ = $3; }
+			| FROM GRAPH_TABLE GraphTableStmt		{ $$ = list_make1($3); }
 			| /*EMPTY*/								{ $$ = NIL; }
 		;
 
