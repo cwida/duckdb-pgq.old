@@ -1201,6 +1201,7 @@ typedef struct PGSelectStmt {
 	bool all;                  /* ALL specified? */
 	struct PGSelectStmt *larg; /* left child */
 	struct PGSelectStmt *rarg; /* right child */
+	bool match_clause;
 	                           /* Eventually add fields for CORRESPONDING spec here */
 } PGSelectStmt;
 

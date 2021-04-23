@@ -105,13 +105,20 @@ ElementPattern:
 	| EdgePattern                               { $$ = $1; }
 	;
 
-VertexPattern:
-	'(' GraphPatternVariableDeclarationOptional IsLabelExpressionOptional ')' 
-    { 
+
+ElementPatternFillerOptional:
+    GraphPatternVariableDeclarationOptional IsLabelExpressionOptional
+    {
         PGVertexPattern *n = makeNode(PGVertexPattern);
-        n->variable_name = $2;
-        n->alias = $3;
+        n->variable_name = $1;
+        n->alias = $2;
         $$ = (PGNode *) n;
+        
+    }
+VertexPattern:
+	'(' ElementPatternFillerOptional ')' 
+    { 
+        $$ = $2;
         // $2->alias = makeAlias($3, NIL);
 		// 	$$ = $2;
         }
@@ -176,25 +183,26 @@ FullEdgePattern:
 	| FullEdgeAnyDirection                                  {$$ = $1;}
 	;
 
-// changed [] from VariableDeclarationOptional. verify from specification
+// changed after verifying from specification
+//LAMBDA_ARRAO -> is a special token defined in grammar. Directly parsing does not work. 
 FullEdgePointingRight:
-	'-' '[' MandatoryEdgePatternFiller ']' '-' '>'      { $$ = $3;}
-	| '-' MandatoryEdgePatternFiller '-' '>'                   { $$ = $2;}
+	'-' '[' ElementPatternFillerOptional ']' LAMBDA_ARROW      { $$ = $3;}
+	| '-' MandatoryEdgePatternFiller LAMBDA_ARROW                   { $$ = $2;}
 	;
 
 FullEdgePointingLeft:
-	'<' '-' '[' MandatoryEdgePatternFiller ']' '-'      { $$ = $4;}
+	'<' '-' '[' ElementPatternFillerOptional ']' '-'      { $$ = $4;}
 	| '<' '-' MandatoryEdgePatternFiller '-'                   { $$ = $3;}
 	;
 
 FullEdgeAnyDirection:
-	'-' '[' MandatoryEdgePatternFiller ']' '-'       { $$ =$3;}
+	'-' '[' ElementPatternFillerOptional ']' '-'       { $$ =$3;}
 	| '-' MandatoryEdgePatternFiller '-'                    { $$ = $2;}
 	;
 
 AbbreviatedEdgePattern:
 	'-'                     { $$ = "-"; }
-    | '-' '>'                  { $$ = "->"; }
+    | LAMBDA_ARROW                  { $$ = "->"; }
     | '<' '-'                  { $$ = "<-"; }
     ;
 
