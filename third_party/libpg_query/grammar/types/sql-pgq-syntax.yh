@@ -5,6 +5,7 @@
 %type <node> ElementPattern 
 %type <list> PathConcatenation
 %type <node> VertexPattern
+%type <str> IsLabelExpression
 %type <str> IsLabelExpressionOptional 
 %type <str> GraphPatternVariableDeclarationOptional
 %type <node> EdgePattern

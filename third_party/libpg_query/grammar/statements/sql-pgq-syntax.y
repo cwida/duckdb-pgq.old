@@ -123,10 +123,13 @@ GraphPatternVariableDeclarationOptional:
 	| /* EMPTY */                           { $$ = NULL; }
 	;
 
+IsLabelExpression:
+    IsOrColon IDENT                         { $$ = $2;}
+
 //Ident is a label name 
 IsLabelExpressionOptional:
-	IsOrColon IDENT                     { $$ = $2; }
-	| /* EMPTY */                       { $$ = NULL; }
+	IsLabelExpression                       { $$ = $1; }
+	| /* EMPTY */                           { $$ = NULL; }
 	;
 
 IsOrColon:
@@ -149,13 +152,13 @@ MandatoryEdgePatternFiller:
 			// $$ = $1;
     }
 	| 
-    IsOrColon IDENT                                       
+    IsLabelExpression                                       
     { 
+        // $$ = $1;
         PGVertexPattern *n = makeNode(PGVertexPattern);
-        n->variable_name = $2;
-        // // n->alias = $2;
+        n->variable_name = $1;
         $$ = (PGNode *) n;
-        // $$ = $2; 
+         // $$ = $2; 
         // $$ = makeNode(PGAlias);
 		// $$->aliasname = $2;
     }
@@ -173,25 +176,26 @@ FullEdgePattern:
 	| FullEdgeAnyDirection                                  {$$ = $1;}
 	;
 
+// changed [] from VariableDeclarationOptional. verify from specification
 FullEdgePointingRight:
-	"-[" GraphPatternVariableDeclarationOptional "]->"      { $$ = (PGNode *) makeString($2);}
-	| '-' MandatoryEdgePatternFiller "->"                   { $$ = $2;}
+	'-' '[' MandatoryEdgePatternFiller ']' '-' '>'      { $$ = $3;}
+	| '-' MandatoryEdgePatternFiller '-' '>'                   { $$ = $2;}
 	;
 
 FullEdgePointingLeft:
-	"<-[" GraphPatternVariableDeclarationOptional "]-"      { $$ = (PGNode *) makeString($2);}
-	| "<-" MandatoryEdgePatternFiller '-'                   { $$ = $2;}
+	'<' '-' '[' MandatoryEdgePatternFiller ']' '-'      { $$ = $4;}
+	| '<' '-' MandatoryEdgePatternFiller '-'                   { $$ = $3;}
 	;
 
 FullEdgeAnyDirection:
-	'-' '[' GraphPatternVariableDeclarationOptional ']' '-'       { $$ = (PGNode *) makeString($3);}
+	'-' '[' MandatoryEdgePatternFiller ']' '-'       { $$ =$3;}
 	| '-' MandatoryEdgePatternFiller '-'                    { $$ = $2;}
 	;
 
 AbbreviatedEdgePattern:
-	"-"                     { $$ = "-"; }
-    | "->"                  { $$ = "->"; }
-    | "<-"                  { $$ = "<-"; }
+	'-'                     { $$ = "-"; }
+    | '-' '>'                  { $$ = "->"; }
+    | '<' '-'                  { $$ = "<-"; }
     ;
 
 
