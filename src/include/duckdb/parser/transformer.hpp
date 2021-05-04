@@ -16,6 +16,7 @@
 
 #include "duckdb/parser/qualified_name.hpp"
 #include "duckdb/parser/property_graph_table.hpp"
+#include "duckdb/parser/graph_element_pattern.hpp"
 #include "duckdb/parser/tokens.hpp"
 
 #include "pg_definitions.hpp"
@@ -27,7 +28,7 @@ class ColumnDefinition;
 struct OrderByNode;
 struct CopyInfo;
 struct CommonTableExpressionInfo;
-// struct PropertyGraphTable;	// how else do I allow it to enter ?
+// struct GraphElementPattern;	// how else do I allow it to enter ?
 
 //! The transformer class is responsible for transforming the internal Postgres
 //! parser representation into the DuckDB representation
@@ -50,6 +51,10 @@ private:
 	idx_t prepared_statement_parameter_index = 0;
 	//! Holds window expressions defined by name. We need those when transforming the expressions referring to them.
 	unordered_map<string, duckdb_libpgquery::PGWindowDef *> window_clauses;
+
+	//! Used for anonymous variables for graph match statements where variables are not defined by the user.
+	int16_t vertex_id = 0;
+	int16_t edge_id = 0;
 
 	void SetParamCount(idx_t new_count) {
 		if (parent) {
@@ -183,7 +188,9 @@ private:
 	void TransformCTE(duckdb_libpgquery::PGWithClause *de_with_clause, QueryNode &select);
 	unique_ptr<SelectStatement> TransformRecursiveCTE(duckdb_libpgquery::PGCommonTableExpr *node,
 	                                                  CommonTableExpressionInfo &info);
-	unique_ptr<PropertyGraphTable> TranformPropertyGraphTable(duckdb_libpgquery::PGPropertyGraphTable *table, unordered_set<string> &labels_set);
+	unique_ptr<PropertyGraphTable> TranformPropertyGraphTable(duckdb_libpgquery::PGPropertyGraphTable *table,
+	                                                          unordered_map<string, string> &label_map);
+	unique_ptr<GraphElementPattern> TransformElementPattern(duckdb_libpgquery::PGGraphElementPattern *element_pattern);
 	// Operator String to ExpressionType (e.g. + => OPERATOR_ADD)
 	ExpressionType OperatorToExpressionType(string &op);
 
@@ -207,6 +214,8 @@ private:
 	unique_ptr<TableRef> TransformRangeSubselect(duckdb_libpgquery::PGRangeSubselect *root);
 	//! Transform a VALUES list into a set of expressions
 	unique_ptr<TableRef> TransformValuesList(duckdb_libpgquery::PGList *list);
+	//! Tranform Match to a select subquery
+	unique_ptr<TableRef> TransformMatch(duckdb_libpgquery::PGMatchPattern *root);
 
 	//! Transform a range var into a (schema) qualified name
 	QualifiedName TransformQualifiedName(duckdb_libpgquery::PGRangeVar *root);

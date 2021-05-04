@@ -1679,6 +1679,7 @@ typedef struct PGPropertyGraphTable {
 } PGPropertyGraphTable;
 
 typedef struct PGMatchPattern {
+	PGNodeTag type;
 	PGRangeVar *name;
 	char *pg_name;
 	PGList *pattern;
@@ -1687,11 +1688,26 @@ typedef struct PGMatchPattern {
 
 } PGMatchPattern;
 
-typedef struct PGVertexPattern {
-	char *variable_name;
-	char *alias;
-} PGVertexPattern;
+typedef enum PGMatchDirection {
+	PG_MATCH_DIR_LEFT,
+	PG_MATCH_DIR_RIGHT,
+	PG_MATCH_DIR_ANY
+} PGMatchDirection;
 
+typedef struct PGGraphVariablePattern {
+	PGNodeTag type;
+	char *variable_name;
+	char *label_name;
+} PGGraphVariablePattern;
+
+typedef struct PGGraphElementPattern {
+	PGNodeTag type;
+	PGNode *pattern_clause;
+	bool is_vertex_pattern;
+	
+	//Only used for Edge pattern
+	PGMatchDirection direction;
+} PGGraphElementPattern;
 
 /* ----------------------
  *		CREATE FUNCTION Statement

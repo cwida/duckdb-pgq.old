@@ -721,7 +721,7 @@ values_clause:
 
 from_clause:
 			FROM from_list							{ $$ = $2; }
-			| FROM GRAPH_TABLE GraphTableStmt		{ $$ = list_make1($3); }
+			// | FROM GRAPH_TABLE GraphTableStmt		{ $$ = list_make1($3); }
 			| /*EMPTY*/								{ $$ = NIL; }
 		;
 
@@ -825,6 +825,10 @@ table_ref:	relation_expr opt_alias_clause opt_tablesample_clause
 				{
 					$2->alias = $4;
 					$$ = (PGNode *) $2;
+				}
+			| GRAPH_TABLE GraphTableStmt 
+				{
+					$$ = $2;
 				}
 		;
 

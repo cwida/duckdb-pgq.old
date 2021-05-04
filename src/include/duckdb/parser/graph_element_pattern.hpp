@@ -1,0 +1,44 @@
+//===----------------------------------------------------------------------===//
+//                         DuckDB
+//
+// duckdb/parser/graph_element_pattern.hpp
+//
+//
+//===----------------------------------------------------------------------===//
+
+#pragma once
+
+#include "duckdb/common/common.hpp"
+
+namespace duckdb {
+
+// should we keep NONE ??
+enum class MatchDirection : uint8_t { LEFT, RIGHT, ANY, NONE };
+//! SQLStatement is the base class of any type of SQL statement.
+class GraphElementPattern {
+public:
+	GraphElementPattern() {
+	}
+
+	GraphElementPattern(string variable_name, string label_name, bool is_vertex_pattern) {
+	}
+
+	GraphElementPattern(string variable_name, string label_name, bool is_vertex_pattern, MatchDirection direction) {
+	}
+
+	string variable_name;
+	string label_name;
+	bool is_vertex_pattern;
+
+	MatchDirection direction;
+
+	virtual ~GraphElementPattern() {
+	}
+
+public:
+	//! Create a copy of this PropertyGraphStatement
+	unique_ptr<GraphElementPattern> Copy();
+	// void Serialize(Serializer &serializer) const;
+	// static unique_ptr<GraphElementPattern> Deserialize(Deserializer &source);
+};
+} // namespace duckdb

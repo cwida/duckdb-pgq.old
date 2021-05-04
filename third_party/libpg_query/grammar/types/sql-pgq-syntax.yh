@@ -5,6 +5,7 @@
 %type <node> ElementPattern 
 %type <list> PathConcatenation
 %type <node> VertexPattern
+%type <node> VertexPatternFiller
 %type <node> ElementPatternFillerOptional
 %type <str> IsLabelExpression
 %type <str> IsLabelExpressionOptional 

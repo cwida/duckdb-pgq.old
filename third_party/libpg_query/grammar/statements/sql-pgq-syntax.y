@@ -109,16 +109,28 @@ ElementPattern:
 ElementPatternFillerOptional:
     GraphPatternVariableDeclarationOptional IsLabelExpressionOptional
     {
-        PGVertexPattern *n = makeNode(PGVertexPattern);
+        PGGraphVariablePattern *n = makeNode(PGGraphVariablePattern);
         n->variable_name = $1;
-        n->alias = $2;
+        n->label_name = $2;
         $$ = (PGNode *) n;
         
     }
+VertexPatternFiller: IDENT IsLabelExpression
+    {
+        PGGraphVariablePattern *n = makeNode(PGGraphVariablePattern);
+        n->variable_name = $1;
+        n->label_name = $2;
+        $$ = (PGNode *) n;
+    }
 VertexPattern:
-	'(' ElementPatternFillerOptional ')' 
+	'(' VertexPatternFiller ')' 
     { 
-        $$ = $2;
+        // $$ = $2;
+        PGGraphElementPattern *n = makeNode(PGGraphElementPattern);
+        n->pattern_clause = $2;
+        // n->label_name = $3;
+        n->is_vertex_pattern = true;
+        $$ = (PGNode *) n;
         // $2->alias = makeAlias($3, NIL);
 		// 	$$ = $2;
         }
@@ -148,9 +160,9 @@ IsOrColon:
 MandatoryEdgePatternFiller:
 	IDENT IsLabelExpressionOptional   
     { 
-        PGVertexPattern *n = makeNode(PGVertexPattern);
+        PGGraphVariablePattern *n = makeNode(PGGraphVariablePattern);
         n->variable_name = $1;
-        n->alias = $2;
+        n->label_name = $2;
         $$ = (PGNode *) n;
         // // $$ = $1;
         // $$ = makeNode(PGAlias);
@@ -162,7 +174,7 @@ MandatoryEdgePatternFiller:
     IsLabelExpression                                       
     { 
         // $$ = $1;
-        PGVertexPattern *n = makeNode(PGVertexPattern);
+        PGGraphVariablePattern *n = makeNode(PGGraphVariablePattern);
         n->variable_name = $1;
         $$ = (PGNode *) n;
          // $$ = $2; 
@@ -174,7 +186,11 @@ MandatoryEdgePatternFiller:
 EdgePattern:
 	FullEdgePattern                                         {$$ = $1;}
 	| 
-    AbbreviatedEdgePattern                                {$$ = (PGNode *) makeString($1);}
+    AbbreviatedEdgePattern                                
+    {
+        //how to handle this for conversion in tranform
+        $$ = (PGNode *) makeString($1);
+    }
 	;
 
 FullEdgePattern:
@@ -184,25 +200,76 @@ FullEdgePattern:
 	;
 
 // changed after verifying from specification
-//LAMBDA_ARRAO -> is a special token defined in grammar. Directly parsing does not work. 
+//LAMBDA_ARROW -> is a special token defined in grammar. Directly parsing does not work. 
 FullEdgePointingRight:
-	'-' '[' ElementPatternFillerOptional ']' LAMBDA_ARROW      { $$ = $3;}
-	| '-' MandatoryEdgePatternFiller LAMBDA_ARROW                   { $$ = $2;}
+	'-' '[' ElementPatternFillerOptional ']' LAMBDA_ARROW      
+        {
+            PGGraphElementPattern *n = makeNode(PGGraphElementPattern); 
+            n->pattern_clause = $3;
+            n->direction = PG_MATCH_DIR_RIGHT;
+            n->is_vertex_pattern = false;
+            // $$ = $3;
+            $$ = (PGNode *) n;
+        }
+	| '-' MandatoryEdgePatternFiller LAMBDA_ARROW                   
+        { 
+            PGGraphElementPattern *n = makeNode(PGGraphElementPattern); 
+            n->pattern_clause = $2;
+            n->direction = PG_MATCH_DIR_RIGHT;
+            n->is_vertex_pattern = false;
+            // $$ = $3;
+            $$ = (PGNode *) n;
+            // $$ = $2;
+        }
 	;
 
 FullEdgePointingLeft:
-	'<' '-' '[' ElementPatternFillerOptional ']' '-'      { $$ = $4;}
-	| '<' '-' MandatoryEdgePatternFiller '-'                   { $$ = $3;}
+	'<' '-' '[' ElementPatternFillerOptional ']' '-'                
+        { 
+            // $$ = $4;
+            PGGraphElementPattern *n = makeNode(PGGraphElementPattern); 
+            n->pattern_clause = $4;
+            n->direction = PG_MATCH_DIR_LEFT;
+            n->is_vertex_pattern = false;
+            // $$ = $3;
+            $$ = (PGNode *) n;
+        }
+	| '<' '-' MandatoryEdgePatternFiller '-'                        
+        { 
+            
+            PGGraphElementPattern *n = makeNode(PGGraphElementPattern); 
+            n->pattern_clause = $3;
+            n->direction = PG_MATCH_DIR_LEFT;
+            n->is_vertex_pattern = false;
+            // $$ = $3;
+            $$ = (PGNode *) n;
+        }
 	;
 
 FullEdgeAnyDirection:
-	'-' '[' ElementPatternFillerOptional ']' '-'       { $$ =$3;}
-	| '-' MandatoryEdgePatternFiller '-'                    { $$ = $2;}
+	'-' '[' ElementPatternFillerOptional ']' '-'       
+        { 
+            // $$ =$3;
+            PGGraphElementPattern *n = makeNode(PGGraphElementPattern); 
+            n->pattern_clause = $3;
+            n->direction = PG_MATCH_DIR_ANY;
+            n->is_vertex_pattern = false;
+            $$ = (PGNode *) n;
+        }
+	| '-' MandatoryEdgePatternFiller '-'                    
+        { 
+            // $$ = $2;
+            PGGraphElementPattern *n = makeNode(PGGraphElementPattern); 
+            n->pattern_clause = $2;
+            n->direction = PG_MATCH_DIR_ANY;
+            n->is_vertex_pattern = false;
+            $$ = (PGNode *) n;
+        }
 	;
 
 AbbreviatedEdgePattern:
 	'-'                     { $$ = "-"; }
-    | LAMBDA_ARROW                  { $$ = "->"; }
+    |  LAMBDA_ARROW                  { $$ = "->"; }
     | '<' '-'                  { $$ = "<-"; }
     ;
 

@@ -70,6 +70,20 @@ VERTEX TABLES ( account KEY ( AID ) LABEL account, customer KEY ( CID ) LABEL c 
 EDGE TABLES ( transfers KEY ( from_id ) SOURCE KEY ( from_id ) REFERENCES account DESTINATION KEY ( to_id ) REFERENCES account LABEL c )
 
 
+statement ok
+select c1id, c2id, c3id from GRAPH_TABLE (aml, 
+MATCH 
+    (c1 IS customer)-[IS transfers]->
+    (c2 IS customer)-[IS transfers]->
+    (c3 IS customer)-[IS transfers]->(c1)
+    COLUMNS (
+        c1.cid AS c1id,
+        c2.cid AS c2id,
+        c3.cid AS c3id
+    )
+)
+# statement ok
+# DESCRIBE transfers
 # statement ok
 # PRAGMA table_info('aml')
 
