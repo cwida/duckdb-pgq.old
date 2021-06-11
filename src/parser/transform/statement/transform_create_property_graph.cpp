@@ -18,7 +18,8 @@ using namespace duckdb_libpgquery;
 // 	return tableref;
 // }
 
-unique_ptr<PropertyGraphTable> Transformer::TranformPropertyGraphTable(PGPropertyGraphTable *table, unordered_set<string> &label_set) {
+unique_ptr<PropertyGraphTable> Transformer::TranformPropertyGraphTable(PGPropertyGraphTable *table,
+                                                                       unordered_map<string, string> &label_map) {
 	// string
 	// auto pg_table = make_unique<PropertyGraphTable>();
 	// info->name = string(stmt->name);
@@ -33,16 +34,14 @@ unique_ptr<PropertyGraphTable> Transformer::TranformPropertyGraphTable(PGPropert
 	}
 
 	for (auto kc = table->labels->head; kc; kc = kc->next) {
-		
 		auto label = string(reinterpret_cast<PGValue *>(kc->data.ptr_value)->val.str);
-		auto entry = label_set.find(label);
-		if (entry == label_set.end()) {
+		auto entry = label_map.find(label);
+		if (entry == label_map.end()) {
 			labels.push_back(label);
-			label_set.insert(label);	
-		}
-		else {
+			label_map[label] = qname.name;
+		} else {
 			throw Exception("Labels need to be unique in PropertyGraph table. Label " + label + " has been repeated.");
-		} 			
+		}
 	}
 	pg_table->name = qname.name;
 	pg_table->keys = keys;
@@ -98,7 +97,7 @@ unique_ptr<CreateStatement> Transformer::TransformCreatePropertyGraph(PGNode *no
 
 	auto result = make_unique<CreateStatement>();
 	auto info = make_unique<CreatePropertyGraphInfo>();
-	unordered_set<string> label_set;
+	unordered_map<string, string> label_map;
 
 	info->name = string(stmt->name);
 	info->on_conflict = OnCreateConflict::ERROR_ON_CONFLICT;
@@ -111,7 +110,7 @@ unique_ptr<CreateStatement> Transformer::TransformCreatePropertyGraph(PGNode *no
 		case T_PGPropertyGraphTable: {
 			auto graph_table = reinterpret_cast<PGPropertyGraphTable *>(c->data.ptr_value);
 			auto qname = TransformQualifiedName(graph_table->name);
-			auto pg_table = TranformPropertyGraphTable(graph_table, label_set);
+			auto pg_table = TranformPropertyGraphTable(graph_table, label_map);
 			info->vertex_tables.push_back(move(pg_table));
 			break;
 		}
@@ -129,7 +128,7 @@ unique_ptr<CreateStatement> Transformer::TransformCreatePropertyGraph(PGNode *no
 			auto graph_table = reinterpret_cast<PGPropertyGraphTable *>(c->data.ptr_value);
 			// (void)graph_table;
 			auto qname = TransformQualifiedName(graph_table->name);
-			auto pg_table = TranformPropertyGraphTable(graph_table, label_set);
+			auto pg_table = TranformPropertyGraphTable(graph_table, label_map);
 			info->edge_tables.push_back(move(pg_table));
 			break;
 		}
@@ -137,7 +136,7 @@ unique_ptr<CreateStatement> Transformer::TransformCreatePropertyGraph(PGNode *no
 			throw NotImplementedException("ColumnDef type not handled yet");
 		}
 	}
-	info->labels_set = label_set;
+	info->label_map = label_map;
 	result->info = move(info);
 	return result;
 }

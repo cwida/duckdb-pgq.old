@@ -21,6 +21,8 @@ public:
 	}
 
 	string name;
+    string schema;
+    
 	string pg_name;
 	vector<unique_ptr<GraphElementPattern>> param_list;
 	// vector<string> columns;
