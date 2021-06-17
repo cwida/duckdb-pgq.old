@@ -25,6 +25,7 @@ class LimitModifier;
 class OrderBinder;
 class TableCatalogEntry;
 class ViewCatalogEntry;
+class PropertyGraphTable;
 
 struct CreateInfo;
 struct BoundCreateTableInfo;
@@ -226,6 +227,10 @@ private:
 
 	string FindBinding(const string &using_column, const string &join_side);
 	bool TryFindBinding(const string &using_column, const string &join_side, string &result);
+	unique_ptr<PropertyGraphTable> FindLabel(PropertyGraphCatalogEntry *pg_table, string &label_name);
+	unique_ptr<ParsedExpression> CreateExpression(vector<string> &vertex_columns, vector<string> &edge_columns,
+	                                              string &vertex_table_name, string &edge_table_name);
+	unique_ptr<ParsedExpression> AndExpression(vector<unique_ptr<ParsedExpression>> conditions);
 };
 
 } // namespace duckdb

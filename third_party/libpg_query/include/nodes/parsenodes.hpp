@@ -1696,7 +1696,7 @@ typedef enum PGMatchDirection {
 
 typedef struct PGGraphVariablePattern {
 	PGNodeTag type;
-	char *variable_name;
+	char *alias_name;
 	char *label_name;
 } PGGraphVariablePattern;
 

@@ -20,13 +20,13 @@ public:
 	GraphElementPattern() {
 	}
 
-	GraphElementPattern(string variable_name, string label_name, bool is_vertex_pattern) {
+	GraphElementPattern(string alias_name, string label_name, bool is_vertex_pattern) {
 	}
 
-	GraphElementPattern(string variable_name, string label_name, bool is_vertex_pattern, MatchDirection direction) {
+	GraphElementPattern(string alias_name, string label_name, bool is_vertex_pattern, MatchDirection direction) {
 	}
 
-	string variable_name;
+	string alias_name;
 	string label_name;
 	bool is_vertex_pattern;
 

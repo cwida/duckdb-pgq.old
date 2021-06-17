@@ -30,7 +30,7 @@ unique_ptr<GraphElementPattern> Transformer::TransformElementPattern(PGGraphElem
 	}
 
 	auto graph_variable = reinterpret_cast<PGGraphVariablePattern *>(element_pattern->pattern_clause);
-	if (!graph_variable->variable_name) {
+	if (!graph_variable->alias_name) {
 		if (element_pattern->is_vertex_pattern) {
 			string graph_element_name = "__v__" + to_string(vertex_id++);
 			return make_unique<GraphElementPattern>(graph_element_name, graph_variable->label_name, is_vertex_pattern);
@@ -41,8 +41,8 @@ unique_ptr<GraphElementPattern> Transformer::TransformElementPattern(PGGraphElem
 		}
 	}
 
-	return make_unique<GraphElementPattern>(graph_variable->variable_name, graph_variable->label_name,
-	                                        is_vertex_pattern, direction);
+	return make_unique<GraphElementPattern>(graph_variable->alias_name, graph_variable->label_name, is_vertex_pattern,
+	                                        direction);
 }
 
 unique_ptr<TableRef> Transformer::TransformMatch(PGMatchPattern *root) {

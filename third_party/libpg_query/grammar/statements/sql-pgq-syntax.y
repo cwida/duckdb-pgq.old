@@ -110,7 +110,7 @@ ElementPatternFillerOptional:
     GraphPatternVariableDeclarationOptional IsLabelExpressionOptional
     {
         PGGraphVariablePattern *n = makeNode(PGGraphVariablePattern);
-        n->variable_name = $1;
+        n->alias_name = $1;
         n->label_name = $2;
         $$ = (PGNode *) n;
         
@@ -118,7 +118,7 @@ ElementPatternFillerOptional:
 VertexPatternFiller: IDENT IsLabelExpression
     {
         PGGraphVariablePattern *n = makeNode(PGGraphVariablePattern);
-        n->variable_name = $1;
+        n->alias_name = $1;
         n->label_name = $2;
         $$ = (PGNode *) n;
     }
@@ -161,7 +161,7 @@ MandatoryEdgePatternFiller:
 	IDENT IsLabelExpressionOptional   
     { 
         PGGraphVariablePattern *n = makeNode(PGGraphVariablePattern);
-        n->variable_name = $1;
+        n->alias_name = $1;
         n->label_name = $2;
         $$ = (PGNode *) n;
         // // $$ = $1;
@@ -175,7 +175,7 @@ MandatoryEdgePatternFiller:
     { 
         // $$ = $1;
         PGGraphVariablePattern *n = makeNode(PGGraphVariablePattern);
-        n->variable_name = $1;
+        n->alias_name = $1;
         $$ = (PGNode *) n;
          // $$ = $2; 
         // $$ = makeNode(PGAlias);
