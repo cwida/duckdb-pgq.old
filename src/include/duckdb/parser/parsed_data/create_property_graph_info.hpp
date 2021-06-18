@@ -33,7 +33,7 @@ struct CreatePropertyGraphInfo : public CreateInfo {
 	unordered_map<string, string> label_map;
 
 	//!
-	unordered_map<string, PropertyGraphTable *> label_map1;
+	unordered_map<string, PropertyGraphTable *> label_map_1;
 
 public:
 	unique_ptr<CreateInfo> Copy() const override {

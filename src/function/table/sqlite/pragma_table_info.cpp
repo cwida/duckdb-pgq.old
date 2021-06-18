@@ -157,7 +157,8 @@ static void pragma_table_info_view(PragmaTableOperatorData &data, ViewCatalogEnt
 	data.offset = next;
 }
 
-static void pragma_table_info_property_graph(PragmaTableOperatorData &data, PropertyGraphCatalogEntry *pg_table, DataChunk &output) {
+static void pragma_table_info_property_graph(PragmaTableOperatorData &data, PropertyGraphCatalogEntry *pg_table,
+                                             DataChunk &output) {
 	if (data.offset >= pg_table->types.size()) {
 		// finished returning values
 		return;
@@ -201,7 +202,7 @@ static void pragma_table_info(ClientContext &context, const FunctionData *bind_d
 		pragma_table_info_view(state, (ViewCatalogEntry *)bind_data.entry, output);
 		break;
 	case CatalogType::PROPERTY_GRAPH_ENTRY:
-		pragma_table_info_property_graph(state, (PropertyGraphCatalogEntry *) bind_data.entry, output);
+		pragma_table_info_property_graph(state, (PropertyGraphCatalogEntry *)bind_data.entry, output);
 		break;
 	default:
 		throw NotImplementedException("Unimplemented catalog type for pragma_table_info");

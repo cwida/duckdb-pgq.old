@@ -27,7 +27,7 @@ public:
 	vector<unique_ptr<PropertyGraphTable>> vertex_tables;
 	vector<unique_ptr<PropertyGraphTable>> edge_tables;
 	unordered_map<string, string> label_map;
-	unordered_map<string, unique_ptr<PropertyGraphTable>> label_map_1;
+	unordered_map<string, PropertyGraphTable *> label_map_1;
 	vector<LogicalType> types;
 
 public:
@@ -38,8 +38,8 @@ public:
 
 	unique_ptr<CatalogEntry> Copy(ClientContext &context) override;
 
-	// private:
-	// 	void Initialize(CreatePropertyGraphInfo *info);
+private:
+	void Initialize(CreatePropertyGraphInfo *info);
 };
 
 } // namespace duckdb

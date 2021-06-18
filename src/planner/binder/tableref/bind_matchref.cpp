@@ -62,7 +62,7 @@ static unique_ptr<BaseTableRef> TransformFromTable(string alias, string table_na
 //     return result;
 // }
 
-unique_ptr<PropertyGraphTable> Binder::FindLabel(PropertyGraphCatalogEntry *pg_table, string &label_name) {
+PropertyGraphTable *Binder::FindLabel(PropertyGraphCatalogEntry *pg_table, string &label_name) {
 
 	auto entry = pg_table->label_map_1.find(label_name);
 
@@ -70,7 +70,7 @@ unique_ptr<PropertyGraphTable> Binder::FindLabel(PropertyGraphCatalogEntry *pg_t
 		throw BinderException("Label %s does not exist in property graph table %s", label_name, pg_table->name);
 	}
 	// auto property_table = move(entry->second);
-	return move(entry->second);
+	return entry->second;
 }
 
 // unique_ptr<ParsedExpression> Binder::AndExpression(vector<unique_ptr<ParsedExpression>> conditions) {
@@ -388,12 +388,12 @@ unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
 	// SubqueryRef subquery_ref(unique_ptr_cast<SQLStatement, SelectStatement>(subquery->Copy()));
 	// BindNode(subquery->node);
 	// auto bound_subquery = make_unique<BoundSubqueryRef>(move(binder), move(subquery));
-	// Bind(move(result));
+	return Bind((SubqueryRef &)result);
 	// return move(bound_subquery);
 	// auto bound_child = Bind(result.get());
 	// return move(bound_subquery);
 	// return make_unique<SubqueryRef>(move(select));
-	return make_unique<BoundMatchRef>();
+	// return make_unique<BoundMatchRef>();
 }
 
 } // namespace duckdb

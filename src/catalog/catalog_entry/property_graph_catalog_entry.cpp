@@ -11,17 +11,19 @@
 
 namespace duckdb {
 
-// void PropertyGraphCatalogEntry::Initialize(CreatePropertyGraphInfo *info) {
-// 	this->name = info->name;
-// 	this->vertex_tables = info->vertex_tables;
-// 	this->edge_tables = info->edge_tables;
-
-// }
+void PropertyGraphCatalogEntry::Initialize(CreatePropertyGraphInfo *info) {
+	this->name = info->name;
+	this->vertex_tables = move(info->vertex_tables);
+	this->edge_tables = move(info->edge_tables);
+	this->label_map_1 = move(info->label_map_1);
+}
 
 PropertyGraphCatalogEntry::PropertyGraphCatalogEntry(Catalog *catalog, SchemaCatalogEntry *schema,
                                                      CreatePropertyGraphInfo *info)
-    : StandardEntry(CatalogType::PROPERTY_GRAPH_ENTRY, schema, catalog, info->name) {
-	// Initialize(info);
+    : StandardEntry(CatalogType::PROPERTY_GRAPH_ENTRY, schema, catalog, info->name)
+// , vertex_tables(info->vertex_tables),edge_tables(info->edge_tables), label_map_1(info->label_map_1)
+{
+	Initialize(info);
 }
 
 void PropertyGraphCatalogEntry::Serialize(Serializer &serializer) {
