@@ -38,6 +38,7 @@ static unique_ptr<BaseTableRef> TransformFromTable(string alias, string table_na
 	result->alias = alias;
 	result->table_name = table_name;
 	// result->condition = ;
+	// RVO exception --> look more ??
 	return result;
 }
 
@@ -183,10 +184,10 @@ unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
 			//         vertex_colref, edge_colref));
 			//     }
 			// }
-			auto src_expr = CreateExpression(vertex_entry->keys, edge_entry->source_key, previous_vertex_entry->name,
-			                                 edge_entry->name);
+			auto src_expr = CreateExpression(vertex_entry->keys, edge_entry->source_key, vertex_pattern->alias_name,
+			                                 edge_pattern->alias_name);
 			auto dst_expr = CreateExpression(previous_vertex_entry->keys, edge_entry->destination_key,
-			                                 previous_vertex_entry->name, edge_entry->name);
+			                                 previous_vertex_pattern->alias_name, edge_pattern->alias_name);
 			conditions.push_back(move(src_expr));
 			conditions.push_back(move(dst_expr));
 			// v1.insert(v1.end(),v2.begin(),v2.end());
@@ -198,9 +199,9 @@ unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
 		}
 		case MatchDirection::RIGHT: {
 			auto src_expr = CreateExpression(previous_vertex_entry->keys, edge_entry->source_key,
-			                                 previous_vertex_entry->name, edge_entry->name);
+			                                 previous_vertex_pattern->alias_name, edge_pattern->alias_name);
 			auto dst_expr = CreateExpression(vertex_entry->keys, edge_entry->destination_key,
-			                                 previous_vertex_entry->name, edge_entry->name);
+			                                 vertex_pattern->alias_name, edge_pattern->alias_name);
 			// conditions.insert(conditions.end(), src_expr.begin(), src_expr.end());
 			// conditions.insert(conditions.end(), dst_expr.begin(), dst_expr.end());
 			conditions.push_back(move(src_expr));
@@ -212,23 +213,23 @@ unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
 			break;
 		}
 		case MatchDirection::ANY: {
-			auto src_expr_1 = CreateExpression(previous_vertex_entry->keys, edge_entry->destination_key,
-			                                   previous_vertex_entry->name, edge_entry->name);
-			auto dst_expr_1 = CreateExpression(vertex_entry->keys, edge_entry->source_key, previous_vertex_entry->name,
-			                                   edge_entry->name);
-			auto left_expr =
-			    make_unique<ConjunctionExpression>(ExpressionType::CONJUNCTION_AND, move(src_expr_1), move(dst_expr_1));
+			auto src_left_expr = CreateExpression(previous_vertex_entry->keys, edge_entry->destination_key,
+			                                      previous_vertex_pattern->alias_name, edge_pattern->alias_name);
+			auto dst_left_expr = CreateExpression(vertex_entry->keys, edge_entry->source_key,
+			                                      vertex_pattern->alias_name, edge_pattern->alias_name);
+			auto combined_left_expr = make_unique<ConjunctionExpression>(ExpressionType::CONJUNCTION_AND,
+			                                                             move(src_left_expr), move(dst_left_expr));
 
-			auto src_expr_2 = CreateExpression(previous_vertex_entry->keys, edge_entry->source_key,
-			                                   previous_vertex_entry->name, edge_entry->name);
-			auto dst_expr_2 = CreateExpression(vertex_entry->keys, edge_entry->destination_key,
-			                                   previous_vertex_entry->name, edge_entry->name);
-			auto right_expr =
-			    make_unique<ConjunctionExpression>(ExpressionType::CONJUNCTION_AND, move(src_expr_2), move(dst_expr_2));
+			auto src_right_expr = CreateExpression(previous_vertex_entry->keys, edge_entry->source_key,
+			                                       previous_vertex_pattern->alias_name, edge_pattern->alias_name);
+			auto dst_right_expr = CreateExpression(vertex_entry->keys, edge_entry->destination_key,
+			                                       vertex_pattern->alias_name, edge_pattern->alias_name);
+			auto combined_right_expr = make_unique<ConjunctionExpression>(ExpressionType::CONJUNCTION_AND,
+			                                                              move(src_right_expr), move(dst_right_expr));
 
-			vector<unique_ptr<ParsedExpression>> temp_vector;
-			auto exp =
-			    make_unique<ConjunctionExpression>(ExpressionType::CONJUNCTION_OR, move(left_expr), move(right_expr));
+			// vector<unique_ptr<ParsedExpression>> temp_vector;
+			auto exp = make_unique<ConjunctionExpression>(ExpressionType::CONJUNCTION_OR, move(combined_left_expr),
+			                                              move(combined_right_expr));
 			// temp_vector.push_back(move(exp));
 			conditions.push_back(move(exp));
 			// conditions.insert(conditions.end(), temp_vector.begin(), temp_vector.end());
@@ -296,7 +297,7 @@ unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
 	// vector<unique_ptr<BaseTableRef>> from_tables_vector(from_tables.begin(), from_tables.end());
 
 	for (auto &table : from_tables) {
-		unique_ptr<BaseTableRef> tmp;
+		auto tmp = make_unique<BaseTableRef>();
 		tmp->alias = table->alias;
 		tmp->table_name = table->table_name;
 
@@ -379,16 +380,19 @@ unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
 	// select->node = GetQueryNode();
 	// better way to do this ?? should CTE be here ?
 
-	auto binder = make_unique<Binder>(context, this);
+	// auto binder = make_unique<Binder>(context, this);
 	// BindNode(result);
+	// Bind(*select_node);
 	subquery->node = move(select_node);
-	auto result = make_unique<SubqueryRef>(move(subquery));
+
+	auto result = make_unique<SubqueryRef>(move(subquery), ref.name);
+	// result->alias = ref.name;
 
 	// Stuck at building TableRef
 	// SubqueryRef subquery_ref(unique_ptr_cast<SQLStatement, SelectStatement>(subquery->Copy()));
 	// BindNode(subquery->node);
 	// auto bound_subquery = make_unique<BoundSubqueryRef>(move(binder), move(subquery));
-	return Bind((SubqueryRef &)result);
+	return Bind(*result);
 	// return move(bound_subquery);
 	// auto bound_child = Bind(result.get());
 	// return move(bound_subquery);

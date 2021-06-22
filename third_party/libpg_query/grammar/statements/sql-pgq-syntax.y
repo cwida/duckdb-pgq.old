@@ -55,11 +55,11 @@ ColumnsClauseOptional:
     ;
 
 ColumnList:
-			insert_target  									
+			target_el  									
                 { 
                     $$ = list_make1($1); 
                 }
-			| ColumnList ',' insert_target 	                    
+			| ColumnList ',' target_el 	                    
                 {
                      $$ = lappend($1, $3); 
                 }

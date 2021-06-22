@@ -34,6 +34,7 @@ public:
 	// look if you can use ColumnDefinition
 	// vector<ColumnDefinition> columns;
 	unique_ptr<ParsedExpression> where_clause;
+	vector<string> path_names;
 
 public:
 	// bool Equals(const TableRef *other_) const override;
