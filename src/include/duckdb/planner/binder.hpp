@@ -231,6 +231,8 @@ private:
 	unique_ptr<ParsedExpression> CreateExpression(vector<string> &vertex_columns, vector<string> &edge_columns,
 	                                              string &vertex_table_name, string &edge_table_name);
 	unique_ptr<ParsedExpression> AndExpression(vector<unique_ptr<ParsedExpression>> conditions);
+	bool CheckAliasUsage(unordered_map<string, std::pair<string, bool>> &alias_table_map, string &alias,
+	                     string &table_name, bool is_vertex_pattern);
 };
 
 } // namespace duckdb

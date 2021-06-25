@@ -21,9 +21,16 @@ public:
 	}
 
 	GraphElementPattern(string alias_name, string label_name, bool is_vertex_pattern) {
+		this->alias_name = alias_name;
+		this->label_name = label_name;
+		this->is_vertex_pattern = is_vertex_pattern;
 	}
 
 	GraphElementPattern(string alias_name, string label_name, bool is_vertex_pattern, MatchDirection direction) {
+		this->alias_name = alias_name;
+		this->label_name = label_name;
+		this->is_vertex_pattern = is_vertex_pattern;
+		this->direction = direction;
 	}
 
 	string alias_name;

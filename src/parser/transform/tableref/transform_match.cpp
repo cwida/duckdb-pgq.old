@@ -15,7 +15,7 @@ unique_ptr<GraphElementPattern> Transformer::TransformElementPattern(PGGraphElem
 	auto is_vertex_pattern = element_pattern->is_vertex_pattern;
 	MatchDirection direction;
 	auto graph_element_pattern = make_unique<GraphElementPattern>();
-
+	string edge_alias, vertex_alias;
 	auto graph_variable = reinterpret_cast<PGGraphVariablePattern *>(element_pattern->pattern_clause);
 
 	if (!graph_variable->label_name) {
@@ -27,12 +27,12 @@ unique_ptr<GraphElementPattern> Transformer::TransformElementPattern(PGGraphElem
 
 	if (element_pattern->is_vertex_pattern) {
 		if (!graph_variable->alias_name) {
-			graph_element_pattern->alias_name = "__v__" + to_string(vertex_id++);
+			vetex_alias = "__v__" + to_string(vertex_id++);
 		} else {
-			graph_element_pattern->alias_name = graph_variable->alias_name;
+			vertex_alias = graph_variable->alias_name;
 		}
-		return graph_element_pattern;
-		// return make_unique<GraphElementPattern>(graph_element_name, graph_variable->label_name, is_vertex_pattern);
+		// return graph_element_pattern;
+		return make_unique<GraphElementPattern>(vertex_alias, graph_variable->label_name, is_vertex_pattern);
 	} else {
 		switch (element_pattern->direction) {
 			// auto direction;
@@ -51,30 +51,12 @@ unique_ptr<GraphElementPattern> Transformer::TransformElementPattern(PGGraphElem
 		}
 
 		if (!graph_variable->alias_name) {
-			graph_element_pattern->alias_name = "__e__" + to_string(edge_id++);
+			edge_alias = "__e__" + to_string(edge_id++);
 		} else {
-			graph_element_pattern->alias_name = graph_variable->alias_name;
+			edge_alias = graph_variable->alias_name;
 		}
-		graph_element_pattern->direction = direction;
-		return graph_element_pattern;
-		// return make_unique<GraphElementPattern>(graph_element_name, graph_variable->label_name, is_vertex_pattern,
-		//                                         direction);
+		return make_unique<GraphElementPattern>(edge_alias, graph_variable->label_name, is_vertex_pattern, direction);
 	}
-	// graph_element_pattern->alias_name = graph_variable->alias_name;
-	// graph_element_pattern->label_name = graph_variable->label_name;
-	// graph_element_pattern->is_vertex_pattern = is_vertex_pattern;
-
-	// if (element_pattern->is_vertex_pattern) {
-	// 	return graph_element_pattern;
-	// 	// return make_unique<GraphElementPattern>(graph_variable->alias_name, graph_variable->label_name,
-	// is_vertex_pattern);
-	// }
-	// else {
-	// 	graph_element_pattern->direction = direction;
-	// 	return graph_element_pattern;
-	// 	// return make_unique<GraphElementPattern>(graph_variable->alias_name, graph_variable->label_name,
-	// is_vertex_pattern, direction);
-	// }
 }
 
 unique_ptr<TableRef> Transformer::TransformMatch(PGMatchPattern *root) {
@@ -100,14 +82,6 @@ unique_ptr<TableRef> Transformer::TransformMatch(PGMatchPattern *root) {
 	}
 
 	TransformExpressionList(root->columns, result->columns);
-	// for (auto node = root->columns->head; node != nullptr; node = node->next) {
-	//     auto column = reinterpret_cast<PGRangeVar *>(node->data.ptr_value);
-	//     auto qname = TransformQualifiedName(column);
-	//     auto expression = make_unique<ColumnRefExpression>(qname.name);
-	//     // expression->alias = ;
-	//     // auto colref = make_unique<ColumnRefExpression>(column_name, table_name);
-	//     result->columns.push_back(move(expression));
-	// }
 
 	return move(result);
 }
