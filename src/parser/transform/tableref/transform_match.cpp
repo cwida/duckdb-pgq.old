@@ -12,27 +12,28 @@ using namespace duckdb_libpgquery;
 unique_ptr<GraphElementPattern> Transformer::TransformElementPattern(PGGraphElementPattern *element_pattern) {
 	// auto pattern_clause = TransformGraphVariablePattern(element_pattern->pattern_clause);
 
-	auto is_vertex_pattern = element_pattern->is_vertex_pattern;
+	// auto is_vertex_pattern = element_pattern->is_vertex_pattern;
 	MatchDirection direction;
-	auto graph_element_pattern = make_unique<GraphElementPattern>();
+	// auto graph_element_pattern = make_unique<GraphElementPattern>();
 	string edge_alias, vertex_alias;
 	auto graph_variable = reinterpret_cast<PGGraphVariablePattern *>(element_pattern->pattern_clause);
 
-	if (!graph_variable->label_name) {
-		throw ParserException("Label name cannot be empty!");
-	}
+	// if (!graph_variable->label_name) {
+	// 	throw ParserException("Label name cannot be empty!");
+	// }
 
-	graph_element_pattern->label_name = graph_variable->label_name;
-	graph_element_pattern->is_vertex_pattern = is_vertex_pattern;
-
+	// graph_element_pattern->label_name = graph_variable->label_name;
+	// graph_element_pattern->is_vertex_pattern = is_vertex_pattern;
+	auto label_name = graph_variable->label_name ? graph_variable->label_name : "";
 	if (element_pattern->is_vertex_pattern) {
 		if (!graph_variable->alias_name) {
-			vetex_alias = "__v__" + to_string(vertex_id++);
+			vertex_alias = "__v__" + to_string(vertex_id++);
 		} else {
 			vertex_alias = graph_variable->alias_name;
 		}
 		// return graph_element_pattern;
-		return make_unique<GraphElementPattern>(vertex_alias, graph_variable->label_name, is_vertex_pattern);
+
+		return make_unique<GraphElementPattern>(vertex_alias, label_name, element_pattern->is_vertex_pattern);
 	} else {
 		switch (element_pattern->direction) {
 			// auto direction;
@@ -55,7 +56,7 @@ unique_ptr<GraphElementPattern> Transformer::TransformElementPattern(PGGraphElem
 		} else {
 			edge_alias = graph_variable->alias_name;
 		}
-		return make_unique<GraphElementPattern>(edge_alias, graph_variable->label_name, is_vertex_pattern, direction);
+		return make_unique<GraphElementPattern>(edge_alias, label_name, element_pattern->is_vertex_pattern, direction);
 	}
 }
 

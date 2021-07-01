@@ -62,34 +62,41 @@ unique_ptr<ParsedExpression> Binder::CreateExpression(vector<string> &vertex_col
 		if (and_expression) {
 			and_expression = make_unique<ConjunctionExpression>(ExpressionType::CONJUNCTION_AND, move(and_expression),
 			                                                    move(condition));
-			// where_expression = make_unique<ConjunctionExpression>(ExpressionType::CONJUNCTION_AND, where_expression,
-			// condition);
 		} else {
 			and_expression = move(condition);
 		}
 	}
 	return and_expression;
-	// return AndExpression(conditions);
 }
 
 /*
 Verify alias usage across edge patterns. If the alias has not been seen before, then we add it to the map. An alias can
 only be repeated if it is used for the same table. Furthermore, a vertex alias cannot be used as an edge alias.
 */
-bool Binder::CheckAliasUsage(unordered_map<string, std::pair<string, bool>> &alias_table_map, string &alias,
-                             string &table_name, bool is_vertex_pattern) {
+bool Binder::CheckAliasUsage(unordered_map<string, std::tuple<string, bool, string>> &alias_table_map, string &alias,
+                             string &table_name, bool is_vertex_pattern, string &label) {
 	auto entry = alias_table_map.find(alias);
 	if (entry == alias_table_map.end()) {
-		alias_table_map[alias] = std::make_pair(table_name, is_vertex_pattern);
+		alias_table_map[alias] = std::make_tuple(table_name, is_vertex_pattern, label);
 		return true;
-	} else if (entry->second.first != table_name) {
+	} else if (std::get<0>(entry->second) != table_name) {
 		throw BinderException("Alias %s used for different tables", alias);
-	} else if (entry->second.second != is_vertex_pattern) {
+	} else if (std::get<1>(entry->second) != is_vertex_pattern) {
 		throw BinderException("Alias %s used for both vertex table and edge table", alias);
-	} else if (entry->second.first == table_name && entry->second.second == is_vertex_pattern) {
+	} else if (std::get<0>(entry->second) == table_name && std::get<1>(entry->second) == is_vertex_pattern) {
 		return true;
 	}
 	return false;
+}
+
+static string GetLabel(unordered_map<string, std::tuple<string, bool, string>> &alias_table_map, string &alias) {
+	auto entry = alias_table_map.find(alias);
+	if (entry == alias_table_map.end()) {
+		throw BinderException("Alias %s does not have a label and label has not been defined before.", alias);
+	}
+	else{
+		return std::get<2>(entry->second);
+	}
 }
 
 unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
@@ -104,7 +111,7 @@ unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
 	vector<vector<string>> edge_columns;
 	vector<string> edge_aliases;
 	unordered_set<unique_ptr<BaseTableRef>> from_tables;
-	unordered_map<string, std::pair<string, bool>> alias_table_map;
+	unordered_map<string, std::tuple<string, bool, string>> alias_table_map;
 	vector<unique_ptr<ParsedExpression>> conditions;
 
 	auto select_node = make_unique<SelectNode>();
@@ -116,11 +123,15 @@ unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
 		throw BinderException("Match clause missing element as size of pattern is even.");
 	}
 	auto previous_vertex_pattern = move(ref.param_list[0]);
+	
+	// if(!previous_vertex_pattern->label_name){
+	// 	throw BinderException("First vertex label cannot be empty");
+	// }
 	auto previous_vertex_entry = FindLabel(pg_table, previous_vertex_pattern->label_name);
 	auto table = TransformFromTable(previous_vertex_pattern->alias_name, previous_vertex_entry->name);
 
 	alias_table_map[previous_vertex_pattern->alias_name] =
-	    std::make_pair(previous_vertex_entry->name, previous_vertex_pattern->is_vertex_pattern);
+	    std::make_tuple(previous_vertex_entry->name, previous_vertex_pattern->is_vertex_pattern, previous_vertex_pattern->label_name);
 	// table.get();
 	from_tables.insert(move(table));
 
@@ -128,13 +139,17 @@ unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
 		auto edge_pattern = move(ref.param_list[i]);
 		auto vertex_pattern = move(ref.param_list[i + 1]);
 
-		auto edge_entry = FindLabel(pg_table, edge_pattern->label_name);
-		auto vertex_entry = FindLabel(pg_table, vertex_pattern->label_name);
+
+		auto edge_label = (edge_pattern->label_name != "") ? edge_pattern->label_name : GetLabel(alias_table_map,  edge_pattern->alias_name);
+		auto vertex_label = (vertex_pattern->label_name != "") ? vertex_pattern->label_name : GetLabel(alias_table_map, vertex_pattern->alias_name);
+		
+		auto edge_entry = FindLabel(pg_table, edge_label);
+		auto vertex_entry = FindLabel(pg_table, vertex_label);
 
 		auto edge_alias_usage = CheckAliasUsage(alias_table_map, edge_pattern->alias_name, edge_entry->name,
-		                                        edge_pattern->is_vertex_pattern);
+		                                        edge_pattern->is_vertex_pattern, edge_label);
 		auto vertex_alias_usage = CheckAliasUsage(alias_table_map, vertex_pattern->alias_name, vertex_entry->name,
-		                                          vertex_pattern->is_vertex_pattern);
+		                                          vertex_pattern->is_vertex_pattern, vertex_label);
 
 		if (edge_alias_usage && vertex_alias_usage) {
 
@@ -208,7 +223,7 @@ unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
 	// }
 
 	for (auto &it : alias_table_map) {
-		auto tmp = TransformFromTable(it.first, it.second.first);
+		auto tmp = TransformFromTable(it.first, std::get<0>(it.second));
 
 		if (!cur_root) {
 			cur_root = move(tmp);
