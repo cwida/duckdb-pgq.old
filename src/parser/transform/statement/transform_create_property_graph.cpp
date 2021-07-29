@@ -51,7 +51,10 @@ Transformer::TranformPropertyGraphTable(PGPropertyGraphTable *table,
 		for (auto &label : labels) {
 			label_map_1[label] = pg_table.get();
 		}
-
+		pg_table->contains_discriminator = table->contains_discriminator;
+		if(pg_table->contains_discriminator){
+			pg_table->discriminator = string(table->discriminator);
+		}
 		return pg_table;
 		// return make_unique<PropertyGraphTable>(move(tableref), keys, labels);
 		// return unique_ptr<PropertyGraphTable>(new PropertyGraphTable(keys, labels));
@@ -72,6 +75,7 @@ Transformer::TranformPropertyGraphTable(PGPropertyGraphTable *table,
 		pg_table->destination_key_reference = destination_key_reference;
 		pg_table->destination_key = destination_key;
 		pg_table->is_vertex_table = false;
+		pg_table->contains_discriminator = false;
 		for (auto &label : labels) {
 			label_map_1[label] = pg_table.get();
 		

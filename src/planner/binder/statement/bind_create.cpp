@@ -24,6 +24,34 @@
 #include "duckdb/planner/tableref/bound_basetableref.hpp"
 
 namespace duckdb {
+/*
+static void CheckPropertyGraphTable(vector<unique_ptr<PropertyGraphTable>> element_tables, SchemaCatalogEntry *schema) {
+	for (idx_t i = 0; i < element_tables.size(); i++) {
+		auto &element_table = element_tables[i];
+
+		// DEFAULT_SCHEMA = main
+		// can schema of info and underlying table be different ?
+		auto table = Catalog::GetCatalog(context).GetEntry<TableCatalogEntry>(context, schema, element_table->name);
+
+		if (!table) {
+			throw BinderException("Table %s doesnot exist", element_table->name);
+		}
+		for (idx_t key_index = 0; key_index < vertex_table->keys.size(); key_index++) {
+			auto entry = table->name_map.find(vertex_table->keys[key_index]);
+
+			if (entry == table->name_map.end()) {
+				throw BinderException("Column %s not found in table %s", vertex_table->keys[key_index], table->name);
+			}
+		}
+		if(vertex_table->contains_discriminator) {
+			auto entry = table->name_map.find(vertex_table->discriminator);
+			if (entry == table->name_map.end()) {
+				throw BinderException("Column %s not found in table %s", vertex_table->keys[key_index], table->name);
+			}
+		}		
+		// primary key constraint checked.
+	}
+}*/
 
 SchemaCatalogEntry *Binder::BindSchema(CreateInfo &info) {
 	if (info.schema == INVALID_SCHEMA) {
@@ -70,18 +98,7 @@ void Binder::BindCreatePropertyGraphInfo(CreatePropertyGraphInfo &info) {
 	// note that we bind the original, and replace the original with a copy
 	// this is because the original has
 	// auto copy = base.Copy();
-	// base.vertex_tables
-	// for (auto vertex_table : base.vertex_tables) {
-	// 	// if()
-
-	// auto schema_obj = Catalog::GetCatalog(context).GetSchema(context, info.schema);
-
-	// auto bound_table = Bind(*info.table);
-
-	// for(auto table: info.table_ref_list) {
-
-	// }
-	// auto table = Catalog::GetCatalog(context).GetEntry<TableCatalogEntry>(context, stmt.schema, stmt.table);
+	
 	auto pg_table =
 	    Catalog::GetCatalog(context).GetEntry<PropertyGraphCatalogEntry>(context, info.schema, info.name, true);
 	if (pg_table) {
@@ -104,8 +121,13 @@ void Binder::BindCreatePropertyGraphInfo(CreatePropertyGraphInfo &info) {
 				throw BinderException("Column %s not found in table %s", vertex_table->keys[key_index], table->name);
 			}
 		}
+		if(vertex_table->contains_discriminator) {
+			auto entry = table->name_map.find(vertex_table->discriminator);
+			if (entry == table->name_map.end()) {
+				throw BinderException("Column %s not found in table %s", vertex_table->discriminator, table->name);
+			}
+		}		
 		// primary key constraint checked.
-		// do a get_catalog_entry
 	}
 }
 

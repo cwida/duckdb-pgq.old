@@ -1664,6 +1664,9 @@ typedef struct PGPropertyGraphTable {
 	
 	PGList *keys;
 
+	bool contains_discriminator;
+	char *discriminator;
+
 	bool is_vertex_table;
 	
 	/* Fields only used for Edge Tables */
@@ -1694,6 +1697,12 @@ typedef enum PGMatchDirection {
 	PG_MATCH_DIR_ANY
 } PGMatchDirection;
 
+typedef enum PGMatchStarPattern {
+	PG_STAR_NONE,
+	PG_STAR_ALL,
+	PG_STAR_BOUNDED
+} PGMatchStarPattern;
+
 typedef struct PGGraphVariablePattern {
 	PGNodeTag type;
 	char *alias_name;
@@ -1707,6 +1716,9 @@ typedef struct PGGraphElementPattern {
 	
 	//Only used for Edge pattern
 	PGMatchDirection direction;
+	PGMatchStarPattern star_pattern;
+	int lower_bound;
+	int upper_bound;
 } PGGraphElementPattern;
 
 /* ----------------------

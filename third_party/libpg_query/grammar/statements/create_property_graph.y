@@ -41,7 +41,6 @@ edge_alias:
 			EDGE
 			| RELATIONSHIP
 		;
-
 	
 VertexTableDefinitionList:
 			VertexTableDefinition									{ $$ = list_make1($1); }
@@ -49,7 +48,7 @@ VertexTableDefinitionList:
 		;
 
 VertexTableDefinition:
-			qualified_name GraphTableKeyClause LabelList
+			qualified_name GraphTableKeyClause  LabelList DISCRIMINATOR ColId	
 			// qualified_name KEY '(' name_list ')' LabelList		
 				{
 					PGPropertyGraphTable *n = makeNode(PGPropertyGraphTable);
@@ -57,6 +56,19 @@ VertexTableDefinition:
 					n->labels = $3;
 					n->keys = $2;
 					n->is_vertex_table = true;
+					n->contains_discriminator = true;
+					n->discriminator = $5;
+					$$ = (PGNode *) n;
+				}
+			| qualified_name GraphTableKeyClause  LabelList  
+			// qualified_name KEY '(' name_list ')' LabelList		
+				{
+					PGPropertyGraphTable *n = makeNode(PGPropertyGraphTable);
+					n->name = $1;
+					n->labels = $3;
+					n->keys = $2;
+					n->is_vertex_table = true;
+					n->contains_discriminator = false;
 					$$ = (PGNode *) n;
 				}
 		;
@@ -74,7 +86,7 @@ LabelList:
 LabelEnd:
 			IDENT				{ $$ = $1; }
 			// | /* Empty */		{ $$ = NIL; }
-			// | DEFAULT					{ $$ = $1; }	//all columns??
+			| DEFAULT					{ $$ = (char*) "default"; }	//all columns??
 		;
 
 EdgeTableDefinitionList:

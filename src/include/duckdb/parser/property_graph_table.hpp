@@ -45,7 +45,12 @@ public:
 	vector<string> destination_key;
 
 	string destination_key_reference;
-	// //! The query text that corresponds to this SQL statement
+
+	bool contains_discriminator;
+
+	string discriminator;
+
+
 	// string query;
 
 	virtual ~PropertyGraphTable() {
