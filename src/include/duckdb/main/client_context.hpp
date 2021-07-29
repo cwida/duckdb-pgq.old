@@ -32,6 +32,10 @@ class BufferedFileWriter;
 
 class ClientContextLock;
 
+class csr {
+	vector<int> V;
+	vector<int> E;
+}
 //! The ClientContext holds information relevant to the current client session
 //! during execution
 class ClientContext : public std::enable_shared_from_this<ClientContext> {
@@ -75,6 +79,11 @@ public:
 	ExplainOutputType explain_output_type = ExplainOutputType::PHYSICAL_ONLY;
 	//! The random generator used by random(). Its seed value can be set by setseed().
 	std::mt19937 random_engine;
+
+	//! used by udfs to create vertex and edge tables csr representation
+	bool initialized_v = false;
+	bool initialized_e = false; 
+	vector<csr> csr_list;
 
 public:
 	DUCKDB_API Transaction &ActiveTransaction() {
