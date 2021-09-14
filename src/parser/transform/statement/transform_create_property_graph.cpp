@@ -20,7 +20,7 @@ using namespace duckdb_libpgquery;
 unique_ptr<PropertyGraphTable>
 Transformer::TranformPropertyGraphTable(PGPropertyGraphTable *table,
                                         unordered_map<string, PropertyGraphTable *> &label_map_1) {
-	
+
 	vector<string> keys, labels, source_key, destination_key;
 	string name, source_key_reference, destination_key_reference;
 	auto pg_table = make_unique<PropertyGraphTable>();
@@ -52,7 +52,7 @@ Transformer::TranformPropertyGraphTable(PGPropertyGraphTable *table,
 			label_map_1[label] = pg_table.get();
 		}
 		pg_table->contains_discriminator = table->contains_discriminator;
-		if(pg_table->contains_discriminator){
+		if (pg_table->contains_discriminator) {
 			pg_table->discriminator = string(table->discriminator);
 		}
 		return pg_table;
@@ -78,12 +78,10 @@ Transformer::TranformPropertyGraphTable(PGPropertyGraphTable *table,
 		pg_table->contains_discriminator = false;
 		for (auto &label : labels) {
 			label_map_1[label] = pg_table.get();
-		
 		}
 		return pg_table;
 		// return make_unique<PropertyGraphTable>(move(tableref), keys, labels, source_key, source_key_reference,
 		//                                        destination_key, destination_key_reference);
-		
 	}
 }
 

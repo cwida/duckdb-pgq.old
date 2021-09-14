@@ -93,8 +93,7 @@ static string GetLabel(unordered_map<string, std::tuple<string, bool, string>> &
 	auto entry = alias_table_map.find(alias);
 	if (entry == alias_table_map.end()) {
 		throw BinderException("Alias %s does not have a label and label has not been defined before.", alias);
-	}
-	else{
+	} else {
 		return std::get<2>(entry->second);
 	}
 }
@@ -123,15 +122,15 @@ unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
 		throw BinderException("Match clause missing element as size of pattern is even.");
 	}
 	auto previous_vertex_pattern = move(ref.param_list[0]);
-	
+
 	// if(!previous_vertex_pattern->label_name){
 	// 	throw BinderException("First vertex label cannot be empty");
 	// }
 	auto previous_vertex_entry = FindLabel(pg_table, previous_vertex_pattern->label_name);
 	auto table = TransformFromTable(previous_vertex_pattern->alias_name, previous_vertex_entry->name);
 
-	alias_table_map[previous_vertex_pattern->alias_name] =
-	    std::make_tuple(previous_vertex_entry->name, previous_vertex_pattern->is_vertex_pattern, previous_vertex_pattern->label_name);
+	alias_table_map[previous_vertex_pattern->alias_name] = std::make_tuple(
+	    previous_vertex_entry->name, previous_vertex_pattern->is_vertex_pattern, previous_vertex_pattern->label_name);
 	// table.get();
 	from_tables.insert(move(table));
 
@@ -139,10 +138,11 @@ unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
 		auto edge_pattern = move(ref.param_list[i]);
 		auto vertex_pattern = move(ref.param_list[i + 1]);
 
+		auto edge_label = (edge_pattern->label_name != "") ? edge_pattern->label_name
+		                                                   : GetLabel(alias_table_map, edge_pattern->alias_name);
+		auto vertex_label = (vertex_pattern->label_name != "") ? vertex_pattern->label_name
+		                                                       : GetLabel(alias_table_map, vertex_pattern->alias_name);
 
-		auto edge_label = (edge_pattern->label_name != "") ? edge_pattern->label_name : GetLabel(alias_table_map,  edge_pattern->alias_name);
-		auto vertex_label = (vertex_pattern->label_name != "") ? vertex_pattern->label_name : GetLabel(alias_table_map, vertex_pattern->alias_name);
-		
 		auto edge_entry = FindLabel(pg_table, edge_label);
 		auto vertex_entry = FindLabel(pg_table, vertex_label);
 

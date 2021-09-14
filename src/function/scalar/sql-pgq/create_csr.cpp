@@ -195,7 +195,6 @@ void CreateCsrFun::RegisterFunction(BuiltinFunctions &set) {
 	    "create_csr_edge",
 	    {LogicalType::INTEGER, LogicalType::HUGEINT, LogicalType::INTEGER, LogicalType::INTEGER, LogicalType::INTEGER},
 	    LogicalType::INTEGER, create_csr_edge_function, false, create_csr_edge_bind));
-
 }
 
 } // namespace duckdb
