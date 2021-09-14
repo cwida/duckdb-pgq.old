@@ -1,141 +1,201 @@
 #include "duckdb/function/scalar/sql_pgq_functions.hpp"
 #include "duckdb/main/client_context.hpp"
+#include "duckdb/common/mutex.hpp"
+#include "duckdb/planner/expression/bound_function_expression.hpp"
+#include "duckdb/common/vector_operations/unary_executor.hpp"
+#include "duckdb/common/vector_operations/binary_executor.hpp"
+#include "duckdb/common/exception.hpp"
+#include "duckdb/common/vector_operations/vector_operations.hpp"
+#include "duckdb/execution/expression_executor.hpp"
 
 namespace duckdb {
 
-//might need a struct for bound data
-/*struct StatsBindData : public FunctionData {
-	StatsBindData(string stats = string()) : stats(move(stats)) {
-	}
-
-	string stats;
-
-public:
-	unique_ptr<FunctionData> Copy() override {
-		return make_unique<StatsBindData>(stats);
-	}
-};*/
-
 struct CsrBindData : public FunctionData {
 	ClientContext &context;
+	int32_t id;
+	int32_t vertex_size;
+	int32_t edge_size;
+	// mutex csr_lock;
 
-	CurrentBindData(ClientContext &context) : context(context) {
+	CsrBindData(ClientContext &context, int32_t id, int32_t vertex_size)
+	    : context(context), id(id), vertex_size(vertex_size) {
+	}
+
+	CsrBindData(ClientContext &context, int32_t id, int32_t vertex_size, int32_t edge_size)
+	    : context(context), id(id), vertex_size(vertex_size), edge_size(edge_size) {
+	}
+
+	~CsrBindData() {
 	}
 
 	unique_ptr<FunctionData> Copy() override {
-		return make_unique<CsrBindData>(context);
+		return make_unique<CsrBindData>(context, id, vertex_size);
 	}
 };
 
-//will passing context work directly, or do I need to ppass state again?
-static void csr_initialize_vertex_or_edge(DataChunk &args, ExpressionState &state, bool is_vertex) {
-	// auto &func_expr = (BoundFunctionExpression &)state.expr;
-	// auto &info = (CsrBindData &)*func_expr.bind_info;
-	
-	auto csr = info.context.csr_list[args.data[0]];
-	if(is_vertex) {
-		lock_guard<mutex> csr_init_lock(seq->lock);
-		if(info.context.initialized_v){
+static void csr_initialize_vertex_or_edge(ClientContext &context, int32_t id, int32_t v_size, int32_t e_size = 0,
+                                          bool is_vertex = true) {
+	Vector result;
+	// auto csr = ((u_int64_t) id) < context.csr_list.size() ? context.csr_list[id] : make_unique<Csr>();
+	auto csr = ((u_int64_t)id) < context.csr_list.size() ? move(context.csr_list[id]) : make_unique<Csr>();
+	// unique_pte here ?
+	if (is_vertex) {
+		lock_guard<mutex> csr_init_lock(context.csr_lock);
+		if (context.initialized_v) {
 			return;
 		}
-		try{
-			//extra 2 spaces required for CSR padding
-			csr.v.resize(args.data[1] + 2, 0);
+
+		try {
+			// extra 2 spaces required for CSR padding
+			// data contains a vector of elements so will need an anonymous function to apply the
+			// the first element id is repeated across, can I access the value directly?
+			csr->v = new std::atomic<int32_t>[v_size + 2];
+			for (idx_t i = 0; i < (idx_t)v_size + 2; i++) {
+				csr->v[i] = 0;
+			}
+			if (((u_int64_t)id) < context.csr_list.size())
+				context.csr_list[id] = move(csr);
+			else
+				context.csr_list.push_back(move(csr));
+
+			// dont' forget to destroy
+			// }
+		} catch (std::bad_alloc const &) {
+			//  v_size + 2
+			throw Exception("Unable to initialise vector of size for csr vertex table representation");
 		}
-		catch (std::bad_alloc const&) {
-			throw Exception("Unable to initialise vector of size %d for csr vertex table representation", args.data[1] + 2);
+		context.initialized_v = true;
+		return;
+	} else {
+		lock_guard<mutex> csr_init_lock(context.csr_lock);
+		if (context.initialized_e) {
+			return;
 		}
-		info.context.initialized_v = true;
+		try {
+			// csr->e = new std::atomic<int32_t>[e_size + 2];
+			csr->e.resize(e_size, 0);
+
+		} catch (std::bad_alloc const &) {
+			throw Exception("Unable to initialise vector of size for csr edge table representation");
+		}
+
+		// 	//create running sum
+		for (auto i = 1; i < v_size + 2; i++) {
+			csr->v[i] += csr->v[i - 1];
+		}
+		context.initialized_e = true;
+		if (((u_int64_t)id) < context.csr_list.size())
+			context.csr_list[id] = move(csr);
+		else
+			context.csr_list.push_back(move(csr));
+
 		return;
 	}
-	else {
-		lock_guard<mutex> csr_init_lock(seq->lock);
-		if(info.context.initialized_e){
-			return;
-		}
-		try{
-			//extra 2 spaces required for CSR padding
-			csr.e.resize(args.data[1] + 2, 0);
-		}
-		catch (std::bad_alloc const&) {
-			throw Exception("Unable to initialise vector of size %d for csr edge table representation", args.data[1] + 2);
-		}
-		info.context.initialized_e = true;
-		//create running sum
-		for (auto i = 1; i < args.data[1]; i++) {
-			csr.v[i] += csr.v[i-1];
-		}
-		return; 
-	}
-
 }
 
-
-
-// static void csr_initilaize_v(DataChunk args, )
 static void create_csr_vertex_function(DataChunk &args, ExpressionState &state, Vector &result) {
-	D_ASSERT(args.ColumnCount() == 0);
+	// D_ASSERT(args.ColumnCount() == 0);
 	auto &func_expr = (BoundFunctionExpression &)state.expr;
 	auto &info = (CsrBindData &)*func_expr.bind_info;
 
-	auto csr = info.context.csr[args.data[0]];
-
-	if(!info.context.initialized_v){
-		csr_initialize_vertex_or_edge(args, info.context, true);
+	if (!info.context.initialized_v) {
+		csr_initialize_vertex_or_edge(info.context, info.id, info.vertex_size, 0, true);
+		// csr_initialize_vertex_or_edge(args, state, true);
 	}
-	
+	auto csr = move(info.context.csr_list[info.id]);
 
-	// Value v(args.data[0].type.ToString());
-	edge_count = 0;
-	for(int i = 0; i < args.data[2].size(); i++) {
-		std::atomic(csr.v[args.data[2][i+2]], 1);
-		edge_count++;
-	}
+	BinaryExecutor::Execute<int32_t, int32_t, int32_t, true>(args.data[2], args.data[3], result, args.size(),
+	                                                         [&](int32_t src, int32_t cnt) {
+		                                                         int32_t edge_count = 0;
 
-	// result.Reference(v);
-	// return 
-	result + = edge_count;
+		                                                         // for(idx_t i = 0; i < src.size(); i++) {
+		                                                         // *csr.v[src[i+2]] = 1;
+		                                                         csr->v[src + 2] += cnt;
+
+		                                                         edge_count = edge_count + cnt;
+		                                                         return edge_count;
+	                                                         });
+	info.context.csr_list[info.id] = move(csr);
 	return;
 }
 
-static int create_csr_edge_function(DataChunk &args, ExpressionState &state, Vector &result) {
-	D_ASSERT(args.ColumnCount() == 0);
+static unique_ptr<FunctionData> create_csr_vertex_bind(ClientContext &context, ScalarFunction &bound_function,
+                                                       vector<unique_ptr<Expression>> &arguments) {
+	// SequenceCatalogEntry *sequence = nullptr;
+
+	if (!arguments[0]->IsFoldable() || !arguments[1]->IsFoldable()) {
+		throw InvalidInputException("Vertex size and id must be constant.");
+	}
+	Value id = ExpressionExecutor::EvaluateScalar(*arguments[0]);
+	Value vertex_size = ExpressionExecutor::EvaluateScalar(*arguments[1]);
+
+	return make_unique<CsrBindData>(context, id.GetValue<int32_t>(), vertex_size.GetValue<int32_t>());
+}
+
+static void create_csr_edge_function(DataChunk &args, ExpressionState &state, Vector &result) {
+	// D_ASSERT(args.ColumnCount() == 0);
 	auto &func_expr = (BoundFunctionExpression &)state.expr;
 	auto &info = (CsrBindData &)*func_expr.bind_info;
-	
-	auto csr = info.context.csr[args.data[0]];
 
-	if(!info.context.initialized_e){
-		csr_initialize_vertex_or_edge(args, info.context, false);
+	if (!info.context.initialized_e) {
+		csr_initialize_vertex_or_edge(info.context, info.id, info.vertex_size, info.edge_size, false);
 	}
 
-	for(int i = 0; i < args.data[3].size(); i++) {
-		auto pos = std::atomic(csr.v[args.data[3][i] + 1], 1);
-		csr.e[pos - 1] = args.data[4][i];
+	auto csr = move(info.context.csr_list[info.id]);
+
+	BinaryExecutor::Execute<int32_t, int32_t, int32_t, true>(args.data[3], args.data[4], result, args.size(),
+	                                                         [&](int32_t src, int32_t dst) {
+		                                                         auto pos = ++csr->v[src + 1];
+		                                                         csr->e[(int)pos - 1] = dst;
+		                                                         return 1;
+	                                                         });
+
+	return;
+}
+
+static unique_ptr<FunctionData> create_csr_edge_bind(ClientContext &context, ScalarFunction &bound_function,
+                                                     vector<unique_ptr<Expression>> &arguments) {
+	if (!arguments[0]->IsFoldable() && !arguments[1]->IsFoldable()) {
+		throw InvalidInputException("Id and number of edges must be constant.");
 	}
 
-	// result.Reference(v);
-	return edge_count;
+	Value id = ExpressionExecutor::EvaluateScalar(*arguments[0]);
+	Value vertex_size = ExpressionExecutor::EvaluateScalar(*arguments[1]);
+	Value edge_size = ExpressionExecutor::EvaluateScalar(*arguments[2]);
+
+	return make_unique<CsrBindData>(context, id.GetValue<int32_t>(), vertex_size.GetValue<int32_t>(),
+	                                edge_size.GetValue<int32_t>());
 }
 
+struct AddOneOperator {
+	template <class TA, class TR>
+	static inline TR Operation(TA input) {
+		return input + 1;
+	}
+};
 
-//decide on function return type
-AggregateFunction CreateCsrFun::GetFunction() {
-	return AggregateFunction::NullaryAggregate<int64_t, int64_t, CreateCsrFunction>(LogicalType::BIGINT);
-}
+struct BitCntOperatorCsr {
+	template <class TA, class TR>
+	static inline TR Operation(TA input) {
+		using TU = typename std::make_unsigned<TA>::type;
+		TR count = 0;
+		for (auto value = TU(input); value > 0; value >>= 1) {
+			count += TR(value & 1);
+		}
+		return count;
+	}
+};
 
-void TypeOfFun::RegisterFunction(BuiltinFunctions &set) {
-	//no need for bind function as data not modified
-	//args -> id, |V|, src
-	set.AddFunction(ScalarFunction("create_csr_vertex", {LogicalType::INTEGER, LogicalType::INTEGER, LogicalType::List}, LogicalType::INTEGER, create_csr_vertex_function));
+void CreateCsrFun::RegisterFunction(BuiltinFunctions &set) {
 
-	//figure out how to return type void
-	// args -> id, |V|, |E|, src, dst
-	set.AddFunction(ScalarFunction("create_csr_edge", {LogicalType::INTEGER, LogicalType::INTEGER, LogicalType::INTEGER, LogicalType::List, LogicalType::List}, LogicalType::ANY, create_csr_edge_function));
+	set.AddFunction(ScalarFunction(
+	    "create_csr_vertex", {LogicalType::INTEGER, LogicalType::INTEGER, LogicalType::INTEGER, LogicalType::INTEGER},
+	    LogicalType::INTEGER, create_csr_vertex_function, false, create_csr_vertex_bind));
+	set.AddFunction(ScalarFunction(
+	    "create_csr_edge",
+	    {LogicalType::INTEGER, LogicalType::HUGEINT, LogicalType::INTEGER, LogicalType::INTEGER, LogicalType::INTEGER},
+	    LogicalType::INTEGER, create_csr_edge_function, false, create_csr_edge_bind));
 
-
-	// set.AddFunction(ScalarFunction("strlen", {LogicalType::VARCHAR}, LogicalType::BIGINT,
-	//                                ScalarFunction::UnaryFunction<string_t, int64_t, StrLenOperator, true>));
 }
 
 } // namespace duckdb

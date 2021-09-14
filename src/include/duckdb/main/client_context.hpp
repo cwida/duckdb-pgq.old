@@ -19,6 +19,7 @@
 #include "duckdb/main/stream_query_result.hpp"
 #include "duckdb/main/table_description.hpp"
 #include "duckdb/transaction/transaction_context.hpp"
+#include "duckdb/common/atomic_wrapper.hpp"
 
 #include <random>
 
@@ -32,10 +33,26 @@ class BufferedFileWriter;
 
 class ClientContextLock;
 
-class csr {
-	vector<int> V;
-	vector<int> E;
-}
+class Csr {
+public:
+	Csr() {
+	}
+
+	// vector<unique_ptr<std::atomic<int>>> v;
+	std::atomic<int32_t> *v;
+	// std::atomic<int32_t>* e;
+	vector<int32_t> e;
+	// int x;
+	// std::atomic<int> v;
+
+	// unique_ptr<std::atomic<int>> v;
+	// std::vector<std::unique_ptr<std::atomic<int>>> examp;
+	// vector<atomicwrapper<int>> v;
+	// vector<std::atomic<int>> e;
+	// csr() = delete;
+	// csr(const csr&) = delete;
+	// csr(csr&&) = default;
+};
 //! The ClientContext holds information relevant to the current client session
 //! during execution
 class ClientContext : public std::enable_shared_from_this<ClientContext> {
@@ -82,8 +99,9 @@ public:
 
 	//! used by udfs to create vertex and edge tables csr representation
 	bool initialized_v = false;
-	bool initialized_e = false; 
-	vector<csr> csr_list;
+	bool initialized_e = false;
+	vector<unique_ptr<Csr>> csr_list;
+	std::mutex csr_lock;
 
 public:
 	DUCKDB_API Transaction &ActiveTransaction() {

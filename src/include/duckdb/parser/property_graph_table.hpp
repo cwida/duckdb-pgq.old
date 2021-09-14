@@ -50,7 +50,6 @@ public:
 
 	string discriminator;
 
-
 	// string query;
 
 	virtual ~PropertyGraphTable() {

@@ -42,6 +42,7 @@ void BuiltinFunctions::Initialize() {
 	RegisterSequenceFunctions();
 	RegisterStringFunctions();
 	RegisterNestedFunctions();
+	RegisterSqlPgqFunctions();
 	RegisterTrigonometricsFunctions();
 
 	RegisterPragmaFunctions();
