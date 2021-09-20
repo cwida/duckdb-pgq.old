@@ -14,26 +14,26 @@ struct CsrBindData : public FunctionData {
 	ClientContext &context;
 	int32_t id;
 	int32_t vertex_size;
-	int32_t edge_size;
+	// int32_t edge_size;
 	// mutex csr_lock;
 
-	CsrBindData(ClientContext &context, int32_t id, int32_t vertex_size)
-	    : context(context), id(id), vertex_size(vertex_size) {
+	CsrBindData(ClientContext &context, int32_t id) : context(context), id(id) {
 	}
 
-	CsrBindData(ClientContext &context, int32_t id, int32_t vertex_size, int32_t edge_size)
-	    : context(context), id(id), vertex_size(vertex_size), edge_size(edge_size) {
-	}
+	// CsrBindData(ClientContext &context, int32_t id, int32_t vertex_size)
+	//     : context(context), id(id), vertex_size(vertex_size) {
+	// }
 
 	~CsrBindData() {
+		// could possibly destroy the array here
 	}
 
 	unique_ptr<FunctionData> Copy() override {
-		return make_unique<CsrBindData>(context, id, vertex_size);
+		return make_unique<CsrBindData>(context, id);
 	}
 };
 
-static void csr_initialize_vertex_or_edge(ClientContext &context, int32_t id, int32_t v_size, int32_t e_size = 0,
+static void csr_initialize_vertex_or_edge(ClientContext &context, int32_t id, int64_t v_size, int64_t e_size = 0,
                                           bool is_vertex = true) {
 	Vector result;
 	// auto csr = ((u_int64_t) id) < context.csr_list.size() ? context.csr_list[id] : make_unique<Csr>();
@@ -49,7 +49,7 @@ static void csr_initialize_vertex_or_edge(ClientContext &context, int32_t id, in
 			// extra 2 spaces required for CSR padding
 			// data contains a vector of elements so will need an anonymous function to apply the
 			// the first element id is repeated across, can I access the value directly?
-			csr->v = new std::atomic<int32_t>[v_size + 2];
+			csr->v = new std::atomic<int64_t>[v_size + 2];
 			for (idx_t i = 0; i < (idx_t)v_size + 2; i++) {
 				csr->v[i] = 0;
 			}
@@ -98,19 +98,20 @@ static void create_csr_vertex_function(DataChunk &args, ExpressionState &state, 
 	auto &func_expr = (BoundFunctionExpression &)state.expr;
 	auto &info = (CsrBindData &)*func_expr.bind_info;
 
+	int64_t input_size = args.data[1].GetValue(0).GetValue<int64_t>();
 	if (!info.context.initialized_v) {
-		csr_initialize_vertex_or_edge(info.context, info.id, info.vertex_size, 0, true);
+		csr_initialize_vertex_or_edge(info.context, info.id, input_size, 0, true);
 		// csr_initialize_vertex_or_edge(args, state, true);
 	}
 	auto csr = move(info.context.csr_list[info.id]);
 
-	BinaryExecutor::Execute<int32_t, int32_t, int32_t, true>(args.data[2], args.data[3], result, args.size(),
-	                                                         [&](int32_t src, int32_t cnt) {
-		                                                         int32_t edge_count = 0;
+	BinaryExecutor::Execute<int64_t, int64_t, int64_t, true>(args.data[2], args.data[3], result, args.size(),
+	                                                         [&](int64_t src, int64_t cnt) {
+		                                                         int64_t edge_count = 0;
 
 		                                                         // for(idx_t i = 0; i < src.size(); i++) {
 		                                                         // *csr.v[src[i+2]] = 1;
-		                                                         csr->v[src + 2] += cnt;
+		                                                         csr->v[src + 2] = cnt;
 
 		                                                         edge_count = edge_count + cnt;
 		                                                         return edge_count;
@@ -122,14 +123,15 @@ static void create_csr_vertex_function(DataChunk &args, ExpressionState &state, 
 static unique_ptr<FunctionData> create_csr_vertex_bind(ClientContext &context, ScalarFunction &bound_function,
                                                        vector<unique_ptr<Expression>> &arguments) {
 	// SequenceCatalogEntry *sequence = nullptr;
-
-	if (!arguments[0]->IsFoldable() || !arguments[1]->IsFoldable()) {
-		throw InvalidInputException("Vertex size and id must be constant.");
+	if (!arguments[0]->IsFoldable()) {
+		throw InvalidInputException("Id must be constant.");
 	}
-	Value id = ExpressionExecutor::EvaluateScalar(*arguments[0]);
-	Value vertex_size = ExpressionExecutor::EvaluateScalar(*arguments[1]);
 
-	return make_unique<CsrBindData>(context, id.GetValue<int32_t>(), vertex_size.GetValue<int32_t>());
+	Value id = ExpressionExecutor::EvaluateScalar(*arguments[0]);
+	// Value vertex_size = ExpressionExecutor::EvaluateScalar(*arguments[1]);
+
+	return make_unique<CsrBindData>(context, id.GetValue<int32_t>());
+	// , vertex_size.GetValue<int32_t>());
 }
 
 static void create_csr_edge_function(DataChunk &args, ExpressionState &state, Vector &result) {
@@ -137,63 +139,46 @@ static void create_csr_edge_function(DataChunk &args, ExpressionState &state, Ve
 	auto &func_expr = (BoundFunctionExpression &)state.expr;
 	auto &info = (CsrBindData &)*func_expr.bind_info;
 
+	int64_t vertex_size = args.data[1].GetValue(0).GetValue<int64_t>();
+	int64_t edge_size = args.data[2].GetValue(0).GetValue<int64_t>();
 	if (!info.context.initialized_e) {
-		csr_initialize_vertex_or_edge(info.context, info.id, info.vertex_size, info.edge_size, false);
+		csr_initialize_vertex_or_edge(info.context, info.id, vertex_size, edge_size, false);
 	}
 
 	auto csr = move(info.context.csr_list[info.id]);
 
-	BinaryExecutor::Execute<int32_t, int32_t, int32_t, true>(args.data[3], args.data[4], result, args.size(),
-	                                                         [&](int32_t src, int32_t dst) {
+	BinaryExecutor::Execute<int64_t, int64_t, int32_t, true>(args.data[3], args.data[4], result, args.size(),
+	                                                         [&](int64_t src, int64_t dst) {
 		                                                         auto pos = ++csr->v[src + 1];
-		                                                         csr->e[(int)pos - 1] = dst;
+		                                                         csr->e[(int64_t)pos - 1] = dst;
 		                                                         return 1;
 	                                                         });
 
+	info.context.csr_list[info.id] = move(csr);
 	return;
 }
 
 static unique_ptr<FunctionData> create_csr_edge_bind(ClientContext &context, ScalarFunction &bound_function,
                                                      vector<unique_ptr<Expression>> &arguments) {
-	if (!arguments[0]->IsFoldable() && !arguments[1]->IsFoldable()) {
-		throw InvalidInputException("Id and number of edges must be constant.");
+	if (!arguments[0]->IsFoldable()) {
+		throw InvalidInputException("Id must be constant.");
 	}
 
 	Value id = ExpressionExecutor::EvaluateScalar(*arguments[0]);
-	Value vertex_size = ExpressionExecutor::EvaluateScalar(*arguments[1]);
-	Value edge_size = ExpressionExecutor::EvaluateScalar(*arguments[2]);
+	// Value vertex_size = ExpressionExecutor::EvaluateScalar(*arguments[1]);
+	// Value edge_size = ExpressionExecutor::EvaluateScalar(*arguments[2]);
 
-	return make_unique<CsrBindData>(context, id.GetValue<int32_t>(), vertex_size.GetValue<int32_t>(),
-	                                edge_size.GetValue<int32_t>());
+	return make_unique<CsrBindData>(context, id.GetValue<int32_t>());
 }
-
-struct AddOneOperator {
-	template <class TA, class TR>
-	static inline TR Operation(TA input) {
-		return input + 1;
-	}
-};
-
-struct BitCntOperatorCsr {
-	template <class TA, class TR>
-	static inline TR Operation(TA input) {
-		using TU = typename std::make_unsigned<TA>::type;
-		TR count = 0;
-		for (auto value = TU(input); value > 0; value >>= 1) {
-			count += TR(value & 1);
-		}
-		return count;
-	}
-};
 
 void CreateCsrFun::RegisterFunction(BuiltinFunctions &set) {
 
 	set.AddFunction(ScalarFunction(
-	    "create_csr_vertex", {LogicalType::INTEGER, LogicalType::INTEGER, LogicalType::INTEGER, LogicalType::INTEGER},
-	    LogicalType::INTEGER, create_csr_vertex_function, false, create_csr_vertex_bind));
+	    "create_csr_vertex", {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT},
+	    LogicalType::BIGINT, create_csr_vertex_function, false, create_csr_vertex_bind));
 	set.AddFunction(ScalarFunction(
 	    "create_csr_edge",
-	    {LogicalType::INTEGER, LogicalType::HUGEINT, LogicalType::INTEGER, LogicalType::INTEGER, LogicalType::INTEGER},
+	    {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT},
 	    LogicalType::INTEGER, create_csr_edge_function, false, create_csr_edge_bind));
 }
 

@@ -48,7 +48,7 @@ private:
 	void WriteView(ViewCatalogEntry &table);
 	void WriteSequence(SequenceCatalogEntry &table);
 	void WriteMacro(MacroCatalogEntry &table);
-	void WritePropertyGraph(PropertyGraphCatalogEntry &table);
+	// void WritePropertyGraph(PropertyGraphCatalogEntry &table);
 
 	void ReadSchema(ClientContext &context, MetaBlockReader &reader);
 	void ReadTable(ClientContext &context, MetaBlockReader &reader);

@@ -38,6 +38,12 @@ VERTEX TABLES ( account KEY ( AID ) LABEL acct, customer KEY ( CID ) LABEL custo
 EDGE TABLES ( transfers KEY ( from_id ) SOURCE KEY ( from_id ) REFERENCES account DESTINATION KEY ( to_id ) REFERENCES account LABEL transfers )
 
 
+statement error
+CREATE PROPERTY GRAPH aml_complete 
+VERTEX TABLES ( account KEY ( AID ) LABEL acct, customer KEY ( CID ) LABEL customer DISCRIMINATOR city)
+EDGE TABLES ( transfers KEY ( from_id ) SOURCE KEY ( from_id ) REFERENCES account DESTINATION KEY ( to_id ) REFERENCES account LABEL transfers )
+
+
 # statement ok
 # CREATE PROPERTY GRAPH aml_abbr 
 # VERTEX TABLES ( a KEY ( AID ) LABEL account, c KEY ( CID ) LABEL customer )

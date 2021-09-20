@@ -19,7 +19,6 @@
 #include "duckdb/main/stream_query_result.hpp"
 #include "duckdb/main/table_description.hpp"
 #include "duckdb/transaction/transaction_context.hpp"
-#include "duckdb/common/atomic_wrapper.hpp"
 
 #include <random>
 
@@ -39,9 +38,9 @@ public:
 	}
 
 	// vector<unique_ptr<std::atomic<int>>> v;
-	std::atomic<int32_t> *v;
+	std::atomic<int64_t> *v;
 	// std::atomic<int32_t>* e;
-	vector<int32_t> e;
+	vector<int64_t> e;
 	// int x;
 	// std::atomic<int> v;
 

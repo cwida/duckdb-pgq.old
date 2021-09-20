@@ -78,9 +78,9 @@ void CommitState::WriteCatalogEntry(CatalogEntry *entry, data_ptr_t dataptr) {
 	case CatalogType::MACRO_ENTRY:
 		log->WriteCreateMacro((MacroCatalogEntry *)parent);
 		break;
-	case CatalogType::PROPERTY_GRAPH_ENTRY:
-		log->WriteCreatePropertyGraph((PropertyGraphCatalogEntry *)parent);
-		break;
+	// case CatalogType::PROPERTY_GRAPH_ENTRY:
+	// 	log->WriteCreatePropertyGraph((PropertyGraphCatalogEntry *)parent);
+	// 	break;
 	case CatalogType::DELETED_ENTRY:
 		if (entry->type == CatalogType::TABLE_ENTRY) {
 			auto table_entry = (TableCatalogEntry *)entry;

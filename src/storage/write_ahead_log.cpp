@@ -164,13 +164,13 @@ void WriteAheadLog::WriteDropView(ViewCatalogEntry *entry) {
 //===--------------------------------------------------------------------===//
 // PROPERTY GRAPH
 //===--------------------------------------------------------------------===//
-void WriteAheadLog::WriteCreatePropertyGraph(PropertyGraphCatalogEntry *entry) {
-	if (skip_writing) {
-		return;
-	}
-	writer->Write<WALType>(WALType::CREATE_PROPERTY_GRAPH);
-	entry->Serialize(*writer);
-}
+/*void WriteAheadLog::WriteCreatePropertyGraph(PropertyGraphCatalogEntry *entry) {
+    if (skip_writing) {
+        return;
+    }
+    writer->Write<WALType>(WALType::CREATE_PROPERTY_GRAPH);
+    entry->Serialize(*writer);
+}*/
 
 //===--------------------------------------------------------------------===//
 // DROP SCHEMA

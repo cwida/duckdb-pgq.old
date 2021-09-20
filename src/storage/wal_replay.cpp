@@ -372,16 +372,16 @@ void ReplayState::ReplayDropMacro() {
 // ===--------------------------------------------------------------------===//
 // Replay Property Graph
 // ===--------------------------------------------------------------------===//
-void ReplayState::ReplayCreatePropertyGraph() {
-	auto entry = PropertyGraphCatalogEntry::Deserialize(source);
-	if (deserialize_only) {
-		return;
-	}
+/*void ReplayState::ReplayCreatePropertyGraph() {
+    auto entry = PropertyGraphCatalogEntry::Deserialize(source);
+    if (deserialize_only) {
+        return;
+    }
 
-	auto &catalog = Catalog::GetCatalog(context);
-	catalog.CreatePropertyGraph(context, entry.get());
+    auto &catalog = Catalog::GetCatalog(context);
+    catalog.CreatePropertyGraph(context, entry.get());
 }
-
+*/
 //===--------------------------------------------------------------------===//
 // Replay Data
 //===--------------------------------------------------------------------===//

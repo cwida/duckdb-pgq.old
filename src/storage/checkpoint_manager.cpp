@@ -176,9 +176,9 @@ void CheckpointManager::WriteSchema(SchemaCatalogEntry &schema) {
 		WriteMacro(*macro);
 	}
 	metadata_writer->Write<uint32_t>(pg_tables.size());
-	for (auto &pg_table : pg_tables) {
-		WritePropertyGraph(*pg_table);
-	}
+	// for (auto &pg_table : pg_tables) {
+	// 	WritePropertyGraph(*pg_table);
+	// }
 }
 
 void CheckpointManager::ReadSchema(ClientContext &context, MetaBlockReader &reader) {
@@ -229,16 +229,16 @@ void CheckpointManager::ReadView(ClientContext &context, MetaBlockReader &reader
 //===--------------------------------------------------------------------===//
 // Property Graph Tables
 //===--------------------------------------------------------------------===//
-void CheckpointManager::WritePropertyGraph(PropertyGraphCatalogEntry &pg_table) {
-	pg_table.Serialize(*metadata_writer);
+/*void CheckpointManager::WritePropertyGraph(PropertyGraphCatalogEntry &pg_table) {
+    pg_table.Serialize(*metadata_writer);
 }
 
 void CheckpointManager::ReadPropertyGraph(ClientContext &context, MetaBlockReader &reader) {
-	auto info = PropertyGraphCatalogEntry::Deserialize(reader);
+    auto info = PropertyGraphCatalogEntry::Deserialize(reader);
 
-	auto &catalog = Catalog::GetCatalog(db);
-	catalog.CreatePropertyGraph(context, info.get());
-}
+    auto &catalog = Catalog::GetCatalog(db);
+    catalog.CreatePropertyGraph(context, info.get());
+}*/
 
 //===--------------------------------------------------------------------===//
 // Sequences
