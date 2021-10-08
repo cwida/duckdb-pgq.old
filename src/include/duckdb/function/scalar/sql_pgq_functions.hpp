@@ -17,4 +17,8 @@ struct CreateCsrFun {
 	static void RegisterFunction(BuiltinFunctions &set);
 };
 
+struct MsBfsFun {
+	static void RegisterFunction(BuiltinFunctions &set);
+};
+
 } // namespace duckdb
