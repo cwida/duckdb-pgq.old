@@ -12,12 +12,16 @@ struct MsbfsBindData : public FunctionData {
 	ClientContext &context;
 	// int32_t num_bfs;
 
+	// MsbfsBindData(ClientContext &context, int32_t num_bfs) : context(context), num_bfs(num_bfs) {
+	// }
 	MsbfsBindData(ClientContext &context) : context(context) {
 	}
 
+	// CsrBindData(ClientContext &context, int32_t id, int32_t vertex_size)
+	//     : context(context), id(id), vertex_size(vertex_size) {
+	// }
 
 	~MsbfsBindData() {
-		// delete [] context.csr_list[0]->v;
 	}
 
 	unique_ptr<FunctionData> Copy() override {
@@ -43,7 +47,11 @@ static bool is_bit_set(uint32_t num, uint8_t bit)
     return 1 == ( (num >> bit) & 1);
 }
 
-static void msbfs_function(DataChunk &args, ExpressionState &state, Vector &result) {
+// static int64_t GetWeight(ClientContext ctx, unordered_map<int64_t, pair<int8_t, vector<int64_t>>> lane_map, ) {
+// 	return lane_map[i];
+// }
+
+static void sp_function(DataChunk &args, ExpressionState &state, Vector &result) {
 	// D_ASSERT(args.ColumnCount() == 0);
 	auto &func_expr = (BoundFunctionExpression &)state.expr;
 	auto &info = (MsbfsBindData &)*func_expr.bind_info;
@@ -54,7 +62,7 @@ static void msbfs_function(DataChunk &args, ExpressionState &state, Vector &resu
 	auto &src = args.data[2];
 	// .GetValue(0).GetValue<int64_t>();
 
-	VectorData vdata_src, vdata_target;
+	VectorData vdata_src, vdata_target, vdata_wt;
 	src.Orrify(args.size(), vdata_src);
 
 	auto src_data = (int64_t *)vdata_src.data;
@@ -64,72 +72,65 @@ static void msbfs_function(DataChunk &args, ExpressionState &state, Vector &resu
 	target.Orrify(args.size(), vdata_target);
 	auto target_data = (int64_t *)vdata_target.data;
 	// const int32_t bfs = info.num_bfs;
-	
-	int8_t result_size = 0;
-	idx_t curr_batch = 0;
-	result.vector_type = VectorType::FLAT_VECTOR;
+
+	auto &weight = args.data[4];
+	weight.Orrify(args.size(), vdata_wt);
+	auto wt_data = (int64_t *)vdata_wt.data;
+
+		result.vector_type = VectorType::FLAT_VECTOR;
 	auto result_data = FlatVector::GetData<bool>(result);
 
-	while (curr_batch < args.size()) {
-		int8_t lanes = 0;
-		vector<int64_t> seen(input_size);
-		// vector<std::bitset<LANE_LIMIT>> seen(input_size);
 
-		// vector<std::bitset<LANE_LIMIT>> visit(input_size);
-		vector<int64_t> visit_next(input_size);
-		vector<int64_t> visit(input_size);
-		// vector<int64_t> visit_next(input_size);
-		// value -> lane_index, src_indexes 
-		unordered_map<int64_t, pair<int8_t, vector<int64_t>>> lane_map;
-	
 
-	for(idx_t i =  curr_batch; i <  args.size() && lanes < LANE_LIMIT ; i++) {
+	vector<vector<int64_t>> dists(input_size);
+	vector<vector<bool>> modified(input_size);
+	// vector<int64_t> visit_next(input_size);
+
+	// for (auto idx = 0; idx< )
+	unordered_map<int64_t, pair<int8_t, vector<int64_t>>> lane_map;
+	int8_t lanes = 0;
+	int8_t result_size = 0;
+	for(idx_t i = 0 ; i <  args.size() && lanes < LANE_LIMIT ; i++) {
 		auto entry = lane_map.find(src_data[i]);
 		if(entry == lane_map.end()) {
-			lane_map[src_data[i]].first = lanes;
-			seen[lanes] = pow(2, lanes); 
-			visit[lanes] = pow(2, lanes);
-			// seen[lanes] = std::bitset<LANE_LIMIT>();
-			// seen[lanes][i] = 1;
-			// seen[lanes] = std::bitset<LANE_LIMIT>{""}; 
-			// visit[lanes] = pow(2, lanes);
+			lane_map[lanes].first = lanes;
 			// seen[src_data[i]] = pow(2, lanes);
 			// visit[src_data[i]] = pow(2, lanes);
+			vector<int64_t> temp_dist(input_size, 0);
+			vector<bool> temp_modified(input_size, true);
+			dists[lanes] = temp_dist;
+			modified[lanes] = temp_modified;
 			lanes++;
 		}
+		// else {
 			lane_map[src_data[i]].second.push_back(i);
 			result_size++;
+		// }
 	}
-	
-	// for (auto i = 0, idx = 0; i < lanes && idx < (int32_t)args.size(); i++, idx++) {
-	// 	seen[src_data[idx]] = pow(2, i);
-	// 	visit[src_data[idx]] = pow(2, i);
-	// }
-	// bool init = true;
-	int64_t d = 1;
+	bool changed = true;
 	// while(!check_empty_bitset(visit)) {
-	vector<int64_t> visit_list;
-	size_t visit_limit = input_size / 2;
-	int mode = 0;
-	size_t visit_count = 0;
-	while (d > 0 ) {
+	// vector<int64_t> visit_list;
+	// size_t visit_limit = input_size / 2;
+	// int mode = 0;
+	// size_t visit_count = 0;
+	while (changed) {
 		// init = false;
-		d = 0;
+		changed = false;
 		
 		// if(visit_list.size() > visit_limit) {
 		// 	mode = 2;
 		// 	visit_list.clear();
 			// visit_count = 0;
 		// }
+		/*
 		if(visit_count < visit_limit) {
 			mode = 0;
 		}
 		if(mode == 1) {
 			auto visit_list_copy = visit_list;
 			visit_list.clear();
-			auto csr = move(info.context.csr_list[0]);
-
 			for(auto i : visit_list_copy) {
+				auto csr = move(info.context.csr_list[0]);
 				// if(i > csr->v)
 				for (auto index = (long)csr->v[i]; index < (long)csr->v[i + 1]; index++) {
 					auto n = csr->e[index];
@@ -138,10 +139,9 @@ static void msbfs_function(DataChunk &args, ExpressionState &state, Vector &resu
 						visit_list.push_back(n);
 					}
 				}
+				info.context.csr_list[0] = move(csr);
 				visit_list_copy.clear();
 			}
-			info.context.csr_list[0] = move(csr);
-
 			visit_list_copy = visit_list;
 			visit_list.clear();
 			visit_count = 0;
@@ -164,57 +164,45 @@ static void msbfs_function(DataChunk &args, ExpressionState &state, Vector &resu
 			for (auto i = 0; i < input_size; i++) {
 				visit_next[i] = 0;
 			}
-		}
-		if(mode == 2 || mode == 0) {
+		}*/
+		// if(mode == 2 || mode == 0) {
 
 			visit_count = 0;
 			for (int64_t i = 0; i < input_size - 1; i++) {
-				if (!visit[i])
+				if (!modified[i])
 					continue;
 				auto csr = move(info.context.csr_list[0]);
 				// if(i > csr->v)
 				for (auto index = (long)csr->v[i]; index < (long)csr->v[i + 1]; index++) {
 					auto n = csr->e[index];
-					visit_next[n] = visit_next[n] | visit[i];
-					if(visit_next[n]) {
-						visit_count++;
-						if(mode == 0) {
-							visit_list.push_back(n);
+					//do 
+					auto wt = lane_map[i].second.first;
+					// auto wt = GetWeight(i);
+					for (auto i : modified[v]){
+						auto new_dist = min(dists[n][i], dists[v][i] + wt);
+						if (new_dist != dists[n][i]){
+							dists[n][i] = new_dist;
+							modified[n][i] = true;
+							changed = true;
+
 						}
 					}
-						
-					// seen[i] = seen[i] | visit_next[i];
-					// if(visit_next[n])
-					// 	d = 1;
+					
 				}
 				info.context.csr_list[0] = move(csr);
 			}
-			if(mode == 0){
-				if(visit_list.size() > 0)
-					mode = 1;
-			}
-			for (int64_t i = 0; i < input_size ; i++) {
-				if (!visit_next[i])
-					continue;
-				visit_next[i] = visit_next[i] & ~seen[i];
-				seen[i] = seen[i] | visit_next[i];
-				if(d == 0 && visit_next[i] )
-					d = 1;
-					
-			}
-
-			visit = visit_next;
-			for (auto i = 0; i < input_size; i++) {
-				visit_next[i] = 0;
-			}
-		}
+			// if(mode == 0){
+			// 	if(visit_list.size() > 0)
+			// 		mode = 1;
+			// }
+			
+		// }
 		// check target
 		// visit_list with n's to keep track (iniitally 64 nodes to visit but looping till input_size)
 		// top down vs bottom up ->
 		// adaptive with and without visit list-> benchmark
 	}
 
-	
 	// auto &result_mask = FlatVector::Nullmask(result);
 
 	for (auto iter : lane_map) {
@@ -229,8 +217,6 @@ static void msbfs_function(DataChunk &args, ExpressionState &state, Vector &resu
 			else
 				result_data[index] = false;
 		}
-	}
-	curr_batch = curr_batch + result_size;
 	}
 	// for (idx_t i = 0; i < lanes; i++) {
 	// 	auto entry = lane_map.find(src_data[i]);
@@ -281,7 +267,7 @@ static void msbfs_function(DataChunk &args, ExpressionState &state, Vector &resu
 				// }
 }
 
-static unique_ptr<FunctionData> msbfs_bind(ClientContext &context, ScalarFunction &bound_function,
+static unique_ptr<FunctionData> sp_bind(ClientContext &context, ScalarFunction &bound_function,
                                            vector<unique_ptr<Expression>> &arguments) {
 	// 	// SequenceCatalogEntry *sequence = nullptr;
 	// 	if (!arguments[0]->IsFoldable()) {
@@ -293,12 +279,12 @@ static unique_ptr<FunctionData> msbfs_bind(ClientContext &context, ScalarFunctio
 	return make_unique<MsbfsBindData>(context);
 }
 
-void MsBfsFun::RegisterFunction(BuiltinFunctions &set) {
+void ShortestPathFun::RegisterFunction(BuiltinFunctions &set) {
 	// padding reqd for csr_v ; size unequal
-	// id, v_size, source, target
+	// w(num_bfs), v_size, source, target, wt
 	set.AddFunction(ScalarFunction(
-	    "reachability", {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT},
-	    LogicalType::BOOLEAN, msbfs_function, false, msbfs_bind));
+	    "shortest_path", {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT},
+	    LogicalType::INTEGER, sp_function, false, sp_bind));
 }
 
 } // namespace duckdb

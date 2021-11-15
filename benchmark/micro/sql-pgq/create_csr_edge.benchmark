@@ -1,0 +1,27 @@
+# name: benchmark/micro/sql-pgq/create_csr_edge.benchmark
+# description: Create CSR Edge  
+# group: [sql-pgq]
+
+name Create CSR Edge
+group sql-pgq
+
+load benchmark/micro/sql-pgq/create_csr.sql
+
+run
+SELECT min(CREATE_CSR_EDGE(0, (SELECT count(c.cid) as vcount FROM Customer c), 
+CAST ((SELECT sum(CREATE_CSR_VERTEX(0, (SELECT count(c.cid) as vcount FROM Customer c), 
+sub.dense_id , sub.cnt )) AS numEdges
+FROM (
+    SELECT c.rowid as dense_id, count(t.from_id) as cnt
+    FROM Customer c  
+    LEFT JOIN  Transfers t ON t.from_id = c.cid
+    GROUP BY c.rowid
+) sub) AS BIGINT), 
+src.rowid, dst.rowid ))
+FROM 
+  Transfers t 
+  JOIN Customer src ON t.from_id = src.cid
+  JOIN Customer dst ON t.to_id = dst.cid
+
+result I
+1
