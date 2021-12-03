@@ -13,7 +13,7 @@
 
 namespace duckdb {
 
-	#define LANE_LIMIT 32
+	#define LANE_LIMIT 64
 
 struct CreateCsrFun {
 	static void RegisterFunction(BuiltinFunctions &set);

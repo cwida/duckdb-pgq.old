@@ -1,0 +1,163 @@
+# name: test/sql/function/sql-pgq/test_outer_sql.test
+# description: Test create csr function 
+# group: [sql-pgq]
+
+
+statement ok
+CREATE TABLE Customer(cid bigint not null, name string);
+
+statement ok
+CREATE TABLE Transfers(tid bigint, from_id bigint, to_id bigint, amount bigint);
+
+statement ok
+INSERT INTO Customer VALUES (173, 'A'), (478, 'B'), (297, 'C'), (869, 'D');
+
+statement ok
+INSERT INTO Transfers VALUES
+  (955, 173, 478, 150),
+  (769, 173, 297, 50),
+  (607, 478, 297, 250),
+  (184, 297, 869, 350);
+
+# CREATE TABLE Customer(cid bigint not null, name string);
+# CREATE TABLE Transfers(tid bigint, from_id bigint, to_id bigint, amount bigint);
+# INSERT INTO Customer VALUES (173, 'A'), (478, 'B'), (297, 'C'), (869, 'D');
+# INSERT INTO Transfers VALUES
+#   (955, 173, 478, 150),
+#   (769, 173, 297, 50),
+#   (607, 478, 297, 250),
+#   (184, 297, 869, 350);
+
+# with cte as (
+# SELECT t.rowid as dense_id
+# FROM 
+#   Transfers t 
+#   JOIN Customer src ON t.from_id = src.cid
+#   JOIN Customer dst ON t.to_id = dst.cid
+# ) SELECT * from cte
+# select c1id, c2id
+# from GRAPH_TABLE (aml, MATCH (c1 IS CUSTOMER)-[t1 IS TRANSFERS]*->(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt3 
+
+# statement ok
+# SELECT t.rowid as dense_id
+# FROM 
+#   Transfers t 
+#   JOIN Customer src ON t.from_id = src.cid
+#   JOIN Customer dst ON t.to_id = dst.cid
+
+
+# with cte1 AS (
+# statement ok
+# SELECT min(CREATE_CSR_EDGE(0, (SELECT count(c.cid) as vcount FROM Customer c), 
+# CAST ((SELECT sum(CREATE_CSR_VERTEX(0, (SELECT count(c.cid) as vcount FROM Customer c), 
+# sub.dense_id , sub.cnt )) AS numEdges
+# FROM (
+#     SELECT c.rowid as dense_id, count(t.from_id) as cnt
+#     FROM Customer c  
+#     LEFT JOIN  Transfers t ON t.from_id = c.cid
+#     GROUP BY c.rowid
+# ) sub) AS BIGINT), 
+# src.rowid, dst.rowid) 
+# FROM 
+#   Transfers t 
+#   JOIN Customer src ON t.from_id = src.cid
+#   JOIN Customer dst ON t.to_id = dst.cid
+# )
+
+# select c1id, c2id
+# from GRAPH_TABLE (aml, MATCH (c1 IS c)-[t1 IS t]*->(c2 IS c) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
+
+# statement ok
+# SELECT CREATE_CSR_VERTEX(0, (SELECT count(c.cid) as vcount FROM Customer c), 
+# sub.dense_id , sub.cnt ) 
+# FROM (
+#     SELECT c.rowid as dense_id, count(t.from_id) as cnt
+#     FROM Customer c  
+#     LEFT JOIN  Transfers t ON t.from_id = c.cid
+#     GROUP BY c.rowid
+# ) sub
+
+
+statement ok
+WITH cte1 AS (
+SELECT CREATE_CSR_EDGE(0, (SELECT count(c.cid) as vcount FROM Customer c), 
+CAST ((SELECT sum(CREATE_CSR_VERTEX(0, (SELECT count(c.cid) as vcount FROM Customer c), 
+sub.dense_id , sub.cnt )) as numEdges 
+FROM (
+    SELECT c.rowid as dense_id, count(t.from_id) as cnt
+    FROM Customer c  
+    LEFT JOIN  Transfers t ON t.from_id = c.cid
+    GROUP BY c.rowid
+) sub) AS BIGINT), 
+src.rowid, dst.rowid ) as temp, src.rowid as src_row, dst.rowid as dst_row
+FROM 
+  Transfers t 
+  JOIN Customer src ON t.from_id = src.cid
+  JOIN Customer dst ON t.to_id = dst.cid
+)
+SELECT src.cid AS c1id, dst.cid AS c2id, cte1.temp 
+FROM cte1, Transfers t 
+  JOIN Customer src ON t.from_id = src.cid
+  JOIN Customer dst ON t.to_id = dst.cid
+WHERE src.rowid = cte1.src_row AND dst.rowid = cte1.dst_row  AND 
+( reachability(0, (SELECT count(c.cid) FROM Customer c), cte1.src_row, cte1.dst_row) = 1);
+
+# Erroring query
+EXPLAIN SELECT c1id, c2id FROM
+(WITH cte1 AS (
+SELECT CREATE_CSR_EDGE(0, (SELECT count(c.cid) as vcount FROM Customer c), 
+CAST ((SELECT sum(CREATE_CSR_VERTEX(0, (SELECT count(c.cid) as vcount FROM Customer c), 
+sub.dense_id , sub.cnt )) as numEdges 
+FROM (
+    SELECT c.rowid as dense_id, count(t.from_id) as cnt
+    FROM Customer c  
+    LEFT JOIN  Transfers t ON t.from_id = c.cid
+    GROUP BY c.rowid
+) sub) AS BIGINT), 
+src.rowid, dst.rowid ) as temp, src.rowid as src_row, dst.rowid as dst_row
+FROM 
+  Transfers t 
+  JOIN Customer src ON t.from_id = src.cid
+  JOIN Customer dst ON t.to_id = dst.cid
+)
+SELECT src.cid AS c1id, dst.cid AS c2id, cte1.temp AS csr
+FROM cte1, Transfers t 
+  JOIN Customer src ON t.from_id = src.cid
+  JOIN Customer dst ON t.to_id = dst.cid
+WHERE src.rowid = cte1.src_row AND dst.rowid = cte1.dst_row  AND 
+( reachability(0, (SELECT count(c.cid) FROM Customer c), cte1.src_row, cte1.dst_row) = 1)
+) cte_from;
+
+statement ok
+WITH cte1 AS (
+SELECT count(c.cid) as vcount FROM Customer c
+)
+SELECT src.cid AS c1id, dst.cid AS c2id, cte1.vcount 
+FROM cte1, Transfers t 
+  JOIN Customer src ON t.from_id = src.cid
+  JOIN Customer dst ON t.to_id = dst.cid;
+
+
+EXPLAIN WITH cte2 AS (
+SELECT CREATE_CSR_EDGE(0, (SELECT count(c.cid) as vcount FROM Customer c), 
+CAST ((SELECT sum(CREATE_CSR_VERTEX(0, (SELECT count(c.cid) as vcount FROM Customer c), 
+sub.dense_id , sub.cnt )) AS numEdges
+FROM (
+    SELECT c.rowid as dense_id, count(t.from_id) as cnt
+    FROM Customer c  
+    LEFT JOIN  Transfers t ON t.from_id = c.cid
+    GROUP BY c.rowid
+) sub) AS BIGINT), 
+src.rowid, dst.rowid ) as temp, src.rowid as src_row, dst.rowid as dst_row
+FROM 
+  Transfers t 
+  JOIN Customer src ON t.from_id = src.cid
+  JOIN Customer dst ON t.to_id = dst.cid
+)
+SELECT cte2.temp, cte2.src_row, cte2.ds from cte2
+WHERE ( reachability(0, (SELECT count(c.cid) FROM Customer c), cte2.src_row, cte2.dst_row) = 1);
+# SELECT 
+# FROM 
+  
+# FROM cte1 
+# )

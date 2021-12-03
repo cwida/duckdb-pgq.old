@@ -1,0 +1,25 @@
+# name: benchmark/micro/sql-pgq/msbfs.benchmark
+# description: MSBFS 
+# group: [sql-pgq]
+
+name MSBFS
+group sql-pgq
+
+init
+PRAGMA enable_profiling='json';
+PRAGMA profile_output='graph/msbfs.json';
+
+load benchmark/micro/sql-pgq/msbfs.sql
+
+run
+SELECT reachability(0, sub.v_size, sub.src_r, sub.dst_r) FROM (SELECT 0, (SELECT count(c.cid) as vcount FROM Customer c) v_size, src.rowid src_r, dst.rowid dst_r 
+from Transfers t
+  JOIN Customer src ON t.from_id = src.cid
+  JOIN Customer dst ON t.to_id = dst.cid) sub  LIMIT 5;
+
+result I
+1
+1
+1
+1
+1

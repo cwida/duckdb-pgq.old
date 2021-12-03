@@ -5,6 +5,12 @@
 name Create CSR Vertex
 group sql-pgq
 
+init
+PRAGMA threads=2;
+PRAGMA enable_profiling='json';
+PRAGMA profile_output='graph/create_vertex.json';
+
+
 load benchmark/micro/sql-pgq/create_csr.sql
 
 run
@@ -18,5 +24,5 @@ FROM (
 ) sub
 
 result I
-10000000
+100000000
 

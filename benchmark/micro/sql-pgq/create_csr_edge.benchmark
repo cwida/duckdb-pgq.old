@@ -5,10 +5,16 @@
 name Create CSR Edge
 group sql-pgq
 
+init
+PRAGMA threads=2;
+PRAGMA enable_profiling='json';
+PRAGMA profile_output='graph/create_edge_2.json';
+
+
 load benchmark/micro/sql-pgq/create_csr.sql
 
 run
-SELECT min(CREATE_CSR_EDGE(0, (SELECT count(c.cid) as vcount FROM Customer c), 
+SELECT CREATE_CSR_EDGE(0, (SELECT count(c.cid) as vcount FROM Customer c), 
 CAST ((SELECT sum(CREATE_CSR_VERTEX(0, (SELECT count(c.cid) as vcount FROM Customer c), 
 sub.dense_id , sub.cnt )) AS numEdges
 FROM (
@@ -17,11 +23,12 @@ FROM (
     LEFT JOIN  Transfers t ON t.from_id = c.cid
     GROUP BY c.rowid
 ) sub) AS BIGINT), 
-src.rowid, dst.rowid ))
+src.rowid, dst.rowid )
 FROM 
   Transfers t 
   JOIN Customer src ON t.from_id = src.cid
   JOIN Customer dst ON t.to_id = dst.cid
+  LIMIT 1
 
 result I
 1
