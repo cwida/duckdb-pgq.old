@@ -4,4 +4,4 @@
 %type <list> GraphTableKeyClause
 %type <node> VertexTableDefinition
 %type <node> EdgeTableDefinition
-%type <str> LabelEnd
+%type <str>  LabelEnd
