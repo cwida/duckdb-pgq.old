@@ -37,7 +37,7 @@ struct FunctionData {
 	}
 
 	virtual unique_ptr<FunctionData> Copy() {
-		return make_unique<FunctionData>();
+		throw InternalException("Unimplemented copy for FunctionData");
 	};
 	virtual bool Equals(FunctionData &other) {
 		return true;
@@ -54,9 +54,6 @@ struct FunctionData {
 };
 
 struct TableFunctionData : public FunctionData {
-	unique_ptr<FunctionData> Copy() override {
-		throw NotImplementedException("Copy not required for table-producing function");
-	}
 	// used to pass on projections to table functions that support them. NB, can contain COLUMN_IDENTIFIER_ROW_ID
 	vector<idx_t> column_ids;
 };
@@ -69,7 +66,7 @@ struct FunctionParameters {
 //! Function is the base class used for any type of function (scalar, aggregate or simple function)
 class Function {
 public:
-	Function(string name) : name(name) {
+	explicit Function(string name) : name(name) {
 	}
 	virtual ~Function() {
 	}
@@ -79,41 +76,43 @@ public:
 
 public:
 	//! Returns the formatted string name(arg1, arg2, ...)
-	static string CallToString(string name, vector<LogicalType> arguments);
+	DUCKDB_API static string CallToString(const string &name, const vector<LogicalType> &arguments);
 	//! Returns the formatted string name(arg1, arg2..) -> return_type
-	static string CallToString(string name, vector<LogicalType> arguments, LogicalType return_type);
+	DUCKDB_API static string CallToString(const string &name, const vector<LogicalType> &arguments,
+	                                      const LogicalType &return_type);
 	//! Returns the formatted string name(arg1, arg2.., np1=a, np2=b, ...)
-	static string CallToString(string name, vector<LogicalType> arguments,
-	                           unordered_map<string, LogicalType> named_parameters);
+	DUCKDB_API static string CallToString(const string &name, const vector<LogicalType> &arguments,
+	                                      const unordered_map<string, LogicalType> &named_parameters);
 
 	//! Bind a scalar function from the set of functions and input arguments. Returns the index of the chosen function,
 	//! returns INVALID_INDEX and sets error if none could be found
-	static idx_t BindFunction(string name, vector<ScalarFunction> &functions, vector<LogicalType> &arguments,
+	static idx_t BindFunction(const string &name, vector<ScalarFunction> &functions, vector<LogicalType> &arguments,
 	                          string &error);
-	static idx_t BindFunction(string name, vector<ScalarFunction> &functions, vector<unique_ptr<Expression>> &arguments,
-	                          string &error);
+	static idx_t BindFunction(const string &name, vector<ScalarFunction> &functions,
+	                          vector<unique_ptr<Expression>> &arguments, string &error);
 	//! Bind an aggregate function from the set of functions and input arguments. Returns the index of the chosen
 	//! function, returns INVALID_INDEX and sets error if none could be found
-	static idx_t BindFunction(string name, vector<AggregateFunction> &functions, vector<LogicalType> &arguments,
+	static idx_t BindFunction(const string &name, vector<AggregateFunction> &functions, vector<LogicalType> &arguments,
 	                          string &error);
-	static idx_t BindFunction(string name, vector<AggregateFunction> &functions,
+	static idx_t BindFunction(const string &name, vector<AggregateFunction> &functions,
 	                          vector<unique_ptr<Expression>> &arguments, string &error);
 	//! Bind a table function from the set of functions and input arguments. Returns the index of the chosen
 	//! function, returns INVALID_INDEX and sets error if none could be found
-	static idx_t BindFunction(string name, vector<TableFunction> &functions, vector<LogicalType> &arguments,
+	static idx_t BindFunction(const string &name, vector<TableFunction> &functions, vector<LogicalType> &arguments,
 	                          string &error);
-	static idx_t BindFunction(string name, vector<TableFunction> &functions, vector<unique_ptr<Expression>> &arguments,
-	                          string &error);
+	static idx_t BindFunction(const string &name, vector<TableFunction> &functions,
+	                          vector<unique_ptr<Expression>> &arguments, string &error);
 	//! Bind a pragma function from the set of functions and input arguments
-	static idx_t BindFunction(string name, vector<PragmaFunction> &functions, PragmaInfo &info, string &error);
+	static idx_t BindFunction(const string &name, vector<PragmaFunction> &functions, PragmaInfo &info, string &error);
 };
 
 class SimpleFunction : public Function {
 public:
-	SimpleFunction(string name, vector<LogicalType> arguments, LogicalType varargs = LogicalType::INVALID)
+	SimpleFunction(string name, vector<LogicalType> arguments,
+	               LogicalType varargs = LogicalType(LogicalTypeId::INVALID))
 	    : Function(name), arguments(move(arguments)), varargs(varargs) {
 	}
-	virtual ~SimpleFunction() {
+	~SimpleFunction() override {
 	}
 
 	//! The set of arguments of the function
@@ -134,17 +133,18 @@ public:
 
 class SimpleNamedParameterFunction : public SimpleFunction {
 public:
-	SimpleNamedParameterFunction(string name, vector<LogicalType> arguments, LogicalType varargs = LogicalType::INVALID)
+	SimpleNamedParameterFunction(string name, vector<LogicalType> arguments,
+	                             LogicalType varargs = LogicalType(LogicalTypeId::INVALID))
 	    : SimpleFunction(name, move(arguments), varargs) {
 	}
-	virtual ~SimpleNamedParameterFunction() {
+	~SimpleNamedParameterFunction() override {
 	}
 
 	//! The named parameters of the function
 	unordered_map<string, LogicalType> named_parameters;
 
 public:
-	virtual string ToString() {
+	string ToString() override {
 		return Function::CallToString(name, arguments, named_parameters);
 	}
 
@@ -160,11 +160,11 @@ public:
 class BaseScalarFunction : public SimpleFunction {
 public:
 	BaseScalarFunction(string name, vector<LogicalType> arguments, LogicalType return_type, bool has_side_effects,
-	                   LogicalType varargs = LogicalType::INVALID)
+	                   LogicalType varargs = LogicalType(LogicalTypeId::INVALID))
 	    : SimpleFunction(move(name), move(arguments), move(varargs)), return_type(return_type),
 	      has_side_effects(has_side_effects) {
 	}
-	virtual ~BaseScalarFunction() {
+	~BaseScalarFunction() override {
 	}
 
 	//! Return type of the function
@@ -196,9 +196,9 @@ public:
 	void AddFunction(AggregateFunction function);
 	void AddFunction(ScalarFunctionSet set);
 	void AddFunction(PragmaFunction function);
-	void AddFunction(string name, vector<PragmaFunction> functions);
+	void AddFunction(const string &name, vector<PragmaFunction> functions);
 	void AddFunction(ScalarFunction function);
-	void AddFunction(vector<string> names, ScalarFunction function);
+	void AddFunction(const vector<string> &names, ScalarFunction function);
 	void AddFunction(TableFunctionSet set);
 	void AddFunction(TableFunction function);
 	void AddFunction(CopyFunction function);
@@ -221,13 +221,13 @@ private:
 	void RegisterReadFunctions();
 	void RegisterTableFunctions();
 	void RegisterArrowFunctions();
-	void RegisterInformationSchemaFunctions();
 
 	// aggregates
 	void RegisterAlgebraicAggregates();
 	void RegisterDistributiveAggregates();
 	void RegisterNestedAggregates();
 	void RegisterHolisticAggregates();
+	void RegisterRegressiveAggregates();
 
 	// scalar functions
 	void RegisterDateFunctions();

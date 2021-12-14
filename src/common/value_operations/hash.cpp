@@ -34,8 +34,6 @@ hash_t ValueOperations::Hash(const Value &op) {
 		return duckdb::Hash(op.value_.float_);
 	case PhysicalType::DOUBLE:
 		return duckdb::Hash(op.value_.double_);
-	case PhysicalType::POINTER:
-		return duckdb::Hash(op.value_.pointer);
 	case PhysicalType::INTERVAL:
 		return duckdb::Hash(op.value_.interval);
 	case PhysicalType::VARCHAR:
@@ -50,7 +48,7 @@ hash_t ValueOperations::Hash(const Value &op) {
 	case PhysicalType::STRUCT: {
 		hash_t hash = 0;
 		for (auto &entry : op.struct_value) {
-			hash ^= ValueOperations::Hash(entry.second);
+			hash ^= ValueOperations::Hash(entry);
 		}
 		return hash;
 	}

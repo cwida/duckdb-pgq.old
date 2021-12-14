@@ -1,5 +1,5 @@
 #include "duckdb/execution/physical_plan_generator.hpp"
-
+#include "duckdb/main/query_profiler.hpp"
 #include "duckdb/catalog/catalog_entry/scalar_function_catalog_entry.hpp"
 #include "duckdb/execution/column_binding_resolver.hpp"
 #include "duckdb/main/client_context.hpp"
@@ -9,7 +9,7 @@ namespace duckdb {
 
 class DependencyExtractor : public LogicalOperatorVisitor {
 public:
-	DependencyExtractor(unordered_set<CatalogEntry *> &dependencies) : dependencies(dependencies) {
+	explicit DependencyExtractor(unordered_set<CatalogEntry *> &dependencies) : dependencies(dependencies) {
 	}
 
 protected:
@@ -27,28 +27,29 @@ private:
 
 unique_ptr<PhysicalOperator> PhysicalPlanGenerator::CreatePlan(unique_ptr<LogicalOperator> op) {
 	// first resolve column references
-	context.profiler.StartPhase("column_binding");
+	context.profiler->StartPhase("column_binding");
 	ColumnBindingResolver resolver;
 	resolver.VisitOperator(*op);
-	context.profiler.EndPhase();
+	context.profiler->EndPhase();
 
 	// now resolve types of all the operators
-	context.profiler.StartPhase("resolve_types");
+	context.profiler->StartPhase("resolve_types");
 	op->ResolveOperatorTypes();
-	context.profiler.EndPhase();
+	context.profiler->EndPhase();
 
 	// extract dependencies from the logical plan
 	DependencyExtractor extractor(dependencies);
 	extractor.VisitOperator(*op);
 
 	// then create the main physical plan
-	context.profiler.StartPhase("create_plan");
+	context.profiler->StartPhase("create_plan");
 	auto plan = CreatePlan(*op);
-	context.profiler.EndPhase();
+	context.profiler->EndPhase();
 	return plan;
 }
 
 unique_ptr<PhysicalOperator> PhysicalPlanGenerator::CreatePlan(LogicalOperator &op) {
+	op.estimated_cardinality = op.EstimateCardinality(context);
 	switch (op.type) {
 	case LogicalOperatorType::LOGICAL_GET:
 		return CreatePlan((LogicalGet &)op);
@@ -118,6 +119,7 @@ unique_ptr<PhysicalOperator> PhysicalPlanGenerator::CreatePlan(LogicalOperator &
 	case LogicalOperatorType::LOGICAL_CREATE_SEQUENCE:
 	case LogicalOperatorType::LOGICAL_CREATE_SCHEMA:
 	case LogicalOperatorType::LOGICAL_CREATE_MACRO:
+	case LogicalOperatorType::LOGICAL_CREATE_TYPE:
 	case LogicalOperatorType::LOGICAL_CREATE_PROPERTY_GRAPH:
 		return CreatePlan((LogicalCreate &)op);
 	case LogicalOperatorType::LOGICAL_PRAGMA:
@@ -126,6 +128,7 @@ unique_ptr<PhysicalOperator> PhysicalPlanGenerator::CreatePlan(LogicalOperator &
 	case LogicalOperatorType::LOGICAL_ALTER:
 	case LogicalOperatorType::LOGICAL_DROP:
 	case LogicalOperatorType::LOGICAL_VACUUM:
+	case LogicalOperatorType::LOGICAL_LOAD:
 		return CreatePlan((LogicalSimple &)op);
 	case LogicalOperatorType::LOGICAL_RECURSIVE_CTE:
 		return CreatePlan((LogicalRecursiveCTE &)op);
@@ -133,6 +136,8 @@ unique_ptr<PhysicalOperator> PhysicalPlanGenerator::CreatePlan(LogicalOperator &
 		return CreatePlan((LogicalCTERef &)op);
 	case LogicalOperatorType::LOGICAL_EXPORT:
 		return CreatePlan((LogicalExport &)op);
+	case LogicalOperatorType::LOGICAL_SET:
+		return CreatePlan((LogicalSet &)op);
 	default:
 		throw NotImplementedException("Unimplemented logical operator type!");
 	}

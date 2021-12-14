@@ -12,13 +12,19 @@ using namespace std;
 namespace test_concurrent_update {
 
 static constexpr int CONCURRENT_UPDATE_TRANSACTION_UPDATE_COUNT = 1000;
-static constexpr int CONCURRENT_UPDATE_TOTAL_ACCOUNTS = 20;
+static constexpr int CONCURRENT_UPDATE_TOTAL_ACCOUNTS = 10;
 static constexpr int CONCURRENT_UPDATE_MONEY_PER_ACCOUNT = 10;
 
 TEST_CASE("Single thread update", "[interquery][.]") {
 	unique_ptr<MaterializedQueryResult> result;
 	DuckDB db(nullptr);
 	Connection con(db);
+
+	// enable detailed profiling
+	con.Query("PRAGMA enable_profiling");
+	auto detailed_profiling_output = TestCreatePath("detailed_profiling_output");
+	con.Query("PRAGMA profiling_output='" + detailed_profiling_output + "'");
+	con.Query("PRAGMA profiling_mode = detailed");
 
 	// initialize the database
 	con.Query("CREATE TABLE integers(i INTEGER);");
@@ -43,7 +49,7 @@ TEST_CASE("Single thread update", "[interquery][.]") {
 	REQUIRE(CHECK_COLUMN(result, 0, {sum + 2 * CONCURRENT_UPDATE_TOTAL_ACCOUNTS}));
 }
 
-static volatile bool finished_updating = false;
+atomic<bool> finished_updating;
 static void read_total_balance(DuckDB *db, bool *read_correct) {
 	*read_correct = true;
 	Connection con(*db);
@@ -60,6 +66,12 @@ TEST_CASE("Concurrent update", "[interquery][.]") {
 	unique_ptr<MaterializedQueryResult> result;
 	DuckDB db(nullptr);
 	Connection con(db);
+
+	// enable detailed profiling
+	con.Query("PRAGMA enable_profiling");
+	auto detailed_profiling_output = TestCreatePath("detailed_profiling_output");
+	con.Query("PRAGMA profiling_output='" + detailed_profiling_output + "'");
+	con.Query("PRAGMA profiling_mode = detailed");
 
 	// fixed seed random numbers
 	mt19937 generator;
@@ -166,6 +178,12 @@ TEST_CASE("Multiple concurrent updaters", "[interquery][.]") {
 	unique_ptr<MaterializedQueryResult> result;
 	DuckDB db(nullptr);
 	Connection con(db);
+
+	// enable detailed profiling
+	con.Query("PRAGMA enable_profiling");
+	auto detailed_profiling_output = TestCreatePath("detailed_profiling_output");
+	con.Query("PRAGMA profiling_output='" + detailed_profiling_output + "'");
+	con.Query("PRAGMA profiling_mode = detailed");
 
 	finished_updating = false;
 	finished_threads = 0;

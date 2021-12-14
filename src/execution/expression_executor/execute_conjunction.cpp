@@ -2,22 +2,20 @@
 #include "duckdb/execution/expression_executor.hpp"
 #include "duckdb/planner/expression/bound_conjunction_expression.hpp"
 #include "duckdb/execution/adaptive_filter.hpp"
+#include "duckdb/common/chrono.hpp"
 
-#include <chrono>
 #include <random>
 
 namespace duckdb {
 
-using namespace std::chrono;
-
 struct ConjunctionState : public ExpressionState {
-	ConjunctionState(Expression &expr, ExpressionExecutorState &root) : ExpressionState(expr, root) {
+	ConjunctionState(const Expression &expr, ExpressionExecutorState &root) : ExpressionState(expr, root) {
 		adaptive_filter = make_unique<AdaptiveFilter>(expr);
 	}
 	unique_ptr<AdaptiveFilter> adaptive_filter;
 };
 
-unique_ptr<ExpressionState> ExpressionExecutor::InitializeState(BoundConjunctionExpression &expr,
+unique_ptr<ExpressionState> ExpressionExecutor::InitializeState(const BoundConjunctionExpression &expr,
                                                                 ExpressionExecutorState &root) {
 	auto result = make_unique<ConjunctionState>(expr, root);
 	for (auto &child : expr.children) {
@@ -27,12 +25,12 @@ unique_ptr<ExpressionState> ExpressionExecutor::InitializeState(BoundConjunction
 	return move(result);
 }
 
-void ExpressionExecutor::Execute(BoundConjunctionExpression &expr, ExpressionState *state, const SelectionVector *sel,
-                                 idx_t count, Vector &result) {
+void ExpressionExecutor::Execute(const BoundConjunctionExpression &expr, ExpressionState *state,
+                                 const SelectionVector *sel, idx_t count, Vector &result) {
 	// execute the children
+	state->intermediate_chunk.Reset();
 	for (idx_t i = 0; i < expr.children.size(); i++) {
-		Vector current_result;
-		current_result.Reference(state->intermediate_chunk.data[i]);
+		auto &current_result = state->intermediate_chunk.data[i];
 		Execute(*expr.children[i], state->child_states[i].get(), sel, count, current_result);
 		if (i == 0) {
 			// move the result
@@ -48,16 +46,17 @@ void ExpressionExecutor::Execute(BoundConjunctionExpression &expr, ExpressionSta
 				VectorOperations::Or(current_result, result, intermediate, count);
 				break;
 			default:
-				throw NotImplementedException("Unknown conjunction type!");
+				throw InternalException("Unknown conjunction type!");
 			}
 			result.Reference(intermediate);
 		}
 	}
 }
 
-idx_t ExpressionExecutor::Select(BoundConjunctionExpression &expr, ExpressionState *state_, const SelectionVector *sel,
-                                 idx_t count, SelectionVector *true_sel, SelectionVector *false_sel) {
-	auto state = (ConjunctionState *)state_;
+idx_t ExpressionExecutor::Select(const BoundConjunctionExpression &expr, ExpressionState *state_p,
+                                 const SelectionVector *sel, idx_t count, SelectionVector *true_sel,
+                                 SelectionVector *false_sel) {
+	auto state = (ConjunctionState *)state_p;
 
 	if (expr.type == ExpressionType::CONJUNCTION_AND) {
 		// get runtime statistics

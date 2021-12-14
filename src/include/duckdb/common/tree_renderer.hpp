@@ -15,6 +15,8 @@
 namespace duckdb {
 class LogicalOperator;
 class PhysicalOperator;
+class Pipeline;
+struct PipelineRenderNode;
 
 struct RenderTreeNode {
 	string name;
@@ -37,11 +39,23 @@ public:
 };
 
 struct TreeRendererConfig {
+	void enable_detailed() {
+		MAX_EXTRA_LINES = 1000;
+		detailed = true;
+	}
+
+	void enable_standard() {
+		MAX_EXTRA_LINES = 30;
+		detailed = false;
+	}
+
 	idx_t MAXIMUM_RENDER_WIDTH = 240;
 	idx_t NODE_RENDER_WIDTH = 29;
 	idx_t MINIMUM_RENDER_WIDTH = 15;
 	idx_t MAX_EXTRA_LINES = 30;
+	bool detailed = false;
 
+#ifndef DUCKDB_ASCII_TREE_RENDERER
 	const char *LTCORNER = "┌";
 	const char *RTCORNER = "┐";
 	const char *LDCORNER = "└";
@@ -55,48 +69,60 @@ struct TreeRendererConfig {
 
 	const char *VERTICAL = "│";
 	const char *HORIZONTAL = "─";
+#else
+	// ASCII version
+	const char *LTCORNER = "<";
+	const char *RTCORNER = ">";
+	const char *LDCORNER = "<";
+	const char *RDCORNER = ">";
 
-	// ASCII version?
-	// static constexpr const char* LTCORNER = "<";
-	// static constexpr const char* RTCORNER = ">";
-	// static constexpr const char* LDCORNER = "<";
-	// static constexpr const char* RDCORNER = ">";
+	const char *MIDDLE = "+";
+	const char *TMIDDLE = "+";
+	const char *LMIDDLE = "+";
+	const char *RMIDDLE = "+";
+	const char *DMIDDLE = "+";
 
-	// static constexpr const char* MIDDLE = "+";
-	// static constexpr const char* TMIDDLE = "+";
-	// static constexpr const char* LMIDDLE = "+";
-	// static constexpr const char* RMIDDLE = "+";
-	// static constexpr const char* DMIDDLE = "+";
-
-	// static constexpr const char* VERTICAL = "|";
-	// static constexpr const char* HORIZONTAL = "-";
+	const char *VERTICAL = "|";
+	const char *HORIZONTAL = "-";
+#endif
 };
 
 class TreeRenderer {
 public:
-	TreeRenderer(TreeRendererConfig config_p = TreeRendererConfig()) : config(move(config_p)) {
+	explicit TreeRenderer(TreeRendererConfig config_p = TreeRendererConfig()) : config(move(config_p)) {
 	}
 
 	string ToString(const LogicalOperator &op);
 	string ToString(const PhysicalOperator &op);
 	string ToString(const QueryProfiler::TreeNode &op);
+	string ToString(const Pipeline &op);
 
 	void Render(const LogicalOperator &op, std::ostream &ss);
 	void Render(const PhysicalOperator &op, std::ostream &ss);
 	void Render(const QueryProfiler::TreeNode &op, std::ostream &ss);
+	void Render(const Pipeline &op, std::ostream &ss);
 
 	void ToStream(RenderTree &root, std::ostream &ss);
+
+	void EnableDetailed() {
+		config.enable_detailed();
+	}
+	void EnableStandard() {
+		config.enable_standard();
+	}
 
 private:
 	unique_ptr<RenderTree> CreateTree(const LogicalOperator &op);
 	unique_ptr<RenderTree> CreateTree(const PhysicalOperator &op);
 	unique_ptr<RenderTree> CreateTree(const QueryProfiler::TreeNode &op);
+	unique_ptr<RenderTree> CreateTree(const Pipeline &op);
 
 	string ExtraInfoSeparator();
 	unique_ptr<RenderTreeNode> CreateRenderNode(string name, string extra_info);
 	unique_ptr<RenderTreeNode> CreateNode(const LogicalOperator &op);
 	unique_ptr<RenderTreeNode> CreateNode(const PhysicalOperator &op);
 	unique_ptr<RenderTreeNode> CreateNode(const QueryProfiler::TreeNode &op);
+	unique_ptr<RenderTreeNode> CreateNode(const PipelineRenderNode &op);
 
 private:
 	//! The configuration used for rendering
@@ -110,7 +136,7 @@ private:
 	bool CanSplitOnThisChar(char l);
 	bool IsPadding(char l);
 	string RemovePadding(string l);
-	void SplitUpExtraInfo(string extra_info, vector<string> &result);
+	void SplitUpExtraInfo(const string &extra_info, vector<string> &result);
 	void SplitStringBuffer(const string &source, vector<string> &result);
 
 	template <class T>
@@ -118,6 +144,7 @@ private:
 
 	template <class T>
 	unique_ptr<RenderTree> CreateRenderTree(const T &op);
+	string ExtractExpressionsRecursive(ExpressionInfo &states);
 };
 
 } // namespace duckdb

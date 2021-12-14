@@ -11,16 +11,19 @@ add_library_unity(
   transform_create_schema.cpp
   transform_create_table.cpp
   transform_create_view.cpp
+  transform_create_enum.cpp
   transform_delete.cpp
   transform_explain.cpp
   transform_export.cpp
   transform_drop.cpp
   transform_import.cpp
   transform_insert.cpp
+  transform_load.cpp
   transform_pragma.cpp
   transform_rename.cpp
   transform_select.cpp
   transform_select_node.cpp
+  transform_set.cpp
   transform_prepare.cpp
   transform_show.cpp
   transform_show_select.cpp

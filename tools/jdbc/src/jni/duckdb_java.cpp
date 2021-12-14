@@ -23,6 +23,7 @@ static string byte_array_to_string(JNIEnv *env, jbyteArray ba_j) {
 }
 
 static jobject decode_charbuffer_to_jstring(JNIEnv *env, const char *d_str, idx_t d_str_len) {
+	// TODO cache this somewhere, probably slow to look this stuff for every string
 	jclass charset_class = env->FindClass("java/nio/charset/Charset");
 	jclass charbuffer_class = env->FindClass("java/nio/CharBuffer");
 	jmethodID for_name =
@@ -267,12 +268,12 @@ JNIEXPORT jobjectArray JNICALL Java_org_duckdb_DuckDBNative_duckdb_1jdbc_1fetch(
 	                                                   env->FindClass("org/duckdb/DuckDBVector"), nullptr);
 	for (idx_t col_idx = 0; col_idx < res_ref->chunk->ColumnCount(); col_idx++) {
 		auto &vec = res_ref->chunk->data[col_idx];
-		auto type_str = env->NewStringUTF(vec.type.ToString().c_str());
+		auto type_str = env->NewStringUTF(vec.GetType().ToString().c_str());
 		// construct nullmask
 		auto null_array = env->NewBooleanArray(row_count);
 		jboolean *null_array_ptr = env->GetBooleanArrayElements(null_array, nullptr);
 		for (idx_t row_idx = 0; row_idx < row_count; row_idx++) {
-			null_array_ptr[row_idx] = FlatVector::Nullmask(vec)[row_idx];
+			null_array_ptr[row_idx] = FlatVector::IsNull(vec, row_idx);
 		}
 		env->ReleaseBooleanArrayElements(null_array, null_array_ptr, 0);
 
@@ -283,7 +284,7 @@ JNIEXPORT jobjectArray JNICALL Java_org_duckdb_DuckDBNative_duckdb_1jdbc_1fetch(
 		jobject constlen_data = nullptr;
 		jobjectArray varlen_data = nullptr;
 
-		switch (vec.type.id()) {
+		switch (vec.GetType().id()) {
 		case LogicalTypeId::BOOLEAN:
 			constlen_data = env->NewDirectByteBuffer(FlatVector::GetData(vec), row_count * sizeof(bool));
 			break;
@@ -320,7 +321,7 @@ JNIEXPORT jobjectArray JNICALL Java_org_duckdb_DuckDBNative_duckdb_1jdbc_1fetch(
 		case LogicalTypeId::DECIMAL: {
 			Vector double_vec(LogicalType::DOUBLE);
 			VectorOperations::Cast(vec, double_vec, row_count);
-			vec.Reference(double_vec);
+			vec.ReferenceAndSetType(double_vec);
 			// fall through on purpose
 		}
 		case LogicalTypeId::DOUBLE:
@@ -332,13 +333,13 @@ JNIEXPORT jobjectArray JNICALL Java_org_duckdb_DuckDBNative_duckdb_1jdbc_1fetch(
 		case LogicalTypeId::INTERVAL: {
 			Vector string_vec(LogicalType::VARCHAR);
 			VectorOperations::Cast(vec, string_vec, row_count);
-			vec.Reference(string_vec);
+			vec.ReferenceAndSetType(string_vec);
 			// fall through on purpose
 		}
 		case LogicalTypeId::VARCHAR:
 			varlen_data = env->NewObjectArray(row_count, env->FindClass("java/lang/String"), nullptr);
 			for (idx_t row_idx = 0; row_idx < row_count; row_idx++) {
-				if (FlatVector::Nullmask(vec)[row_idx]) {
+				if (FlatVector::IsNull(vec, row_idx)) {
 					continue;
 				}
 				auto d_str = ((string_t *)FlatVector::GetData(vec))[row_idx];
@@ -346,9 +347,21 @@ JNIEXPORT jobjectArray JNICALL Java_org_duckdb_DuckDBNative_duckdb_1jdbc_1fetch(
 				env->SetObjectArrayElement(varlen_data, row_idx, j_str);
 			}
 			break;
+		case LogicalTypeId::BLOB:
+			varlen_data = env->NewObjectArray(row_count, env->FindClass("java/nio/ByteBuffer"), nullptr);
+
+			for (idx_t row_idx = 0; row_idx < row_count; row_idx++) {
+				if (FlatVector::IsNull(vec, row_idx)) {
+					continue;
+				}
+				auto &d_str = ((string_t *)FlatVector::GetData(vec))[row_idx];
+				auto j_obj = env->NewDirectByteBuffer((void *)d_str.GetDataUnsafe(), d_str.GetSize());
+				env->SetObjectArrayElement(varlen_data, row_idx, j_obj);
+			}
+			break;
 		default:
 			jclass Exception = env->FindClass("java/sql/SQLException");
-			env->ThrowNew(Exception, ("Unsupported result column type " + vec.type.ToString()).c_str());
+			env->ThrowNew(Exception, ("Unsupported result column type " + vec.GetType().ToString()).c_str());
 		}
 
 		jfieldID constlen_data_field = env->GetFieldID(vec_class, "constlen_data", "Ljava/nio/ByteBuffer;");

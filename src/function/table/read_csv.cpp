@@ -1,17 +1,23 @@
 #include "duckdb/function/table/read_csv.hpp"
-
 #include "duckdb/execution/operator/persistent/buffered_csv_reader.hpp"
 #include "duckdb/function/function_set.hpp"
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/main/database.hpp"
+#include "duckdb/common/string_util.hpp"
+#include "duckdb/main/config.hpp"
+#include "duckdb/parser/expression/constant_expression.hpp"
+#include "duckdb/parser/expression/function_expression.hpp"
+#include "duckdb/parser/tableref/table_function_ref.hpp"
+#include "duckdb/common/windows_undefs.hpp"
 
 #include <limits>
 
 namespace duckdb {
 
-static unique_ptr<FunctionData> read_csv_bind(ClientContext &context, vector<Value> &inputs,
-                                              unordered_map<string, Value> &named_parameters,
-                                              vector<LogicalType> &return_types, vector<string> &names) {
+static unique_ptr<FunctionData> ReadCSVBind(ClientContext &context, vector<Value> &inputs,
+                                            unordered_map<string, Value> &named_parameters,
+                                            vector<LogicalType> &input_table_types, vector<string> &input_table_names,
+                                            vector<LogicalType> &return_types, vector<string> &names) {
 	auto result = make_unique<ReadCSVData>();
 	auto &options = result->options;
 
@@ -87,32 +93,40 @@ static unique_ptr<FunctionData> read_csv_bind(ClientContext &context, vector<Val
 			if (!error.empty()) {
 				throw InvalidInputException("Could not parse TIMESTAMPFORMAT: %s", error.c_str());
 			}
+		} else if (kv.first == "normalize_names") {
+			options.normalize_names = kv.second.value_.boolean;
 		} else if (kv.first == "columns") {
-			if (kv.second.type().id() != LogicalTypeId::STRUCT) {
+			auto &child_type = kv.second.type();
+			if (child_type.id() != LogicalTypeId::STRUCT) {
 				throw BinderException("read_csv columns requires a a struct as input");
 			}
-			for (auto &val : kv.second.struct_value) {
-				names.push_back(val.first);
-				if (val.second.type().id() != LogicalTypeId::VARCHAR) {
+			D_ASSERT(StructType::GetChildCount(child_type) == kv.second.struct_value.size());
+			for (idx_t i = 0; i < kv.second.struct_value.size(); i++) {
+				auto &name = StructType::GetChildName(child_type, i);
+				auto &val = kv.second.struct_value[i];
+				names.push_back(name);
+				if (val.type().id() != LogicalTypeId::VARCHAR) {
 					throw BinderException("read_csv requires a type specification as string");
 				}
-				return_types.push_back(TransformStringToLogicalType(val.second.str_value.c_str()));
+				return_types.emplace_back(TransformStringToLogicalType(val.str_value.c_str()));
 			}
-			if (names.size() == 0) {
+			if (names.empty()) {
 				throw BinderException("read_csv requires at least a single column as input!");
 			}
 		} else if (kv.first == "compression") {
 			options.compression = kv.second.str_value;
 		} else if (kv.first == "filename") {
 			result->include_file_name = kv.second.value_.boolean;
+		} else if (kv.first == "skip") {
+			options.skip_rows = kv.second.GetValue<int64_t>();
 		}
 	}
-	if (!options.auto_detect && return_types.size() == 0) {
+	if (!options.auto_detect && return_types.empty()) {
 		throw BinderException("read_csv requires columns to be specified. Use read_csv_auto or set read_csv(..., "
 		                      "AUTO_DETECT=TRUE) to automatically guess columns.");
 	}
 	if (!(options.compression == "infer" || options.compression == "gzip" || options.compression == "none" ||
-	      options.compression == "")) {
+	      options.compression.empty())) {
 		throw BinderException("read_csv currently only supports 'gzip' compression.");
 	}
 	if (options.auto_detect) {
@@ -128,7 +142,7 @@ static unique_ptr<FunctionData> read_csv_bind(ClientContext &context, vector<Val
 	}
 	if (result->include_file_name) {
 		return_types.push_back(LogicalType::VARCHAR);
-		names.push_back("filename");
+		names.emplace_back("filename");
 	}
 	return move(result);
 }
@@ -140,9 +154,10 @@ struct ReadCSVOperatorData : public FunctionOperatorData {
 	idx_t file_index;
 };
 
-static unique_ptr<FunctionOperatorData> read_csv_init(ClientContext &context, const FunctionData *bind_data_,
-                                                      vector<column_t> &column_ids, TableFilterCollection *filters) {
-	auto &bind_data = (ReadCSVData &)*bind_data_;
+static unique_ptr<FunctionOperatorData> ReadCSVInit(ClientContext &context, const FunctionData *bind_data_p,
+                                                    const vector<column_t> &column_ids,
+                                                    TableFilterCollection *filters) {
+	auto &bind_data = (ReadCSVData &)*bind_data_p;
 	auto result = make_unique<ReadCSVOperatorData>();
 	if (bind_data.initial_reader) {
 		result->csv_reader = move(bind_data.initial_reader);
@@ -150,23 +165,28 @@ static unique_ptr<FunctionOperatorData> read_csv_init(ClientContext &context, co
 		bind_data.options.file_path = bind_data.files[0];
 		result->csv_reader = make_unique<BufferedCSVReader>(context, bind_data.options, bind_data.sql_types);
 	}
+	bind_data.bytes_read = 0;
+	bind_data.file_size = result->csv_reader->file_size;
 	result->file_index = 1;
 	return move(result);
 }
 
-static unique_ptr<FunctionData> read_csv_auto_bind(ClientContext &context, vector<Value> &inputs,
-                                                   unordered_map<string, Value> &named_parameters,
-                                                   vector<LogicalType> &return_types, vector<string> &names) {
+static unique_ptr<FunctionData> ReadCSVAutoBind(ClientContext &context, vector<Value> &inputs,
+                                                unordered_map<string, Value> &named_parameters,
+                                                vector<LogicalType> &input_table_types,
+                                                vector<string> &input_table_names, vector<LogicalType> &return_types,
+                                                vector<string> &names) {
 	named_parameters["auto_detect"] = Value::BOOLEAN(true);
-	return read_csv_bind(context, inputs, named_parameters, return_types, names);
+	return ReadCSVBind(context, inputs, named_parameters, input_table_types, input_table_names, return_types, names);
 }
 
-static void read_csv_function(ClientContext &context, const FunctionData *bind_data_,
-                              FunctionOperatorData *operator_state, DataChunk &output) {
-	auto &bind_data = (ReadCSVData &)*bind_data_;
+static void ReadCSVFunction(ClientContext &context, const FunctionData *bind_data_p,
+                            FunctionOperatorData *operator_state, DataChunk *input, DataChunk &output) {
+	auto &bind_data = (ReadCSVData &)*bind_data_p;
 	auto &data = (ReadCSVOperatorData &)*operator_state;
 	do {
 		data.csv_reader->ParseCSV(output);
+		bind_data.bytes_read = data.csv_reader->bytes_in_chunk;
 		if (output.size() == 0 && data.file_index < bind_data.files.size()) {
 			// exhausted this file, but we have more files we can read
 			// open the next file and increment the counter
@@ -180,11 +200,11 @@ static void read_csv_function(ClientContext &context, const FunctionData *bind_d
 	if (bind_data.include_file_name) {
 		auto &col = output.data.back();
 		col.SetValue(0, Value(data.csv_reader->options.file_path));
-		col.vector_type = VectorType::CONSTANT_VECTOR;
+		col.SetVectorType(VectorType::CONSTANT_VECTOR);
 	}
 }
 
-static void add_named_parameters(TableFunction &table_function) {
+static void ReadCSVAddNamedParameters(TableFunction &table_function) {
 	table_function.named_parameters["sep"] = LogicalType::VARCHAR;
 	table_function.named_parameters["delim"] = LogicalType::VARCHAR;
 	table_function.named_parameters["quote"] = LogicalType::VARCHAR;
@@ -199,28 +219,55 @@ static void add_named_parameters(TableFunction &table_function) {
 	table_function.named_parameters["all_varchar"] = LogicalType::BOOLEAN;
 	table_function.named_parameters["dateformat"] = LogicalType::VARCHAR;
 	table_function.named_parameters["timestampformat"] = LogicalType::VARCHAR;
+	table_function.named_parameters["normalize_names"] = LogicalType::BOOLEAN;
 	table_function.named_parameters["compression"] = LogicalType::VARCHAR;
 	table_function.named_parameters["filename"] = LogicalType::BOOLEAN;
+	table_function.named_parameters["skip"] = LogicalType::BIGINT;
+}
+
+int CSVReaderProgress(ClientContext &context, const FunctionData *bind_data_p) {
+	auto &bind_data = (ReadCSVData &)*bind_data_p;
+	if (bind_data.file_size == 0) {
+		return 100;
+	}
+	auto percentage = bind_data.bytes_read * 100 / bind_data.file_size;
+	return percentage;
 }
 
 TableFunction ReadCSVTableFunction::GetFunction() {
-	TableFunction read_csv("read_csv", {LogicalType::VARCHAR}, read_csv_function, read_csv_bind, read_csv_init);
-	add_named_parameters(read_csv);
+	TableFunction read_csv("read_csv", {LogicalType::VARCHAR}, ReadCSVFunction, ReadCSVBind, ReadCSVInit);
+	read_csv.table_scan_progress = CSVReaderProgress;
+	ReadCSVAddNamedParameters(read_csv);
 	return read_csv;
 }
 
 void ReadCSVTableFunction::RegisterFunction(BuiltinFunctions &set) {
 	set.AddFunction(ReadCSVTableFunction::GetFunction());
 
-	TableFunction read_csv_auto("read_csv_auto", {LogicalType::VARCHAR}, read_csv_function, read_csv_auto_bind,
-	                            read_csv_init);
-	add_named_parameters(read_csv_auto);
+	TableFunction read_csv_auto("read_csv_auto", {LogicalType::VARCHAR}, ReadCSVFunction, ReadCSVAutoBind, ReadCSVInit);
+	read_csv_auto.table_scan_progress = CSVReaderProgress;
+	ReadCSVAddNamedParameters(read_csv_auto);
 	set.AddFunction(read_csv_auto);
+}
+
+unique_ptr<TableFunctionRef> ReadCSVReplacement(const string &table_name, void *data) {
+	if (!StringUtil::EndsWith(table_name, ".csv") && !StringUtil::EndsWith(table_name, ".tsv") &&
+	    !StringUtil::EndsWith(table_name, ".csv.gz")) {
+		return nullptr;
+	}
+	auto table_function = make_unique<TableFunctionRef>();
+	vector<unique_ptr<ParsedExpression>> children;
+	children.push_back(make_unique<ConstantExpression>(Value(table_name)));
+	table_function->function = make_unique<FunctionExpression>("read_csv_auto", move(children));
+	return table_function;
 }
 
 void BuiltinFunctions::RegisterReadFunctions() {
 	CSVCopyFunction::RegisterFunction(*this);
 	ReadCSVTableFunction::RegisterFunction(*this);
+
+	auto &config = DBConfig::GetConfig(context);
+	config.replacement_scans.emplace_back(ReadCSVReplacement);
 }
 
 } // namespace duckdb

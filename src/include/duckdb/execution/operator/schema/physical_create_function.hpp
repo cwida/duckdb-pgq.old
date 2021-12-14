@@ -16,14 +16,18 @@ namespace duckdb {
 //! PhysicalCreateFunction represents a CREATE FUNCTION command
 class PhysicalCreateFunction : public PhysicalOperator {
 public:
-	PhysicalCreateFunction(unique_ptr<CreateMacroInfo> info)
-	    : PhysicalOperator(PhysicalOperatorType::CREATE_MACRO, {LogicalType::BIGINT}), info(move(info)) {
+	explicit PhysicalCreateFunction(unique_ptr<CreateMacroInfo> info, idx_t estimated_cardinality)
+	    : PhysicalOperator(PhysicalOperatorType::CREATE_MACRO, {LogicalType::BIGINT}, estimated_cardinality),
+	      info(move(info)) {
 	}
 
 	unique_ptr<CreateMacroInfo> info;
 
 public:
-	void GetChunkInternal(ExecutionContext &context, DataChunk &chunk, PhysicalOperatorState *state) override;
+	// Source interface
+	unique_ptr<GlobalSourceState> GetGlobalSourceState(ClientContext &context) const override;
+	void GetData(ExecutionContext &context, DataChunk &chunk, GlobalSourceState &gstate,
+	             LocalSourceState &lstate) const override;
 };
 
 } // namespace duckdb

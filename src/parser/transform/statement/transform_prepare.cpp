@@ -5,10 +5,8 @@
 
 namespace duckdb {
 
-using namespace duckdb_libpgquery;
-
-unique_ptr<PrepareStatement> Transformer::TransformPrepare(PGNode *node) {
-	auto stmt = reinterpret_cast<PGPrepareStmt *>(node);
+unique_ptr<PrepareStatement> Transformer::TransformPrepare(duckdb_libpgquery::PGNode *node) {
+	auto stmt = reinterpret_cast<duckdb_libpgquery::PGPrepareStmt *>(node);
 	D_ASSERT(stmt);
 
 	if (stmt->argtypes && stmt->argtypes->length > 0) {
@@ -23,14 +21,16 @@ unique_ptr<PrepareStatement> Transformer::TransformPrepare(PGNode *node) {
 	return result;
 }
 
-unique_ptr<ExecuteStatement> Transformer::TransformExecute(PGNode *node) {
-	auto stmt = reinterpret_cast<PGExecuteStmt *>(node);
+unique_ptr<ExecuteStatement> Transformer::TransformExecute(duckdb_libpgquery::PGNode *node) {
+	auto stmt = reinterpret_cast<duckdb_libpgquery::PGExecuteStmt *>(node);
 	D_ASSERT(stmt);
 
 	auto result = make_unique<ExecuteStatement>();
 	result->name = string(stmt->name);
 
-	TransformExpressionList(stmt->params, result->values);
+	if (stmt->params) {
+		TransformExpressionList(*stmt->params, result->values);
+	}
 	for (auto &expr : result->values) {
 		if (!expr->IsScalar()) {
 			throw Exception("Only scalar parameters or NULL supported for EXECUTE");
@@ -39,9 +39,12 @@ unique_ptr<ExecuteStatement> Transformer::TransformExecute(PGNode *node) {
 	return result;
 }
 
-unique_ptr<DropStatement> Transformer::TransformDeallocate(PGNode *node) {
-	auto stmt = reinterpret_cast<PGDeallocateStmt *>(node);
+unique_ptr<DropStatement> Transformer::TransformDeallocate(duckdb_libpgquery::PGNode *node) {
+	auto stmt = reinterpret_cast<duckdb_libpgquery::PGDeallocateStmt *>(node);
 	D_ASSERT(stmt);
+	if (!stmt->name) {
+		throw ParserException("DEALLOCATE requires a name");
+	}
 
 	auto result = make_unique<DropStatement>();
 	result->info->type = CatalogType::PREPARED_STATEMENT;

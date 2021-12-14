@@ -11,7 +11,8 @@ unique_ptr<PhysicalOperator> PhysicalPlanGenerator::CreatePlan(LogicalProjection
 
 #ifdef DEBUG
 	for (auto &expr : op.expressions) {
-		D_ASSERT(!expr->IsWindow() && !expr->IsAggregate());
+		D_ASSERT(!expr->IsWindow());
+		D_ASSERT(!expr->IsAggregate());
 	}
 #endif
 	if (plan->types.size() == op.types.size()) {
@@ -35,7 +36,7 @@ unique_ptr<PhysicalOperator> PhysicalPlanGenerator::CreatePlan(LogicalProjection
 		}
 	}
 
-	auto projection = make_unique<PhysicalProjection>(op.types, move(op.expressions));
+	auto projection = make_unique<PhysicalProjection>(op.types, move(op.expressions), op.estimated_cardinality);
 	projection->children.push_back(move(plan));
 	return move(projection);
 }

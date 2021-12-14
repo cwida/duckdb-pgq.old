@@ -9,12 +9,13 @@
 #pragma once
 
 #include "duckdb/function/table_function.hpp"
+#include "duckdb/common/atomic.hpp"
 
 namespace duckdb {
 class TableCatalogEntry;
 
 struct TableScanBindData : public FunctionData {
-	TableScanBindData(TableCatalogEntry *table) : table(table), is_index_scan(false) {
+	explicit TableScanBindData(TableCatalogEntry *table) : table(table), is_index_scan(false), chunk_count(0) {
 	}
 
 	//! The table to scan
@@ -25,12 +26,8 @@ struct TableScanBindData : public FunctionData {
 	//! The row ids to fetch (in case of an index scan)
 	vector<row_t> result_ids;
 
-	unique_ptr<FunctionData> Copy() override {
-		auto result = make_unique<TableScanBindData>(table);
-		result->is_index_scan = is_index_scan;
-		result->result_ids = result_ids;
-		return move(result);
-	}
+	//! How many chunks we already scanned
+	atomic<idx_t> chunk_count;
 };
 
 //! The table scan function represents a sequential scan over one of DuckDB's base tables.

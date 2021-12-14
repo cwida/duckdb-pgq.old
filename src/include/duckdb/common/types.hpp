@@ -10,17 +10,114 @@
 
 #include "duckdb/common/assert.hpp"
 #include "duckdb/common/constants.hpp"
+#include "duckdb/common/single_thread_ptr.hpp"
 #include "duckdb/common/vector.hpp"
+#include "duckdb/common/winapi.hpp"
+
 
 namespace duckdb {
 
 class Serializer;
 class Deserializer;
+class Value;
+class TypeCatalogEntry;
+//! Type used to represent dates (days since 1970-01-01)
+struct date_t {
+	int32_t days;
+
+	date_t() = default;
+	explicit inline date_t(int32_t days_p) : days(days_p) {}
+
+	// explicit conversion
+	explicit inline operator int32_t() const {return days;}
+
+	// comparison operators
+	inline bool operator==(const date_t &rhs) const {return days == rhs.days;};
+	inline bool operator!=(const date_t &rhs) const {return days != rhs.days;};
+	inline bool operator<=(const date_t &rhs) const {return days <= rhs.days;};
+	inline bool operator<(const date_t &rhs) const {return days < rhs.days;};
+	inline bool operator>(const date_t &rhs) const {return days > rhs.days;};
+	inline bool operator>=(const date_t &rhs) const {return days >= rhs.days;};
+
+	// arithmetic operators
+	inline date_t operator+(const int32_t &days) const {return date_t(this->days + days);};
+	inline date_t operator-(const int32_t &days) const {return date_t(this->days - days);};
+
+	// in-place operators
+	inline date_t &operator+=(const int32_t &days) {this->days += days; return *this;};
+	inline date_t &operator-=(const int32_t &days) {this->days -= days; return *this;};
+};
+
+//! Type used to represent time (microseconds)
+struct dtime_t {
+    int64_t micros;
+
+	dtime_t() = default;
+	explicit inline dtime_t(int64_t micros_p) : micros(micros_p) {}
+	inline dtime_t& operator=(int64_t micros_p) {micros = micros_p; return *this;}
+
+	// explicit conversion
+	explicit inline operator int64_t() const {return micros;}
+	explicit inline operator double() const {return micros;}
+
+	// comparison operators
+	inline bool operator==(const dtime_t &rhs) const {return micros == rhs.micros;};
+	inline bool operator!=(const dtime_t &rhs) const {return micros != rhs.micros;};
+	inline bool operator<=(const dtime_t &rhs) const {return micros <= rhs.micros;};
+	inline bool operator<(const dtime_t &rhs) const {return micros < rhs.micros;};
+	inline bool operator>(const dtime_t &rhs) const {return micros > rhs.micros;};
+	inline bool operator>=(const dtime_t &rhs) const {return micros >= rhs.micros;};
+
+	// arithmetic operators
+	inline dtime_t operator+(const int64_t &micros) const {return dtime_t(this->micros + micros);};
+	inline dtime_t operator+(const double &micros) const {return dtime_t(this->micros + int64_t(micros));};
+	inline dtime_t operator-(const int64_t &micros) const {return dtime_t(this->micros - micros);};
+	inline dtime_t operator*(const idx_t &copies) const {return dtime_t(this->micros * copies);};
+	inline dtime_t operator/(const idx_t &copies) const {return dtime_t(this->micros / copies);};
+	inline int64_t operator-(const dtime_t &other) const {return this->micros - other.micros;};
+
+	// in-place operators
+	inline dtime_t &operator+=(const int64_t &micros) {this->micros += micros; return *this;};
+	inline dtime_t &operator-=(const int64_t &micros) {this->micros -= micros; return *this;};
+	inline dtime_t &operator+=(const dtime_t &other) {this->micros += other.micros; return *this;};
+};
+
+//! Type used to represent timestamps (seconds,microseconds,milliseconds or nanoseconds since 1970-01-01)
+struct timestamp_t {
+    int64_t value;
+
+	timestamp_t() = default;
+	explicit inline timestamp_t(int64_t value_p) : value(value_p) {}
+	inline timestamp_t& operator=(int64_t value_p) {value = value_p; return *this;}
+
+	// explicit conversion
+	explicit inline operator int64_t() const {return value;}
+
+	// comparison operators
+	inline bool operator==(const timestamp_t &rhs) const {return value == rhs.value;};
+	inline bool operator!=(const timestamp_t &rhs) const {return value != rhs.value;};
+	inline bool operator<=(const timestamp_t &rhs) const {return value <= rhs.value;};
+	inline bool operator<(const timestamp_t &rhs) const {return value < rhs.value;};
+	inline bool operator>(const timestamp_t &rhs) const {return value > rhs.value;};
+	inline bool operator>=(const timestamp_t &rhs) const {return value >= rhs.value;};
+
+	// arithmetic operators
+	inline timestamp_t operator+(const double &value) const {return timestamp_t(this->value + int64_t(value));};
+	inline int64_t operator-(const timestamp_t &other) const {return this->value - other.value;};
+
+	// in-place operators
+	inline timestamp_t &operator+=(const int64_t &value) {this->value += value; return *this;};
+	inline timestamp_t &operator-=(const int64_t &value) {this->value -= value; return *this;};
+};
 
 struct interval_t {
 	int32_t months;
 	int32_t days;
 	int64_t micros;
+
+	inline bool operator==(const interval_t &rhs) const {
+		return this->days == rhs.days && this->months == rhs.months && this->micros == rhs.micros;
+	}
 };
 
 struct hugeint_t {
@@ -30,7 +127,7 @@ public:
 
 public:
 	hugeint_t() = default;
-	hugeint_t(int64_t value);
+	hugeint_t(int64_t value); // NOLINT: Allow implicit conversion from `int64_t`
 	hugeint_t(const hugeint_t &rhs) = default;
 	hugeint_t(hugeint_t &&rhs) = default;
 	hugeint_t &operator=(const hugeint_t &rhs) = default;
@@ -79,12 +176,13 @@ struct string_t;
 
 template <class T>
 using child_list_t = std::vector<std::pair<std::string, T>>;
+// we should be using single_thread_ptr here but cross-thread access to ChunkCollections currently prohibits this.
 template <class T>
-using buffer_ptr = std::shared_ptr<T>;
+using buffer_ptr = shared_ptr<T>;
 
 template <class T, typename... Args>
-buffer_ptr<T> make_buffer(Args &&... args) {
-	return std::make_shared<T>(std::forward<Args>(args)...);
+buffer_ptr<T> make_buffer(Args &&...args) {
+	return make_shared<T>(std::forward<Args>(args)...);
 }
 
 struct list_entry_t {
@@ -105,7 +203,7 @@ enum class PhysicalType : uint8_t {
 	/// A NULL type having no physical storage
 	NA = 0,
 
-	/// Boolean as 1 bit, LSB bit-packed ordering
+	/// Boolean as 8 bit "bool" value
 	BOOL = 1,
 
 	/// Unsigned 8-bit little-endian integer
@@ -212,11 +310,12 @@ enum class PhysicalType : uint8_t {
 	/// Like LIST, but with 64-bit offsets
 	LARGE_LIST = 33,
 
-	// DuckDB Extensions
+	/// DuckDB Extensions
 	VARCHAR = 200, // our own string representation, different from STRING and LARGE_STRING above
-	POINTER = 202,
-	HASH = 203,
 	INT128 = 204, // 128-bit integers
+	UNKNOWN = 205, // Unknown physical type of user defined types
+	/// Boolean as 1 bit, LSB bit-packed ordering
+	BIT = 206,
 
 	INVALID = 255
 };
@@ -229,7 +328,7 @@ enum class LogicalTypeId : uint8_t {
 	SQLNULL = 1, /* NULL type, used for constant NULL */
 	UNKNOWN = 2, /* unknown type, used for parameter expressions */
 	ANY = 3,     /* ANY type, used for functions that accept any type as parameter */
-
+	USER = 4, /* A User Defined Type (e.g., ENUMs before the binder) */
 	BOOLEAN = 10,
 	TINYINT = 11,
 	SMALLINT = 12,
@@ -237,130 +336,191 @@ enum class LogicalTypeId : uint8_t {
 	BIGINT = 14,
 	DATE = 15,
 	TIME = 16,
-	TIMESTAMP = 17,
-	DECIMAL = 18,
-	FLOAT = 19,
-	DOUBLE = 20,
-	CHAR = 21,
-	VARCHAR = 22,
-	BLOB = 24,
-	INTERVAL = 25,
-	UTINYINT = 26,
-	USMALLINT = 27,
-	UINTEGER = 28,
-	UBIGINT = 29,
+	TIMESTAMP_SEC = 17,
+	TIMESTAMP_MS = 18,
+	TIMESTAMP = 19, //! us
+	TIMESTAMP_NS = 20,
+	DECIMAL = 21,
+	FLOAT = 22,
+	DOUBLE = 23,
+	CHAR = 24,
+	VARCHAR = 25,
+	BLOB = 26,
+	INTERVAL = 27,
+	UTINYINT = 28,
+	USMALLINT = 29,
+	UINTEGER = 30,
+	UBIGINT = 31,
+
+
 	HUGEINT = 50,
 	POINTER = 51,
 	HASH = 52,
+	VALIDITY = 53,
+	UUID = 54,
 
 	STRUCT = 100,
-	LIST = 101
+	LIST = 101,
+	MAP = 102,
+	TABLE = 103,
+	ENUM = 104
 };
 
+struct ExtraTypeInfo;
+
 struct LogicalType {
-	LogicalType();
-	LogicalType(LogicalTypeId id);
-	LogicalType(LogicalTypeId id, string collation);
-	LogicalType(LogicalTypeId id, uint8_t width, uint8_t scale);
-	LogicalType(LogicalTypeId id, child_list_t<LogicalType> child_types);
-	LogicalType(LogicalTypeId id, uint8_t width, uint8_t scale, string collation,
-	            child_list_t<LogicalType> child_types);
+	DUCKDB_API LogicalType();
+	DUCKDB_API LogicalType(LogicalTypeId id); // NOLINT: Allow implicit conversion from `LogicalTypeId`
+	DUCKDB_API LogicalType(LogicalTypeId id, shared_ptr<ExtraTypeInfo> type_info);
+
+	DUCKDB_API LogicalType(const LogicalType &other) :
+		id_(other.id_), physical_type_(other.physical_type_), type_info_(other.type_info_) {}
+
+	DUCKDB_API LogicalType(LogicalType &&other) :
+		id_(other.id_), physical_type_(other.physical_type_), type_info_(move(other.type_info_)) {}
+
+	DUCKDB_API ~LogicalType();
 
 	LogicalTypeId id() const {
 		return id_;
 	}
-	uint8_t width() const {
-		return width_;
-	}
-	uint8_t scale() const {
-		return scale_;
-	}
-	const string &collation() const {
-		return collation_;
-	}
-	const child_list_t<LogicalType> &child_types() const {
-		return child_types_;
-	}
 	PhysicalType InternalType() const {
 		return physical_type_;
 	}
-
-	bool operator==(const LogicalType &rhs) const {
-		return id_ == rhs.id_ && width_ == rhs.width_ && scale_ == rhs.scale_ && child_types_ == rhs.child_types_;
+	const ExtraTypeInfo *AuxInfo() const {
+		return type_info_.get();
 	}
+
+	// copy assignment
+	LogicalType& operator=(const LogicalType &other) {
+		id_ = other.id_;
+		physical_type_ = other.physical_type_;
+		type_info_ = other.type_info_;
+		return *this;
+	}
+	// move assignment
+	LogicalType& operator=(LogicalType&& other) {
+		id_ = other.id_;
+		physical_type_ = other.physical_type_;
+		type_info_ = move(other.type_info_);
+		return *this;
+	}
+
+	bool operator==(const LogicalType &rhs) const;
 	bool operator!=(const LogicalType &rhs) const {
 		return !(*this == rhs);
 	}
 
 	//! Serializes a LogicalType to a stand-alone binary blob
-	void Serialize(Serializer &serializer) const;
+	DUCKDB_API void Serialize(Serializer &serializer) const;
 	//! Deserializes a blob back into an LogicalType
-	static LogicalType Deserialize(Deserializer &source);
+	DUCKDB_API static LogicalType Deserialize(Deserializer &source);
 
-	string ToString() const;
-	bool IsIntegral() const;
-	bool IsNumeric() const;
-	bool IsMoreGenericThan(LogicalType &other) const;
-	hash_t Hash() const;
+	DUCKDB_API string ToString() const;
+	DUCKDB_API bool IsIntegral() const;
+	DUCKDB_API bool IsNumeric() const;
+	DUCKDB_API hash_t Hash() const;
 
-	static LogicalType MaxLogicalType(LogicalType left, LogicalType right);
+	DUCKDB_API static LogicalType MaxLogicalType(const LogicalType &left, const LogicalType &right);
 
 	//! Gets the decimal properties of a numeric type. Fails if the type is not numeric.
-	bool GetDecimalProperties(uint8_t &width, uint8_t &scale) const;
+	DUCKDB_API bool GetDecimalProperties(uint8_t &width, uint8_t &scale) const;
 
-	void Verify() const;
+	DUCKDB_API void Verify() const;
 
 private:
 	LogicalTypeId id_;
-	uint8_t width_;
-	uint8_t scale_;
-	string collation_;
-
-	child_list_t<LogicalType> child_types_;
 	PhysicalType physical_type_;
+	shared_ptr<ExtraTypeInfo> type_info_;
 
 private:
 	PhysicalType GetInternalType();
 
 public:
-	static const LogicalType SQLNULL;
-	static const LogicalType BOOLEAN;
-	static const LogicalType TINYINT;
-	static const LogicalType UTINYINT;
-	static const LogicalType SMALLINT;
-	static const LogicalType USMALLINT;
-	static const LogicalType INTEGER;
-	static const LogicalType UINTEGER;
-	static const LogicalType BIGINT;
-	static const LogicalType UBIGINT;
-	static const LogicalType FLOAT;
-	static const LogicalType DOUBLE;
-	static const LogicalType DECIMAL;
-	static const LogicalType DATE;
-	static const LogicalType TIMESTAMP;
-	static const LogicalType TIME;
-	static const LogicalType VARCHAR;
-	static const LogicalType STRUCT;
-	static const LogicalType LIST;
-	static const LogicalType ANY;
-	static const LogicalType BLOB;
-	static const LogicalType INTERVAL;
-	static const LogicalType HUGEINT;
-	static const LogicalType HASH;
-	static const LogicalType POINTER;
-	static const LogicalType INVALID;
+	DUCKDB_API static const LogicalType SQLNULL;
+	DUCKDB_API static const LogicalType BOOLEAN;
+	DUCKDB_API static const LogicalType TINYINT;
+	DUCKDB_API static const LogicalType UTINYINT;
+	DUCKDB_API static const LogicalType SMALLINT;
+	DUCKDB_API static const LogicalType USMALLINT;
+	DUCKDB_API static const LogicalType INTEGER;
+	DUCKDB_API static const LogicalType UINTEGER;
+	DUCKDB_API static const LogicalType BIGINT;
+	DUCKDB_API static const LogicalType UBIGINT;
+	DUCKDB_API static const LogicalType FLOAT;
+	DUCKDB_API static const LogicalType DOUBLE;
+	DUCKDB_API static const LogicalType DATE;
+	DUCKDB_API static const LogicalType TIMESTAMP;
+	DUCKDB_API static const LogicalType TIMESTAMP_S;
+	DUCKDB_API static const LogicalType TIMESTAMP_MS;
+	DUCKDB_API static const LogicalType TIMESTAMP_NS;
+	DUCKDB_API static const LogicalType TIME;
+	DUCKDB_API static const LogicalType VARCHAR;
+	DUCKDB_API static const LogicalType ANY;
+	DUCKDB_API static const LogicalType BLOB;
+	DUCKDB_API static const LogicalType INTERVAL;
+	DUCKDB_API static const LogicalType HUGEINT;
+	DUCKDB_API static const LogicalType UUID;
+	DUCKDB_API static const LogicalType HASH;
+	DUCKDB_API static const LogicalType POINTER;
+	DUCKDB_API static const LogicalType TABLE;
+	DUCKDB_API static const LogicalType INVALID;
 
+	// explicitly allowing these functions to be capitalized to be in-line with the remaining functions
+	DUCKDB_API static LogicalType DECIMAL(int width, int scale);                 // NOLINT
+	DUCKDB_API static LogicalType VARCHAR_COLLATION(string collation);           // NOLINT
+	DUCKDB_API static LogicalType LIST( LogicalType child);                       // NOLINT
+	DUCKDB_API static LogicalType STRUCT( child_list_t<LogicalType> children);    // NOLINT
+	DUCKDB_API static LogicalType MAP( child_list_t<LogicalType> children);       // NOLINT
+	DUCKDB_API static LogicalType ENUM(const string &enum_name, const vector<string> &ordered_data); // NOLINT
+	DUCKDB_API static LogicalType USER(const string &user_type_name); // NOLINT
 	//! A list of all NUMERIC types (integral and floating point types)
-	static const vector<LogicalType> NUMERIC;
+	DUCKDB_API static const vector<LogicalType> NUMERIC;
 	//! A list of all INTEGRAL types
-	static const vector<LogicalType> INTEGRAL;
+	DUCKDB_API static const vector<LogicalType> INTEGRAL;
 	//! A list of ALL SQL types
-	static const vector<LogicalType> ALL_TYPES;
+	DUCKDB_API static const vector<LogicalType> ALL_TYPES;
 };
+
+struct DecimalType {
+	DUCKDB_API static uint8_t GetWidth(const LogicalType &type);
+	DUCKDB_API static uint8_t GetScale(const LogicalType &type);
+};
+
+struct StringType {
+	DUCKDB_API static string GetCollation(const LogicalType &type);
+};
+
+struct ListType {
+	DUCKDB_API static const LogicalType &GetChildType(const LogicalType &type);
+};
+
+struct UserType{
+	DUCKDB_API static const string &GetTypeName(const LogicalType &type);
+};
+
+struct EnumType{
+	DUCKDB_API static const string &GetTypeName(const LogicalType &type);
+	DUCKDB_API static int64_t GetPos(const LogicalType &type, const string& key);
+	DUCKDB_API static const vector<string> &GetValuesInsertOrder(const LogicalType &type);
+	DUCKDB_API static idx_t GetSize(const LogicalType &type);
+	DUCKDB_API static const string& GetValue(const Value &val);
+	DUCKDB_API static void SetCatalog(LogicalType &type, TypeCatalogEntry* catalog_entry);
+	DUCKDB_API static TypeCatalogEntry* GetCatalog(const LogicalType &type);
+	DUCKDB_API static PhysicalType GetPhysicalType(idx_t size);
+};
+
+struct StructType {
+	DUCKDB_API static const child_list_t<LogicalType> &GetChildTypes(const LogicalType &type);
+	DUCKDB_API static const LogicalType &GetChildType(const LogicalType &type, idx_t index);
+	DUCKDB_API static const string &GetChildName(const LogicalType &type, idx_t index);
+	DUCKDB_API static idx_t GetChildCount(const LogicalType &type);
+};
+
 
 string LogicalTypeIdToString(LogicalTypeId type);
 
-LogicalType TransformStringToLogicalType(string str);
+LogicalTypeId TransformStringToLogicalType(const string &str);
 
 //! Returns the PhysicalType for the given type
 template <class T>
@@ -385,21 +545,28 @@ PhysicalType GetTypeId() {
 		return PhysicalType::UINT64;
 	} else if (std::is_same<T, hugeint_t>()) {
 		return PhysicalType::INT128;
-	} else if (std::is_same<T, uint64_t>()) {
-		return PhysicalType::HASH;
-	} else if (std::is_same<T, uintptr_t>()) {
-		return PhysicalType::POINTER;
+	} else if (std::is_same<T, date_t>()) {
+		return PhysicalType::DATE32;
+	} else if (std::is_same<T, dtime_t>()) {
+		return PhysicalType::TIME32;
+	} else if (std::is_same<T, timestamp_t>()) {
+		return PhysicalType::TIMESTAMP;
 	} else if (std::is_same<T, float>()) {
 		return PhysicalType::FLOAT;
 	} else if (std::is_same<T, double>()) {
 		return PhysicalType::DOUBLE;
-	} else if (std::is_same<T, const char *>() || std::is_same<T, char *>()) {
+	} else if (std::is_same<T, const char *>() || std::is_same<T, char *>() || std::is_same<T, string_t>()) {
 		return PhysicalType::VARCHAR;
 	} else if (std::is_same<T, interval_t>()) {
 		return PhysicalType::INTERVAL;
 	} else {
 		return PhysicalType::INVALID;
 	}
+}
+
+template<class T>
+bool TypeIsNumber() {
+	return std::is_integral<T>() || std::is_floating_point<T>() || std::is_same<T, hugeint_t>();
 }
 
 template <class T>

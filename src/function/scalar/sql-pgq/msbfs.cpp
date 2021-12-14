@@ -63,7 +63,7 @@ static void msbfs_function(DataChunk &args, ExpressionState &state, Vector &resu
 	
 	int8_t result_size = 0;
 	idx_t curr_batch = 0;
-	result.vector_type = VectorType::FLAT_VECTOR;
+	result.SetVectorType(VectorType::FLAT_VECTOR);
 	auto result_data = FlatVector::GetData<bool>(result);
 
 	while (curr_batch < args.size()) {

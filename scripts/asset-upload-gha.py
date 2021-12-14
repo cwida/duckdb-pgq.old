@@ -2,10 +2,11 @@ import json
 import os
 import sys
 import glob
+import time
 import mimetypes
 import urllib.request
 
-api_url = 'https://api.github.com/repos/cwida/duckdb/'
+api_url = 'https://api.github.com/repos/duckdb/duckdb/'
 
 if (len(sys.argv) < 2):
 	print("Usage: [filename1] [filename2] ... ")
@@ -14,7 +15,7 @@ if (len(sys.argv) < 2):
 # this essentially should run on release tag builds to fill up release assets and master
 
 repo = os.getenv("GITHUB_REPOSITORY", "")
-if repo != "cwida/duckdb":
+if repo != "duckdb/duckdb":
 	print("Not running on forks. Exiting.")
 	exit(0)
 
@@ -58,10 +59,18 @@ def gh_api(suburl, filename='', method='GET'):
 
 	req = urllib.request.Request(url, body_data, headers)
 	req.get_method = lambda: method
-	try:
-		raw_resp = urllib.request.urlopen(req).read().decode()
-	except urllib.error.HTTPError as e:
-		raw_resp = e.read().decode() # gah
+	timeout = 1
+	nretries = 10
+	for i in range(nretries):
+		success = True
+		try:
+			raw_resp = urllib.request.urlopen(req).read().decode()
+		except:
+			success = False
+		if success:
+			break
+		time.sleep(timeout)
+		timeout *= 2
 
 	if (method != 'DELETE'):
 		return json.loads(raw_resp)
@@ -93,9 +102,9 @@ for filename in files:
 		asset_filename = parts[0]
 		paths = glob.glob(parts[1])
 		if len(paths) != 1:
-			raise ValueError("Could not find file for pattern %s" % local_filename)
+			raise ValueError("Could not find file for pattern %s" % parts[1])
 		local_filename = paths[0]
-	else :
+	else:
 		asset_filename = os.path.basename(filename)
 		local_filename = filename
 

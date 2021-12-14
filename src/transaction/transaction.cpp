@@ -12,6 +12,8 @@
 #include "duckdb/transaction/delete_info.hpp"
 #include "duckdb/transaction/update_info.hpp"
 #include "duckdb/main/config.hpp"
+#include "duckdb/storage/storage_manager.hpp"
+#include "duckdb/storage/table/column_data.hpp"
 
 #include <cstring>
 
@@ -59,12 +61,11 @@ void Transaction::PushAppend(DataTable *table, idx_t start_row, idx_t row_count)
 
 UpdateInfo *Transaction::CreateUpdateInfo(idx_t type_size, idx_t entries) {
 	auto update_info = (UpdateInfo *)undo_buffer.CreateEntry(
-	    UndoFlags::UPDATE_TUPLE, sizeof(UpdateInfo) + (sizeof(sel_t) + type_size) * entries);
-	update_info->max = entries;
+	    UndoFlags::UPDATE_TUPLE, sizeof(UpdateInfo) + (sizeof(sel_t) + type_size) * STANDARD_VECTOR_SIZE);
+	update_info->max = STANDARD_VECTOR_SIZE;
 	update_info->tuples = (sel_t *)(((data_ptr_t)update_info) + sizeof(UpdateInfo));
-	update_info->tuple_data = ((data_ptr_t)update_info) + sizeof(UpdateInfo) + sizeof(sel_t) * entries;
+	update_info->tuple_data = ((data_ptr_t)update_info) + sizeof(UpdateInfo) + sizeof(sel_t) * update_info->max;
 	update_info->version_number = transaction_id;
-	update_info->nullmask.reset();
 	return update_info;
 }
 

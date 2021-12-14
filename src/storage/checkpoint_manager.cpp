@@ -1,16 +1,11 @@
 #include "duckdb/storage/checkpoint_manager.hpp"
-#include "duckdb/storage/block_manager.hpp"
-#include "duckdb/storage/meta_block_reader.hpp"
-
-#include "duckdb/common/serializer.hpp"
-#include "duckdb/common/vector_operations/vector_operations.hpp"
-#include "duckdb/common/types/null_value.hpp"
 
 #include "duckdb/catalog/catalog.hpp"
 #include "duckdb/catalog/catalog_entry/macro_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/schema_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/sequence_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/table_catalog_entry.hpp"
+#include "duckdb/catalog/catalog_entry/type_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/view_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/property_graph_catalog_entry.hpp"
 
@@ -19,18 +14,23 @@
 #include "duckdb/parser/parsed_data/create_view_info.hpp"
 #include "duckdb/parser/parsed_data/create_property_graph_info.hpp"
 
-#include "duckdb/planner/binder.hpp"
-#include "duckdb/planner/parsed_data/bound_create_table_info.hpp"
-
+#include "duckdb/common/serializer.hpp"
+#include "duckdb/common/types/null_value.hpp"
+#include "duckdb/common/vector_operations/vector_operations.hpp"
 #include "duckdb/main/client_context.hpp"
+#include "duckdb/main/config.hpp"
 #include "duckdb/main/connection.hpp"
 #include "duckdb/main/database.hpp"
-
-#include "duckdb/transaction/transaction_manager.hpp"
-
-#include "duckdb/storage/checkpoint/table_data_writer.hpp"
+#include "duckdb/parser/parsed_data/create_schema_info.hpp"
+#include "duckdb/parser/parsed_data/create_table_info.hpp"
+#include "duckdb/parser/parsed_data/create_view_info.hpp"
+#include "duckdb/planner/binder.hpp"
+#include "duckdb/planner/parsed_data/bound_create_table_info.hpp"
+#include "duckdb/storage/block_manager.hpp"
 #include "duckdb/storage/checkpoint/table_data_reader.hpp"
-#include "duckdb/main/config.hpp"
+#include "duckdb/storage/checkpoint/table_data_writer.hpp"
+#include "duckdb/storage/meta_block_reader.hpp"
+#include "duckdb/transaction/transaction_manager.hpp"
 
 namespace duckdb {
 
@@ -66,6 +66,7 @@ void CheckpointManager::CreateCheckpoint() {
 	for (auto &schema : schemas) {
 		WriteSchema(*schema);
 	}
+	FlushPartialSegments();
 	// flush the meta data to disk
 	metadata_writer->Flush();
 	tabledata_writer->Flush();
@@ -134,6 +135,9 @@ void CheckpointManager::WriteSchema(SchemaCatalogEntry &schema) {
 	vector<ViewCatalogEntry *> views;
 	vector<PropertyGraphCatalogEntry *> pg_tables;
 	schema.Scan(CatalogType::TABLE_ENTRY, [&](CatalogEntry *entry) {
+		if (entry->internal) {
+			return;
+		}
 		if (entry->type == CatalogType::TABLE_ENTRY) {
 			tables.push_back((TableCatalogEntry *)entry);
 		} else if (entry->type == CatalogType::VIEW_ENTRY) {
@@ -145,15 +149,32 @@ void CheckpointManager::WriteSchema(SchemaCatalogEntry &schema) {
 		}
 	});
 	vector<SequenceCatalogEntry *> sequences;
-	schema.Scan(CatalogType::SEQUENCE_ENTRY,
-	            [&](CatalogEntry *entry) { sequences.push_back((SequenceCatalogEntry *)entry); });
+	schema.Scan(CatalogType::SEQUENCE_ENTRY, [&](CatalogEntry *entry) {
+		D_ASSERT(!entry->internal);
+		sequences.push_back((SequenceCatalogEntry *)entry);
+	});
+
+	vector<TypeCatalogEntry *> custom_types;
+	schema.Scan(CatalogType::TYPE_ENTRY, [&](CatalogEntry *entry) {
+		D_ASSERT(!entry->internal);
+		custom_types.push_back((TypeCatalogEntry *)entry);
+	});
 
 	vector<MacroCatalogEntry *> macros;
 	schema.Scan(CatalogType::SCALAR_FUNCTION_ENTRY, [&](CatalogEntry *entry) {
+		if (entry->internal) {
+			return;
+		}
 		if (entry->type == CatalogType::MACRO_ENTRY) {
 			macros.push_back((MacroCatalogEntry *)entry);
 		}
 	});
+
+	// write the custom_types
+	metadata_writer->Write<uint32_t>(custom_types.size());
+	for (auto &custom_type : custom_types) {
+		WriteType(*custom_type);
+	}
 
 	// write the sequences
 	metadata_writer->Write<uint32_t>(sequences.size());
@@ -170,6 +191,7 @@ void CheckpointManager::WriteSchema(SchemaCatalogEntry &schema) {
 	for (auto &view : views) {
 		WriteView(*view);
 	}
+
 	// finally write the macro's
 	metadata_writer->Write<uint32_t>(macros.size());
 	for (auto &macro : macros) {
@@ -190,6 +212,12 @@ void CheckpointManager::ReadSchema(ClientContext &context, MetaBlockReader &read
 	info->on_conflict = OnCreateConflict::IGNORE_ON_CONFLICT;
 	catalog.CreateSchema(context, info.get());
 
+	// now read the enums
+	uint32_t enum_count = reader.Read<uint32_t>();
+	for (uint32_t i = 0; i < enum_count; i++) {
+		ReadType(context, reader);
+	}
+
 	// read the sequences
 	uint32_t seq_count = reader.Read<uint32_t>();
 	for (uint32_t i = 0; i < seq_count; i++) {
@@ -205,6 +233,7 @@ void CheckpointManager::ReadSchema(ClientContext &context, MetaBlockReader &read
 	for (uint32_t i = 0; i < view_count; i++) {
 		ReadView(context, reader);
 	}
+
 	// finally read the macro's
 	uint32_t macro_count = reader.Read<uint32_t>();
 	for (uint32_t i = 0; i < macro_count; i++) {
@@ -255,6 +284,20 @@ void CheckpointManager::ReadSequence(ClientContext &context, MetaBlockReader &re
 }
 
 //===--------------------------------------------------------------------===//
+// Custom Types
+//===--------------------------------------------------------------------===//
+void CheckpointManager::WriteType(TypeCatalogEntry &table) {
+	table.Serialize(*metadata_writer);
+}
+
+void CheckpointManager::ReadType(ClientContext &context, MetaBlockReader &reader) {
+	auto info = TypeCatalogEntry::Deserialize(reader);
+
+	auto &catalog = Catalog::GetCatalog(db);
+	catalog.CreateType(context, info.get());
+}
+
+//===--------------------------------------------------------------------===//
 // Macro's
 //===--------------------------------------------------------------------===//
 void CheckpointManager::WriteMacro(MacroCatalogEntry &macro) {
@@ -274,33 +317,105 @@ void CheckpointManager::ReadMacro(ClientContext &context, MetaBlockReader &reade
 void CheckpointManager::WriteTable(TableCatalogEntry &table) {
 	// write the table meta data
 	table.Serialize(*metadata_writer);
-	//! write the blockId for the table info
-	metadata_writer->Write<block_id_t>(tabledata_writer->block->id);
-	//! and the offset to where the info starts
-	metadata_writer->Write<uint64_t>(tabledata_writer->offset);
 	// now we need to write the table data
-	TableDataWriter writer(db, table, *tabledata_writer);
-	writer.WriteTableData();
+	TableDataWriter writer(db, *this, table, *tabledata_writer);
+	auto pointer = writer.WriteTableData();
+
+	//! write the block pointer for the table info
+	metadata_writer->Write<block_id_t>(pointer.block_id);
+	metadata_writer->Write<uint64_t>(pointer.offset);
 }
 
 void CheckpointManager::ReadTable(ClientContext &context, MetaBlockReader &reader) {
 	// deserialize the table meta data
 	auto info = TableCatalogEntry::Deserialize(reader);
 	// bind the info
-	Binder binder(context);
-	auto bound_info = binder.BindCreateTableInfo(move(info));
+	auto binder = Binder::CreateBinder(context);
+	auto bound_info = binder->BindCreateTableInfo(move(info));
 
 	// now read the actual table data and place it into the create table info
 	auto block_id = reader.Read<block_id_t>();
 	auto offset = reader.Read<uint64_t>();
 	MetaBlockReader table_data_reader(db, block_id);
 	table_data_reader.offset = offset;
-	TableDataReader data_reader(db, table_data_reader, *bound_info);
+	TableDataReader data_reader(table_data_reader, *bound_info);
 	data_reader.ReadTableData();
 
 	// finally create the table in the catalog
 	auto &catalog = Catalog::GetCatalog(db);
 	catalog.CreateTable(context, bound_info.get());
+}
+
+//===--------------------------------------------------------------------===//
+// Partial Blocks
+//===--------------------------------------------------------------------===//
+bool CheckpointManager::GetPartialBlock(ColumnSegment *segment, idx_t segment_size, block_id_t &block_id,
+                                        uint32_t &offset_in_block, PartialBlock *&partial_block_ptr,
+                                        unique_ptr<PartialBlock> &owned_partial_block) {
+	auto entry = partially_filled_blocks.lower_bound(segment_size);
+	if (entry == partially_filled_blocks.end()) {
+		return false;
+	}
+	// found a partially filled block! fill in the info
+	auto partial_block = move(entry->second);
+	partial_block_ptr = partial_block.get();
+	block_id = partial_block->block_id;
+	offset_in_block = Storage::BLOCK_SIZE - entry->first;
+	partially_filled_blocks.erase(entry);
+	PartialColumnSegment partial_segment;
+	partial_segment.segment = segment;
+	partial_segment.offset_in_block = offset_in_block;
+	partial_block->segments.push_back(partial_segment);
+
+	D_ASSERT(offset_in_block > 0);
+	D_ASSERT(ValueIsAligned(offset_in_block));
+
+	// check if the block is STILL partially filled after adding the segment_size
+	auto new_size = AlignValue(offset_in_block + segment_size);
+	if (new_size <= CheckpointManager::PARTIAL_BLOCK_THRESHOLD) {
+		// the block is still partially filled: add it to the partially_filled_blocks list
+		auto new_space_left = Storage::BLOCK_SIZE - new_size;
+		partially_filled_blocks.insert(make_pair(new_space_left, move(partial_block)));
+		// should not write the block yet: perhaps more columns will be added
+	} else {
+		// we are done with this block after the current write: write it to disk
+		owned_partial_block = move(partial_block);
+	}
+	return true;
+}
+
+void CheckpointManager::RegisterPartialBlock(ColumnSegment *segment, idx_t segment_size, block_id_t block_id) {
+	D_ASSERT(segment_size <= CheckpointManager::PARTIAL_BLOCK_THRESHOLD);
+	auto partial_block = make_unique<PartialBlock>();
+	partial_block->block_id = block_id;
+	partial_block->block = segment->block;
+
+	PartialColumnSegment partial_segment;
+	partial_segment.segment = segment;
+	partial_segment.offset_in_block = 0;
+	partial_block->segments.push_back(partial_segment);
+	auto space_left = Storage::BLOCK_SIZE - AlignValue(segment_size);
+	partially_filled_blocks.insert(make_pair(space_left, move(partial_block)));
+}
+
+void CheckpointManager::FlushPartialSegments() {
+	for (auto &entry : partially_filled_blocks) {
+		entry.second->FlushToDisk(db);
+	}
+}
+
+void PartialBlock::FlushToDisk(DatabaseInstance &db) {
+	auto &buffer_manager = BufferManager::GetBufferManager(db);
+	auto &block_manager = BlockManager::GetBlockManager(db);
+
+	// the data for the block might already exists in-memory of our block
+	// instead of copying the data we alter some metadata so the buffer points to an on-disk block
+	block = buffer_manager.ConvertToPersistent(block_manager, block_id, move(block));
+
+	// now set this block as the block for all segments
+	for (auto &seg : segments) {
+		seg.segment->ConvertToPersistent(block, block_id, seg.offset_in_block);
+	}
 }
 
 } // namespace duckdb

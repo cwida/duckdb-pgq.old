@@ -30,23 +30,22 @@ bool NO_FAIL(unique_ptr<QueryResult> result) {
 }
 
 void TestDeleteDirectory(string path) {
-	FileSystem fs;
-	if (fs.DirectoryExists(path)) {
-		fs.RemoveDirectory(path);
+	unique_ptr<FileSystem> fs = FileSystem::CreateLocal();
+	if (fs->DirectoryExists(path)) {
+		fs->RemoveDirectory(path);
 	}
 }
 
 void TestDeleteFile(string path) {
-	FileSystem fs;
-	if (fs.FileExists(path)) {
-		fs.RemoveFile(path);
+	unique_ptr<FileSystem> fs = FileSystem::CreateLocal();
+	if (fs->FileExists(path)) {
+		fs->RemoveFile(path);
 	}
 }
 
 void TestChangeDirectory(string path) {
 	// set the base path for the tests
-	FileSystem fs;
-	fs.SetWorkingDirectory(path);
+	FileSystem::SetWorkingDirectory(path);
 }
 
 void DeleteDatabase(string path) {
@@ -55,21 +54,31 @@ void DeleteDatabase(string path) {
 }
 
 void TestCreateDirectory(string path) {
-	FileSystem fs;
-	fs.CreateDirectory(path);
+	unique_ptr<FileSystem> fs = FileSystem::CreateLocal();
+	fs->CreateDirectory(path);
 }
 
 string TestDirectoryPath() {
-	FileSystem fs;
-	if (!fs.DirectoryExists(TESTING_DIRECTORY_NAME)) {
-		fs.CreateDirectory(TESTING_DIRECTORY_NAME);
+	unique_ptr<FileSystem> fs = FileSystem::CreateLocal();
+	if (!fs->DirectoryExists(TESTING_DIRECTORY_NAME)) {
+		fs->CreateDirectory(TESTING_DIRECTORY_NAME);
 	}
 	return TESTING_DIRECTORY_NAME;
 }
 
 string TestCreatePath(string suffix) {
-	FileSystem fs;
-	return fs.JoinPath(TestDirectoryPath(), suffix);
+	unique_ptr<FileSystem> fs = FileSystem::CreateLocal();
+	return fs->JoinPath(TestDirectoryPath(), suffix);
+}
+
+bool TestIsInternalError(const string &error) {
+	if (StringUtil::Contains(error, "Unoptimized Result differs from original result!")) {
+		return true;
+	}
+	if (StringUtil::Contains(error, "INTERNAL")) {
+		return true;
+	}
+	return false;
 }
 
 unique_ptr<DBConfig> GetTestConfig() {
@@ -79,12 +88,12 @@ unique_ptr<DBConfig> GetTestConfig() {
 }
 
 string GetCSVPath() {
-	FileSystem fs;
+	unique_ptr<FileSystem> fs = FileSystem::CreateLocal();
 	string csv_path = TestCreatePath("csv_files");
-	if (fs.DirectoryExists(csv_path)) {
-		fs.RemoveDirectory(csv_path);
+	if (fs->DirectoryExists(csv_path)) {
+		fs->RemoveDirectory(csv_path);
 	}
-	fs.CreateDirectory(csv_path);
+	fs->CreateDirectory(csv_path);
 	return csv_path;
 }
 
@@ -206,9 +215,9 @@ string show_diff(DataChunk &left, DataChunk &right) {
 		bool has_differences = false;
 		auto &left_vector = left.data[i];
 		auto &right_vector = right.data[i];
-		string left_column = StringUtil::Format("Result\n------\n%s [", left_vector.type.ToString().c_str());
-		string right_column = StringUtil::Format("Expect\n------\n%s [", right_vector.type.ToString().c_str());
-		if (left_vector.type == right_vector.type) {
+		string left_column = StringUtil::Format("Result\n------\n%s [", left_vector.GetType().ToString().c_str());
+		string right_column = StringUtil::Format("Expect\n------\n%s [", right_vector.GetType().ToString().c_str());
+		if (left_vector.GetType() == right_vector.GetType()) {
 			for (size_t j = 0; j < left.size(); j++) {
 				auto left_value = left_vector.GetValue(j);
 				auto right_value = right_vector.GetValue(j);
@@ -245,7 +254,7 @@ bool compare_chunk(DataChunk &left, DataChunk &right) {
 	for (size_t i = 0; i < left.ColumnCount(); i++) {
 		auto &left_vector = left.data[i];
 		auto &right_vector = right.data[i];
-		if (left_vector.type == right_vector.type) {
+		if (left_vector.GetType() == right_vector.GetType()) {
 			for (size_t j = 0; j < left.size(); j++) {
 				auto left_value = left_vector.GetValue(j);
 				auto right_value = right_vector.GetValue(j);
@@ -264,6 +273,12 @@ bool compare_result(string csv, ChunkCollection &collection, vector<LogicalType>
                     string &error_message) {
 	D_ASSERT(collection.Count() == 0 || collection.Types().size() == sql_types.size());
 
+	// create the csv on disk
+	auto csv_path = TestCreatePath("__test_csv_path.csv");
+	ofstream f(csv_path);
+	f << csv;
+	f.close();
+
 	// set up the CSV reader
 	BufferedCSVReaderOptions options;
 	options.auto_detect = false;
@@ -271,15 +286,15 @@ bool compare_result(string csv, ChunkCollection &collection, vector<LogicalType>
 	options.header = has_header;
 	options.quote = "\"";
 	options.escape = "\"";
+	options.file_path = csv_path;
 
 	// set up the intermediate result chunk
 	DataChunk parsed_result;
 	parsed_result.Initialize(sql_types);
 
-	// convert the CSV string into a stringstream
-	auto source = make_unique<istringstream>(csv);
-
-	BufferedCSVReader reader(move(options), sql_types, move(source));
+	DuckDB db;
+	Connection con(db);
+	BufferedCSVReader reader(*con.context, move(options), sql_types);
 	idx_t collection_index = 0;
 	idx_t tuple_count = 0;
 	while (true) {
@@ -287,7 +302,7 @@ bool compare_result(string csv, ChunkCollection &collection, vector<LogicalType>
 		try {
 			parsed_result.Reset();
 			reader.ParseCSV(parsed_result);
-		} catch (Exception &ex) {
+		} catch (std::exception &ex) {
 			error_message = "Could not parse CSV: " + string(ex.what());
 			return false;
 		}

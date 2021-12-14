@@ -10,7 +10,7 @@ static void CopyToStorageLoop(VectorData &vdata, idx_t count, data_ptr_t target)
 	auto result_data = (T *)target;
 	for (idx_t i = 0; i < count; i++) {
 		auto idx = vdata.sel->get_index(i);
-		if ((*vdata.nullmask)[idx]) {
+		if (!vdata.validity.RowIsValid(idx)) {
 			result_data[i] = NullValue<T>();
 		} else {
 			result_data[i] = ldata[idx];
@@ -25,7 +25,7 @@ void VectorOperations::WriteToStorage(Vector &source, idx_t count, data_ptr_t ta
 	VectorData vdata;
 	source.Orrify(count, vdata);
 
-	switch (source.type.InternalType()) {
+	switch (source.GetType().InternalType()) {
 	case PhysicalType::BOOL:
 	case PhysicalType::INT8:
 		CopyToStorageLoop<int8_t>(vdata, count, target);
@@ -54,12 +54,6 @@ void VectorOperations::WriteToStorage(Vector &source, idx_t count, data_ptr_t ta
 	case PhysicalType::INT128:
 		CopyToStorageLoop<hugeint_t>(vdata, count, target);
 		break;
-	case PhysicalType::HASH:
-		CopyToStorageLoop<hash_t>(vdata, count, target);
-		break;
-	case PhysicalType::POINTER:
-		CopyToStorageLoop<uintptr_t>(vdata, count, target);
-		break;
 	case PhysicalType::FLOAT:
 		CopyToStorageLoop<float>(vdata, count, target);
 		break;
@@ -70,7 +64,7 @@ void VectorOperations::WriteToStorage(Vector &source, idx_t count, data_ptr_t ta
 		CopyToStorageLoop<interval_t>(vdata, count, target);
 		break;
 	default:
-		throw NotImplementedException("Unimplemented type for CopyToStorage");
+		throw NotImplementedException("Unimplemented type for WriteToStorage");
 	}
 }
 
@@ -78,19 +72,14 @@ template <class T>
 static void ReadFromStorageLoop(data_ptr_t source, idx_t count, Vector &result) {
 	auto ldata = (T *)source;
 	auto result_data = FlatVector::GetData<T>(result);
-	auto &nullmask = FlatVector::Nullmask(result);
 	for (idx_t i = 0; i < count; i++) {
-		if (IsNullValue<T>(ldata[i])) {
-			nullmask[i] = true;
-		} else {
-			result_data[i] = ldata[i];
-		}
+		result_data[i] = ldata[i];
 	}
 }
 
 void VectorOperations::ReadFromStorage(data_ptr_t source, idx_t count, Vector &result) {
-	result.vector_type = VectorType::FLAT_VECTOR;
-	switch (result.type.InternalType()) {
+	result.SetVectorType(VectorType::FLAT_VECTOR);
+	switch (result.GetType().InternalType()) {
 	case PhysicalType::BOOL:
 	case PhysicalType::INT8:
 		ReadFromStorageLoop<int8_t>(source, count, result);
@@ -119,12 +108,6 @@ void VectorOperations::ReadFromStorage(data_ptr_t source, idx_t count, Vector &r
 	case PhysicalType::INT128:
 		ReadFromStorageLoop<hugeint_t>(source, count, result);
 		break;
-	case PhysicalType::HASH:
-		ReadFromStorageLoop<hash_t>(source, count, result);
-		break;
-	case PhysicalType::POINTER:
-		ReadFromStorageLoop<uintptr_t>(source, count, result);
-		break;
 	case PhysicalType::FLOAT:
 		ReadFromStorageLoop<float>(source, count, result);
 		break;
@@ -135,7 +118,7 @@ void VectorOperations::ReadFromStorage(data_ptr_t source, idx_t count, Vector &r
 		ReadFromStorageLoop<interval_t>(source, count, result);
 		break;
 	default:
-		throw NotImplementedException("Unimplemented type for CopyToStorage");
+		throw NotImplementedException("Unimplemented type for ReadFromStorage");
 	}
 }
 

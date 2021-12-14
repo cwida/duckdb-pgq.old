@@ -5,6 +5,15 @@
 load __TEST_DIR__/test_parallelism.db
 
 statement ok
+PRAGMA enable_profiling
+
+statement ok
+PRAGMA profiling_output='__TEST_DIR__/test.json'
+
+statement ok
+PRAGMA profiling_mode = detailed
+
+statement ok
 BEGIN TRANSACTION
 
 statement ok
@@ -32,7 +41,7 @@ statement ok
 PRAGMA threads=4
 
 statement ok
-PRAGMA force_parallelism
+PRAGMA verify_parallelism
 
 query II
 SELECT MIN(i), MAX(i) FROM integers

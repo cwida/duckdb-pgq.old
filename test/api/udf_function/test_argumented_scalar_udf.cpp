@@ -8,7 +8,7 @@
 using namespace duckdb;
 using namespace std;
 
-TEST_CASE("UDF functions with arguments", "[udf_function][.]") {
+TEST_CASE("UDF functions with arguments", "[coverage][.]") {
 	unique_ptr<QueryResult> result;
 	DuckDB db(nullptr);
 	Connection con(db);
@@ -131,15 +131,18 @@ TEST_CASE("UDF functions with arguments", "[udf_function][.]") {
 			    LogicalType::TIMESTAMP, &udf_timestamp);
 			break;
 		}
-		case LogicalTypeId::FLOAT:
-			// FIXME: there is an implicit cast to double before calling the function
-			// float_1(CAST[DOUBLE](a))
-			//		{
-			//			con.CreateScalarFunction<float, float>(func_name + "_1", &FLOAT);
-			//			con.CreateScalarFunction<float, float, float>(func_name + "_2", &FLOAT);
-			//			con.CreateScalarFunction<float, float, float, float>(func_name + "_3", &FLOAT);
-			//			break;
-			//		}
+		case LogicalTypeId::FLOAT: {
+			con.CreateScalarFunction<float, float>(func_name + "_1", {LogicalType::FLOAT}, LogicalType::FLOAT,
+			                                       &udf_float);
+
+			con.CreateScalarFunction<float, float, float>(func_name + "_2", {LogicalType::FLOAT, LogicalType::FLOAT},
+			                                              LogicalType::FLOAT, &udf_float);
+
+			con.CreateScalarFunction<float, float, float, float>(
+			    func_name + "_3", {LogicalType::FLOAT, LogicalType::FLOAT, LogicalType::FLOAT}, LogicalType::FLOAT,
+			    &udf_float);
+			break;
+		}
 		case LogicalTypeId::DOUBLE: {
 			con.CreateScalarFunction<double, double>(func_name + "_1", {LogicalType::DOUBLE}, LogicalType::DOUBLE,
 			                                         &udf_double);
@@ -260,22 +263,8 @@ TEST_CASE("UDF functions with arguments", "[udf_function][.]") {
 			}
 		}
 	}
-	SECTION("Cheking if the UDF functions are temporary") {
-		Connection con_NEW(db);
-		con_NEW.EnableQueryVerification();
-		for (LogicalType sql_type : all_sql_types) {
-			table_name = StringUtil::Lower(LogicalTypeIdToString(sql_type.id()));
-			func_name = table_name;
 
-			REQUIRE_FAIL(con_NEW.Query("SELECT " + func_name + "_1(a) FROM " + table_name));
-
-			REQUIRE_FAIL(con_NEW.Query("SELECT " + func_name + "_2(a, b) FROM " + table_name));
-
-			REQUIRE_FAIL(con_NEW.Query("SELECT " + func_name + "_3(a, b, c) FROM " + table_name));
-		}
-	}
-
-	SECTION("Cheking NULLs with UDF functions") {
+	SECTION("Checking NULLs with UDF functions") {
 		for (LogicalType sql_type : all_sql_types) {
 			if (sql_type.id() == LogicalTypeId::DECIMAL) {
 				continue;

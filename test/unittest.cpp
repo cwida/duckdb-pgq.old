@@ -6,20 +6,46 @@
 
 using namespace duckdb;
 
+namespace duckdb {
+static bool test_force_storage = false;
+
+bool TestForceStorage() {
+	return test_force_storage;
+}
+
+} // namespace duckdb
+
 int main(int argc, char *argv[]) {
-	TestChangeDirectory(DUCKDB_ROOT_DIRECTORY);
+	string test_directory = DUCKDB_ROOT_DIRECTORY;
+
+	int new_argc = 0;
+	auto new_argv = unique_ptr<char *[]>(new char *[argc]);
+	for (int i = 0; i < argc; i++) {
+		if (string(argv[i]) == "--force-storage") {
+			test_force_storage = true;
+		} else if (string(argv[i]) == "--test-dir") {
+			test_directory = string(argv[++i]);
+		} else {
+			new_argv[new_argc] = argv[i];
+			new_argc++;
+		}
+	}
+
+	TestChangeDirectory(test_directory);
 	// delete the testing directory if it exists
 	auto dir = TestCreatePath("");
 	try {
 		TestDeleteDirectory(dir);
 		// create the empty testing directory
 		TestCreateDirectory(dir);
-	} catch (Exception &ex) {
+	} catch (std::exception &ex) {
 		fprintf(stderr, "Failed to create testing directory \"%s\": %s", dir.c_str(), ex.what());
 		return 1;
 	}
 
-	int result = Catch::Session().run(argc, argv);
+	RegisterSqllogictests();
+
+	int result = Catch::Session().run(new_argc, new_argv.get());
 
 	TestDeleteDirectory(dir);
 

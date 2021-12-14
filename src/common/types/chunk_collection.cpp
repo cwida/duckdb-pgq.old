@@ -1,10 +1,11 @@
 #include "duckdb/common/types/chunk_collection.hpp"
 
+#include "duckdb/common/assert.hpp"
 #include "duckdb/common/exception.hpp"
+#include "duckdb/common/operator/comparison_operators.hpp"
 #include "duckdb/common/printer.hpp"
 #include "duckdb/common/value_operations/value_operations.hpp"
-#include "duckdb/common/operator/comparison_operators.hpp"
-#include "duckdb/common/assert.hpp"
+#include "duckdb/common/vector_operations/vector_operations.hpp"
 
 #include <algorithm>
 #include <cstring>
@@ -65,7 +66,7 @@ void ChunkCollection::Append(DataChunk &new_chunk) {
 
 	idx_t remaining_data = new_chunk.size();
 	idx_t offset = 0;
-	if (chunks.size() == 0) {
+	if (chunks.empty()) {
 		// first chunk
 		types = new_chunk.GetTypes();
 	} else {
@@ -77,19 +78,14 @@ void ChunkCollection::Append(DataChunk &new_chunk) {
 				throw TypeMismatchException(new_types[i], types[i], "Type mismatch when combining rows");
 			}
 			if (types[i].InternalType() == PhysicalType::LIST) {
-				for (auto &chunk :
-				     chunks) { // need to check all the chunks because they can have only-null list entries
+				// need to check all the chunks because they can have only-null list entries
+				for (auto &chunk : chunks) {
 					auto &chunk_vec = chunk->data[i];
 					auto &new_vec = new_chunk.data[i];
-					if (ListVector::HasEntry(chunk_vec) && ListVector::HasEntry(new_vec)) {
-						auto &chunk_types = ListVector::GetEntry(chunk_vec).types;
-						auto &new_types = ListVector::GetEntry(new_vec).types;
-						D_ASSERT(new_types.size() <= 1);
-						D_ASSERT(chunk_types.size() <= 1);
-						if (chunk_types.size() > 0 && new_types.size() > 0 && chunk_types != new_types) {
-							throw TypeMismatchException(chunk_types[0], new_types[0],
-							                            "Type mismatch when combining lists");
-						}
+					auto &chunk_type = chunk_vec.GetType();
+					auto &new_type = new_vec.GetType();
+					if (chunk_type != new_type) {
+						throw TypeMismatchException(chunk_type, new_type, "Type mismatch when combining lists");
 					}
 				}
 			}
@@ -124,14 +120,51 @@ void ChunkCollection::Append(DataChunk &new_chunk) {
 	}
 }
 
+void ChunkCollection::Append(unique_ptr<DataChunk> new_chunk) {
+	if (types.empty()) {
+		types = new_chunk->GetTypes();
+	}
+	D_ASSERT(types == new_chunk->GetTypes());
+	count += new_chunk->size();
+	chunks.push_back(move(new_chunk));
+}
+
+void ChunkCollection::Fuse(ChunkCollection &other) {
+	if (count == 0) {
+		chunks.reserve(other.ChunkCount());
+		for (idx_t chunk_idx = 0; chunk_idx < other.ChunkCount(); ++chunk_idx) {
+			auto lhs = make_unique<DataChunk>();
+			auto &rhs = other.GetChunk(chunk_idx);
+			lhs->data.reserve(rhs.data.size());
+			for (auto &v : rhs.data) {
+				lhs->data.emplace_back(Vector(v));
+			}
+			lhs->SetCardinality(rhs.size());
+			chunks.push_back(move(lhs));
+		}
+		count = other.Count();
+	} else {
+		D_ASSERT(this->ChunkCount() == other.ChunkCount());
+		for (idx_t chunk_idx = 0; chunk_idx < ChunkCount(); ++chunk_idx) {
+			auto &lhs = this->GetChunk(chunk_idx);
+			auto &rhs = other.GetChunk(chunk_idx);
+			D_ASSERT(lhs.size() == rhs.size());
+			for (auto &v : rhs.data) {
+				lhs.data.emplace_back(Vector(v));
+			}
+		}
+	}
+	types.insert(types.end(), other.types.begin(), other.types.end());
+}
+
 // returns an int similar to a C comparator:
 // -1 if left < right
 // 0 if left == right
 // 1 if left > right
 
 template <class TYPE>
-static int8_t templated_compare_value(Vector &left_vec, Vector &right_vec, idx_t left_idx, idx_t right_idx) {
-	D_ASSERT(left_vec.type == right_vec.type);
+static int8_t TemplatedCompareValue(Vector &left_vec, Vector &right_vec, idx_t left_idx, idx_t right_idx) {
+	D_ASSERT(left_vec.GetType() == right_vec.GetType());
 	auto left_val = FlatVector::GetData<TYPE>(left_vec)[left_idx];
 	auto right_val = FlatVector::GetData<TYPE>(right_vec)[right_idx];
 	if (Equals::Operation<TYPE>(left_val, right_val)) {
@@ -144,10 +177,10 @@ static int8_t templated_compare_value(Vector &left_vec, Vector &right_vec, idx_t
 }
 
 // return type here is int32 because strcmp() on some platforms returns rather large values
-static int32_t compare_value(Vector &left_vec, Vector &right_vec, idx_t vector_idx_left, idx_t vector_idx_right,
-                             OrderByNullType null_order) {
-	auto left_null = FlatVector::Nullmask(left_vec)[vector_idx_left];
-	auto right_null = FlatVector::Nullmask(right_vec)[vector_idx_right];
+static int32_t CompareValue(Vector &left_vec, Vector &right_vec, idx_t vector_idx_left, idx_t vector_idx_right,
+                            OrderByNullType null_order) {
+	auto left_null = FlatVector::IsNull(left_vec, vector_idx_left);
+	auto right_null = FlatVector::IsNull(right_vec, vector_idx_right);
 
 	if (left_null && right_null) {
 		return 0;
@@ -157,42 +190,41 @@ static int32_t compare_value(Vector &left_vec, Vector &right_vec, idx_t vector_i
 		return null_order == OrderByNullType::NULLS_FIRST ? -1 : 1;
 	}
 
-	switch (left_vec.type.InternalType()) {
+	switch (left_vec.GetType().InternalType()) {
 	case PhysicalType::BOOL:
 	case PhysicalType::INT8:
-		return templated_compare_value<int8_t>(left_vec, right_vec, vector_idx_left, vector_idx_right);
+		return TemplatedCompareValue<int8_t>(left_vec, right_vec, vector_idx_left, vector_idx_right);
 	case PhysicalType::INT16:
-		return templated_compare_value<int16_t>(left_vec, right_vec, vector_idx_left, vector_idx_right);
+		return TemplatedCompareValue<int16_t>(left_vec, right_vec, vector_idx_left, vector_idx_right);
 	case PhysicalType::INT32:
-		return templated_compare_value<int32_t>(left_vec, right_vec, vector_idx_left, vector_idx_right);
+		return TemplatedCompareValue<int32_t>(left_vec, right_vec, vector_idx_left, vector_idx_right);
 	case PhysicalType::INT64:
-		return templated_compare_value<int64_t>(left_vec, right_vec, vector_idx_left, vector_idx_right);
+		return TemplatedCompareValue<int64_t>(left_vec, right_vec, vector_idx_left, vector_idx_right);
 	case PhysicalType::UINT8:
-		return templated_compare_value<uint8_t>(left_vec, right_vec, vector_idx_left, vector_idx_right);
+		return TemplatedCompareValue<uint8_t>(left_vec, right_vec, vector_idx_left, vector_idx_right);
 	case PhysicalType::UINT16:
-		return templated_compare_value<uint16_t>(left_vec, right_vec, vector_idx_left, vector_idx_right);
+		return TemplatedCompareValue<uint16_t>(left_vec, right_vec, vector_idx_left, vector_idx_right);
 	case PhysicalType::UINT32:
-		return templated_compare_value<uint32_t>(left_vec, right_vec, vector_idx_left, vector_idx_right);
+		return TemplatedCompareValue<uint32_t>(left_vec, right_vec, vector_idx_left, vector_idx_right);
 	case PhysicalType::UINT64:
-		return templated_compare_value<uint64_t>(left_vec, right_vec, vector_idx_left, vector_idx_right);
+		return TemplatedCompareValue<uint64_t>(left_vec, right_vec, vector_idx_left, vector_idx_right);
 	case PhysicalType::INT128:
-		return templated_compare_value<hugeint_t>(left_vec, right_vec, vector_idx_left, vector_idx_right);
+		return TemplatedCompareValue<hugeint_t>(left_vec, right_vec, vector_idx_left, vector_idx_right);
 	case PhysicalType::FLOAT:
-		return templated_compare_value<float>(left_vec, right_vec, vector_idx_left, vector_idx_right);
+		return TemplatedCompareValue<float>(left_vec, right_vec, vector_idx_left, vector_idx_right);
 	case PhysicalType::DOUBLE:
-		return templated_compare_value<double>(left_vec, right_vec, vector_idx_left, vector_idx_right);
+		return TemplatedCompareValue<double>(left_vec, right_vec, vector_idx_left, vector_idx_right);
 	case PhysicalType::VARCHAR:
-		return templated_compare_value<string_t>(left_vec, right_vec, vector_idx_left, vector_idx_right);
+		return TemplatedCompareValue<string_t>(left_vec, right_vec, vector_idx_left, vector_idx_right);
 	case PhysicalType::INTERVAL:
-		return templated_compare_value<interval_t>(left_vec, right_vec, vector_idx_left, vector_idx_right);
+		return TemplatedCompareValue<interval_t>(left_vec, right_vec, vector_idx_left, vector_idx_right);
 	default:
 		throw NotImplementedException("Type for comparison");
 	}
-	return false;
 }
 
-static int compare_tuple(ChunkCollection *sort_by, vector<OrderType> &desc, vector<OrderByNullType> &null_order,
-                         idx_t left, idx_t right) {
+static int CompareTuple(ChunkCollection *sort_by, vector<OrderType> &desc, vector<OrderByNullType> &null_order,
+                        idx_t left, idx_t right) {
 	D_ASSERT(sort_by);
 
 	idx_t chunk_idx_left = left / STANDARD_VECTOR_SIZE;
@@ -209,11 +241,11 @@ static int compare_tuple(ChunkCollection *sort_by, vector<OrderType> &desc, vect
 		auto &left_vec = left_chunk.data[col_idx];
 		auto &right_vec = right_chunk.data[col_idx];
 
-		D_ASSERT(left_vec.vector_type == VectorType::FLAT_VECTOR);
-		D_ASSERT(right_vec.vector_type == VectorType::FLAT_VECTOR);
-		D_ASSERT(left_vec.type == right_vec.type);
+		D_ASSERT(left_vec.GetVectorType() == VectorType::FLAT_VECTOR);
+		D_ASSERT(right_vec.GetVectorType() == VectorType::FLAT_VECTOR);
+		D_ASSERT(left_vec.GetType() == right_vec.GetType());
 
-		auto comp_res = compare_value(left_vec, right_vec, vector_idx_left, vector_idx_right, null_order[col_idx]);
+		auto comp_res = CompareValue(left_vec, right_vec, vector_idx_left, vector_idx_right, null_order[col_idx]);
 
 		if (comp_res == 0) {
 			continue;
@@ -224,14 +256,14 @@ static int compare_tuple(ChunkCollection *sort_by, vector<OrderType> &desc, vect
 	return 0;
 }
 
-static int64_t _quicksort_initial(ChunkCollection *sort_by, vector<OrderType> &desc,
-                                  vector<OrderByNullType> &null_order, idx_t *result) {
+static int64_t QuicksortInitial(ChunkCollection *sort_by, vector<OrderType> &desc, vector<OrderByNullType> &null_order,
+                                idx_t *result) {
 	// select pivot
 	int64_t pivot = 0;
 	int64_t low = 0, high = sort_by->Count() - 1;
 	// now insert elements
 	for (idx_t i = 1; i < sort_by->Count(); i++) {
-		if (compare_tuple(sort_by, desc, null_order, i, pivot) <= 0) {
+		if (CompareTuple(sort_by, desc, null_order, i, pivot) <= 0) {
 			result[low++] = i;
 		} else {
 			result[high--] = i;
@@ -243,7 +275,7 @@ static int64_t _quicksort_initial(ChunkCollection *sort_by, vector<OrderType> &d
 }
 
 struct QuicksortInfo {
-	QuicksortInfo(int64_t left_, int64_t right_) : left(left_), right(right_) {
+	QuicksortInfo(int64_t left_p, int64_t right_p) : left(left_p), right(right_p) {
 	}
 
 	int64_t left;
@@ -271,8 +303,8 @@ struct QuicksortStack {
 	}
 };
 
-static void _quicksort_inplace(ChunkCollection *sort_by, vector<OrderType> &desc, vector<OrderByNullType> &null_order,
-                               idx_t *result, QuicksortInfo info, QuicksortStack &stack) {
+static void QuicksortInPlace(ChunkCollection *sort_by, vector<OrderType> &desc, vector<OrderByNullType> &null_order,
+                             idx_t *result, QuicksortInfo info, QuicksortStack &stack) {
 	auto left = info.left;
 	auto right = info.right;
 
@@ -287,9 +319,9 @@ static void _quicksort_inplace(ChunkCollection *sort_by, vector<OrderType> &desc
 	std::swap(result[middle], result[left]);
 	bool all_equal = true;
 	while (i <= j) {
-		if (result)
+		if (result) {
 			while (i <= j) {
-				int cmp = compare_tuple(sort_by, desc, null_order, result[i], pivot);
+				int cmp = CompareTuple(sort_by, desc, null_order, result[i], pivot);
 				if (cmp < 0) {
 					all_equal = false;
 				} else if (cmp > 0) {
@@ -298,8 +330,9 @@ static void _quicksort_inplace(ChunkCollection *sort_by, vector<OrderType> &desc
 				}
 				i++;
 			}
+		}
 
-		while (i <= j && compare_tuple(sort_by, desc, null_order, result[j], pivot) > 0) {
+		while (i <= j && CompareTuple(sort_by, desc, null_order, result[j], pivot) > 0) {
 			j--;
 		}
 
@@ -319,12 +352,13 @@ static void _quicksort_inplace(ChunkCollection *sort_by, vector<OrderType> &desc
 }
 
 void ChunkCollection::Sort(vector<OrderType> &desc, vector<OrderByNullType> &null_order, idx_t result[]) {
-	D_ASSERT(result);
 	if (count == 0) {
 		return;
 	}
+	D_ASSERT(result);
+
 	// start off with an initial quicksort
-	int64_t part = _quicksort_initial(this, desc, null_order, result);
+	int64_t part = QuicksortInitial(this, desc, null_order, result);
 
 	// now continuously perform
 	QuicksortStack stack;
@@ -332,7 +366,7 @@ void ChunkCollection::Sort(vector<OrderType> &desc, vector<OrderByNullType> &nul
 	stack.Enqueue(part + 1, count - 1);
 	while (!stack.IsEmpty()) {
 		auto element = stack.Pop();
-		_quicksort_inplace(this, desc, null_order, result, element, stack);
+		QuicksortInPlace(this, desc, null_order, result, element, stack);
 	}
 }
 
@@ -371,116 +405,19 @@ void ChunkCollection::Reorder(idx_t order_org[]) {
 	}
 }
 
-template <class TYPE>
-static void templated_set_values(ChunkCollection *src_coll, Vector &tgt_vec, idx_t order[], idx_t col_idx,
-                                 idx_t start_offset, idx_t remaining_data) {
-	D_ASSERT(src_coll);
-
-	for (idx_t row_idx = 0; row_idx < remaining_data; row_idx++) {
-		idx_t chunk_idx_src = order[start_offset + row_idx] / STANDARD_VECTOR_SIZE;
-		idx_t vector_idx_src = order[start_offset + row_idx] % STANDARD_VECTOR_SIZE;
-
-		auto &src_chunk = src_coll->GetChunk(chunk_idx_src);
-		Vector &src_vec = src_chunk.data[col_idx];
-		auto source_data = FlatVector::GetData<TYPE>(src_vec);
-		auto target_data = FlatVector::GetData<TYPE>(tgt_vec);
-
-		if (FlatVector::IsNull(src_vec, vector_idx_src)) {
-			FlatVector::SetNull(tgt_vec, row_idx, true);
-		} else {
-			target_data[row_idx] = source_data[vector_idx_src];
-		}
-	}
-}
-
-// TODO: reorder functionality is similar, perhaps merge
-void ChunkCollection::MaterializeSortedChunk(DataChunk &target, idx_t order[], idx_t start_offset) {
-	idx_t remaining_data = MinValue<idx_t>(STANDARD_VECTOR_SIZE, count - start_offset);
-	D_ASSERT(target.GetTypes() == types);
-
-	target.SetCardinality(remaining_data);
-	for (idx_t col_idx = 0; col_idx < ColumnCount(); col_idx++) {
-		switch (types[col_idx].InternalType()) {
-		case PhysicalType::BOOL:
-		case PhysicalType::INT8:
-			templated_set_values<int8_t>(this, target.data[col_idx], order, col_idx, start_offset, remaining_data);
-			break;
-		case PhysicalType::INT16:
-			templated_set_values<int16_t>(this, target.data[col_idx], order, col_idx, start_offset, remaining_data);
-			break;
-		case PhysicalType::INT32:
-			templated_set_values<int32_t>(this, target.data[col_idx], order, col_idx, start_offset, remaining_data);
-			break;
-		case PhysicalType::INT64:
-			templated_set_values<int64_t>(this, target.data[col_idx], order, col_idx, start_offset, remaining_data);
-			break;
-		case PhysicalType::UINT8:
-			templated_set_values<uint8_t>(this, target.data[col_idx], order, col_idx, start_offset, remaining_data);
-			break;
-		case PhysicalType::UINT16:
-			templated_set_values<uint16_t>(this, target.data[col_idx], order, col_idx, start_offset, remaining_data);
-			break;
-		case PhysicalType::UINT32:
-			templated_set_values<uint32_t>(this, target.data[col_idx], order, col_idx, start_offset, remaining_data);
-			break;
-		case PhysicalType::UINT64:
-			templated_set_values<uint64_t>(this, target.data[col_idx], order, col_idx, start_offset, remaining_data);
-			break;
-		case PhysicalType::INT128:
-			templated_set_values<hugeint_t>(this, target.data[col_idx], order, col_idx, start_offset, remaining_data);
-			break;
-		case PhysicalType::FLOAT:
-			templated_set_values<float>(this, target.data[col_idx], order, col_idx, start_offset, remaining_data);
-			break;
-		case PhysicalType::DOUBLE:
-			templated_set_values<double>(this, target.data[col_idx], order, col_idx, start_offset, remaining_data);
-			break;
-		case PhysicalType::VARCHAR:
-			templated_set_values<string_t>(this, target.data[col_idx], order, col_idx, start_offset, remaining_data);
-			break;
-		case PhysicalType::INTERVAL:
-			templated_set_values<interval_t>(this, target.data[col_idx], order, col_idx, start_offset, remaining_data);
-			break;
-
-		case PhysicalType::LIST:
-		case PhysicalType::STRUCT: {
-			for (idx_t row_idx = 0; row_idx < remaining_data; row_idx++) {
-				idx_t chunk_idx_src = order[start_offset + row_idx] / STANDARD_VECTOR_SIZE;
-				idx_t vector_idx_src = order[start_offset + row_idx] % STANDARD_VECTOR_SIZE;
-
-				auto &src_chunk = chunks[chunk_idx_src];
-				Vector &src_vec = src_chunk->data[col_idx];
-				auto &tgt_vec = target.data[col_idx];
-				if (FlatVector::IsNull(src_vec, vector_idx_src)) {
-					FlatVector::SetNull(tgt_vec, row_idx, true);
-				} else {
-					tgt_vec.SetValue(row_idx, src_vec.GetValue(vector_idx_src));
-				}
-			}
-		} break;
-		default:
-			throw NotImplementedException("Type is unsupported in MaterializeSortedChunk()");
-		}
-	}
-	target.Verify();
-}
-
 Value ChunkCollection::GetValue(idx_t column, idx_t index) {
 	return chunks[LocateChunk(index)]->GetValue(column, index % STANDARD_VECTOR_SIZE);
 }
 
-vector<Value> ChunkCollection::GetRow(idx_t index) {
-	vector<Value> values;
-	values.resize(ColumnCount());
-
-	for (idx_t p_idx = 0; p_idx < ColumnCount(); p_idx++) {
-		values[p_idx] = GetValue(p_idx, index);
-	}
-	return values;
+void ChunkCollection::SetValue(idx_t column, idx_t index, const Value &value) {
+	chunks[LocateChunk(index)]->SetValue(column, index % STANDARD_VECTOR_SIZE, value);
 }
 
-void ChunkCollection::SetValue(idx_t column, idx_t index, Value value) {
-	chunks[LocateChunk(index)]->SetValue(column, index % STANDARD_VECTOR_SIZE, value);
+void ChunkCollection::CopyCell(idx_t column, idx_t index, Vector &target, idx_t target_offset) {
+	auto &chunk = GetChunkForRow(index);
+	auto &source = chunk.data[column];
+	const auto source_offset = index % STANDARD_VECTOR_SIZE;
+	VectorOperations::Copy(source, target, source_offset + 1, source_offset, target_offset);
 }
 
 void ChunkCollection::Print() {
@@ -508,125 +445,6 @@ bool ChunkCollection::Equals(ChunkCollection &other) {
 		}
 	}
 	return true;
-}
-static void _heapify(ChunkCollection *input, vector<OrderType> &desc, vector<OrderByNullType> &null_order, idx_t *heap,
-                     idx_t heap_size, idx_t current_index) {
-	if (current_index >= heap_size) {
-		return;
-	}
-	idx_t left_child_index = current_index * 2 + 1;
-	idx_t right_child_index = current_index * 2 + 2;
-	idx_t swap_index = current_index;
-
-	if (left_child_index < heap_size) {
-		swap_index = compare_tuple(input, desc, null_order, heap[swap_index], heap[left_child_index]) <= 0
-		                 ? left_child_index
-		                 : swap_index;
-	}
-
-	if (right_child_index < heap_size) {
-		swap_index = compare_tuple(input, desc, null_order, heap[swap_index], heap[right_child_index]) <= 0
-		                 ? right_child_index
-		                 : swap_index;
-	}
-
-	if (swap_index != current_index) {
-		std::swap(heap[current_index], heap[swap_index]);
-		_heapify(input, desc, null_order, heap, heap_size, swap_index);
-	}
-}
-
-static void _heap_create(ChunkCollection *input, vector<OrderType> &desc, vector<OrderByNullType> &null_order,
-                         idx_t *heap, idx_t heap_size) {
-	for (idx_t i = 0; i < heap_size; i++) {
-		heap[i] = i;
-	}
-
-	// build heap
-	for (int64_t i = heap_size / 2 - 1; i >= 0; i--) {
-		_heapify(input, desc, null_order, heap, heap_size, i);
-	}
-
-	// Run through all the rows.
-	for (idx_t i = heap_size; i < input->Count(); i++) {
-		if (compare_tuple(input, desc, null_order, i, heap[0]) <= 0) {
-			heap[0] = i;
-			_heapify(input, desc, null_order, heap, heap_size, 0);
-		}
-	}
-}
-
-void ChunkCollection::Heap(vector<OrderType> &desc, vector<OrderByNullType> &null_order, idx_t heap[],
-                           idx_t heap_size) {
-	D_ASSERT(heap);
-	if (count == 0)
-		return;
-
-	_heap_create(this, desc, null_order, heap, heap_size);
-
-	// Heap is ready. Now do a heapsort
-	for (int64_t i = heap_size - 1; i >= 0; i--) {
-		std::swap(heap[i], heap[0]);
-		_heapify(this, desc, null_order, heap, i, 0);
-	}
-}
-
-idx_t ChunkCollection::MaterializeHeapChunk(DataChunk &target, idx_t order[], idx_t start_offset, idx_t heap_size) {
-	idx_t remaining_data = MinValue<idx_t>(STANDARD_VECTOR_SIZE, heap_size - start_offset);
-	D_ASSERT(target.GetTypes() == types);
-
-	target.SetCardinality(remaining_data);
-	for (idx_t col_idx = 0; col_idx < ColumnCount(); col_idx++) {
-		switch (types[col_idx].InternalType()) {
-		case PhysicalType::BOOL:
-		case PhysicalType::INT8:
-			templated_set_values<int8_t>(this, target.data[col_idx], order, col_idx, start_offset, remaining_data);
-			break;
-		case PhysicalType::INT16:
-			templated_set_values<int16_t>(this, target.data[col_idx], order, col_idx, start_offset, remaining_data);
-			break;
-		case PhysicalType::INT32:
-			templated_set_values<int32_t>(this, target.data[col_idx], order, col_idx, start_offset, remaining_data);
-			break;
-		case PhysicalType::INT64:
-			templated_set_values<int64_t>(this, target.data[col_idx], order, col_idx, start_offset, remaining_data);
-			break;
-		case PhysicalType::INT128:
-			templated_set_values<hugeint_t>(this, target.data[col_idx], order, col_idx, start_offset, remaining_data);
-			break;
-		case PhysicalType::FLOAT:
-			templated_set_values<float>(this, target.data[col_idx], order, col_idx, start_offset, remaining_data);
-			break;
-		case PhysicalType::DOUBLE:
-			templated_set_values<double>(this, target.data[col_idx], order, col_idx, start_offset, remaining_data);
-			break;
-		case PhysicalType::VARCHAR:
-			templated_set_values<string_t>(this, target.data[col_idx], order, col_idx, start_offset, remaining_data);
-			break;
-			// TODO this is ugly and sloooow!
-		case PhysicalType::STRUCT:
-		case PhysicalType::LIST: {
-			for (idx_t row_idx = 0; row_idx < remaining_data; row_idx++) {
-				idx_t chunk_idx_src = order[start_offset + row_idx] / STANDARD_VECTOR_SIZE;
-				idx_t vector_idx_src = order[start_offset + row_idx] % STANDARD_VECTOR_SIZE;
-
-				auto &src_chunk = chunks[chunk_idx_src];
-				Vector &src_vec = src_chunk->data[col_idx];
-				auto &tgt_vec = target.data[col_idx];
-				if (FlatVector::IsNull(src_vec, vector_idx_src)) {
-					FlatVector::SetNull(tgt_vec, row_idx, true);
-				} else {
-					tgt_vec.SetValue(row_idx, src_vec.GetValue(vector_idx_src));
-				}
-			}
-		} break;
-
-		default:
-			throw NotImplementedException("Type is unsupported in MaterializeHeapChunk()");
-		}
-	}
-	target.Verify();
-	return start_offset + remaining_data;
 }
 
 } // namespace duckdb

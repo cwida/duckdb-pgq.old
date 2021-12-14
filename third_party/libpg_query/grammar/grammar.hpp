@@ -120,7 +120,7 @@ static PGRawStmt *makeRawStmt(PGNode *stmt, int stmt_location);
 static void updateRawStmtEnd(PGRawStmt *rs, int end_location);
 static PGNode *makeColumnRef(char *colname, PGList *indirection,
 						   int location, core_yyscan_t yyscanner);
-static PGNode *makeTypeCast(PGNode *arg, PGTypeName *tpname, int location);
+static PGNode *makeTypeCast(PGNode *arg, PGTypeName *tpname, int trycast, int location);
 static PGNode *makeStringConst(char *str, int location);
 static PGNode *makeStringConstCast(char *str, int location, PGTypeName *tpname);
 static PGNode *makeIntervalNode(char *str, int location, PGList *typmods);
@@ -135,7 +135,6 @@ static PGNode *makeNullAConst(int location);
 static PGNode *makeAConst(PGValue *v, int location);
 static PGNode *makeBoolAConst(bool state, int location);
 static PGNode *makeParamRef(int number, int location);
-static PGNode *makeParamRefCast(int number, int location, PGTypeName *tpname);
 static void check_qualified_name(PGList *names, core_yyscan_t yyscanner);
 static PGList *check_func_name(PGList *names, core_yyscan_t yyscanner);
 static PGList *check_indirection(PGList *indirection, core_yyscan_t yyscanner);

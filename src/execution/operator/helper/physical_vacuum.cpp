@@ -2,9 +2,9 @@
 
 namespace duckdb {
 
-void PhysicalVacuum::GetChunkInternal(ExecutionContext &context, DataChunk &chunk, PhysicalOperatorState *state) {
+void PhysicalVacuum::GetData(ExecutionContext &context, DataChunk &chunk, GlobalSourceState &gstate,
+                             LocalSourceState &lstate) const {
 	// NOP
-	state->finished = true;
 }
 
 } // namespace duckdb

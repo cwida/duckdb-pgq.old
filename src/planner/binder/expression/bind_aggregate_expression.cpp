@@ -4,11 +4,35 @@
 #include "duckdb/planner/binder.hpp"
 #include "duckdb/planner/expression/bound_aggregate_expression.hpp"
 #include "duckdb/planner/expression/bound_columnref_expression.hpp"
+#include "duckdb/planner/expression/bound_constant_expression.hpp"
 #include "duckdb/planner/expression_binder/aggregate_binder.hpp"
 #include "duckdb/planner/expression_binder/select_binder.hpp"
 #include "duckdb/planner/query_node/bound_select_node.hpp"
+#include "duckdb/execution/expression_executor.hpp"
+#include "duckdb/main/config.hpp"
 
 namespace duckdb {
+
+static void InvertPercentileFractions(unique_ptr<ParsedExpression> &fractions) {
+	D_ASSERT(fractions.get());
+	D_ASSERT(fractions->expression_class == ExpressionClass::BOUND_EXPRESSION);
+	auto &bound = (BoundExpression &)*fractions;
+
+	if (!bound.expr->IsFoldable()) {
+		return;
+	}
+
+	Value value = ExpressionExecutor::EvaluateScalar(*bound.expr);
+	if (value.type().id() == LogicalTypeId::LIST) {
+		vector<Value> values;
+		for (const auto &element_val : value.list_value) {
+			values.emplace_back(Value(1) - element_val);
+		}
+		bound.expr = make_unique<BoundConstantExpression>(Value::LIST(values));
+	} else {
+		bound.expr = make_unique<BoundConstantExpression>(Value(1) - value);
+	}
+}
 
 BindResult SelectBinder::BindAggregate(FunctionExpression &aggr, AggregateFunctionCatalogEntry *func, idx_t depth) {
 	// first bind the child of the aggregate expression (if any)
@@ -22,12 +46,40 @@ BindResult SelectBinder::BindAggregate(FunctionExpression &aggr, AggregateFuncti
 		aggregate_binder.BindChild(aggr.filter, 0, error);
 	}
 
+	// Handle ordered-set aggregates by moving the single ORDER BY expression to the front of the children.
+	//	https://www.postgresql.org/docs/current/functions-aggregate.html#FUNCTIONS-ORDEREDSET-TABLE
+	bool ordered_set_agg = false;
+	bool invert_fractions = false;
+	if (aggr.order_bys && aggr.order_bys->orders.size() == 1) {
+		const auto &func_name = aggr.function_name;
+		ordered_set_agg = (func_name == "quantile_cont" || func_name == "quantile_disc" || func_name == "mode");
+
+		if (ordered_set_agg) {
+			auto &config = DBConfig::GetConfig(context);
+			const auto &order = aggr.order_bys->orders[0];
+			const auto sense = (order.type == OrderType::ORDER_DEFAULT) ? config.default_order_type : order.type;
+			invert_fractions = (sense == OrderType::DESCENDING);
+		}
+	}
+
 	for (auto &child : aggr.children) {
 		aggregate_binder.BindChild(child, 0, error);
+		// We have to invert the fractions for PERCENTILE_XXXX DESC
+		if (invert_fractions) {
+			InvertPercentileFractions(child);
+		}
 	}
+
+	// Bind the ORDER BYs, if any
+	if (aggr.order_bys && !aggr.order_bys->orders.empty()) {
+		for (auto &order : aggr.order_bys->orders) {
+			aggregate_binder.BindChild(order.expression, 0, error);
+		}
+	}
+
 	if (!error.empty()) {
 		// failed to bind child
-		if (aggregate_binder.BoundColumns()) {
+		if (aggregate_binder.HasBoundColumns()) {
 			for (idx_t i = 0; i < aggr.children.size(); i++) {
 				// however, we bound columns!
 				// that means this aggregation belongs to this node
@@ -49,6 +101,16 @@ BindResult SelectBinder::BindAggregate(FunctionExpression &aggr, AggregateFuncti
 				auto &bound_expr = (BoundExpression &)*aggr.filter;
 				ExtractCorrelatedExpressions(binder, *bound_expr.expr);
 			}
+			if (aggr.order_bys && !aggr.order_bys->orders.empty()) {
+				for (auto &order : aggr.order_bys->orders) {
+					bool success = aggregate_binder.BindCorrelatedColumns(order.expression);
+					if (!success) {
+						throw BinderException(error);
+					}
+					auto &bound_expr = (BoundExpression &)*order.expression;
+					ExtractCorrelatedExpressions(binder, *bound_expr.expr);
+				}
+			}
 		} else {
 			// we didn't bind columns, try again in children
 			return BindResult(error);
@@ -67,6 +129,17 @@ BindResult SelectBinder::BindAggregate(FunctionExpression &aggr, AggregateFuncti
 	vector<LogicalType> types;
 	vector<LogicalType> arguments;
 	vector<unique_ptr<Expression>> children;
+
+	if (ordered_set_agg) {
+		for (auto &order : aggr.order_bys->orders) {
+			auto &child = (BoundExpression &)*order.expression;
+			types.push_back(child.expr->return_type);
+			arguments.push_back(child.expr->return_type);
+			children.push_back(move(child.expr));
+		}
+		aggr.order_bys->orders.clear();
+	}
+
 	for (idx_t i = 0; i < aggr.children.size(); i++) {
 		auto &child = (BoundExpression &)*aggr.children[i];
 		types.push_back(child.expr->return_type);
@@ -82,8 +155,21 @@ BindResult SelectBinder::BindAggregate(FunctionExpression &aggr, AggregateFuncti
 	// found a matching function!
 	auto &bound_function = func->functions[best_function];
 
+	// Bind any sort columns, unless the aggregate is order-insensitive
+	auto order_bys = make_unique<BoundOrderModifier>();
+	if (bound_function.order_sensitive && !aggr.order_bys->orders.empty()) {
+		auto &config = DBConfig::GetConfig(context);
+		for (auto &order : aggr.order_bys->orders) {
+			auto &order_expr = (BoundExpression &)*order.expression;
+			const auto sense = (order.type == OrderType::ORDER_DEFAULT) ? config.default_order_type : order.type;
+			const auto null_order =
+			    (order.null_order == OrderByNullType::ORDER_DEFAULT) ? config.default_null_order : order.null_order;
+			order_bys->orders.emplace_back(BoundOrderByNode(sense, null_order, move(order_expr.expr)));
+		}
+	}
+
 	auto aggregate = AggregateFunction::BindAggregateFunction(context, bound_function, move(children),
-	                                                          move(bound_filter), aggr.distinct);
+	                                                          move(bound_filter), aggr.distinct, move(order_bys));
 
 	auto return_type = aggregate->return_type;
 

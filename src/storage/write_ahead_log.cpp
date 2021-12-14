@@ -3,6 +3,7 @@
 #include "duckdb/catalog/catalog_entry/macro_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/schema_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/table_catalog_entry.hpp"
+#include "duckdb/catalog/catalog_entry/type_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/view_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/property_graph_catalog_entry.hpp"
 #include "duckdb/main/database.hpp"
@@ -142,6 +143,26 @@ void WriteAheadLog::WriteDropMacro(MacroCatalogEntry *entry) {
 }
 
 //===--------------------------------------------------------------------===//
+// Custom Types
+//===--------------------------------------------------------------------===//
+void WriteAheadLog::WriteCreateType(TypeCatalogEntry *entry) {
+	if (skip_writing) {
+		return;
+	}
+	writer->Write<WALType>(WALType::CREATE_TYPE);
+	entry->Serialize(*writer);
+}
+
+void WriteAheadLog::WriteDropType(TypeCatalogEntry *entry) {
+	if (skip_writing) {
+		return;
+	}
+	writer->Write<WALType>(WALType::DROP_TYPE);
+	writer->WriteString(entry->schema->name);
+	writer->WriteString(entry->name);
+}
+
+//===--------------------------------------------------------------------===//
 // VIEWS
 //===--------------------------------------------------------------------===//
 void WriteAheadLog::WriteCreateView(ViewCatalogEntry *entry) {
@@ -211,22 +232,27 @@ void WriteAheadLog::WriteDelete(DataChunk &chunk) {
 		return;
 	}
 	D_ASSERT(chunk.size() > 0);
-	D_ASSERT(chunk.ColumnCount() == 1 && chunk.data[0].type == LOGICAL_ROW_TYPE);
+	D_ASSERT(chunk.ColumnCount() == 1 && chunk.data[0].GetType() == LOGICAL_ROW_TYPE);
 	chunk.Verify();
 
 	writer->Write<WALType>(WALType::DELETE_TUPLE);
 	chunk.Serialize(*writer);
 }
 
-void WriteAheadLog::WriteUpdate(DataChunk &chunk, column_t col_idx) {
+void WriteAheadLog::WriteUpdate(DataChunk &chunk, const vector<column_t> &column_indexes) {
 	if (skip_writing) {
 		return;
 	}
 	D_ASSERT(chunk.size() > 0);
+	D_ASSERT(chunk.ColumnCount() == 2);
+	D_ASSERT(chunk.data[1].GetType().id() == LOGICAL_ROW_TYPE.id());
 	chunk.Verify();
 
 	writer->Write<WALType>(WALType::UPDATE_TUPLE);
-	writer->Write<column_t>(col_idx);
+	writer->Write<idx_t>(column_indexes.size());
+	for (auto &col_idx : column_indexes) {
+		writer->Write<column_t>(col_idx);
+	}
 	chunk.Serialize(*writer);
 }
 

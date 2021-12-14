@@ -17,17 +17,14 @@ namespace duckdb {
 //===--------------------------------------------------------------------===//
 enum class PhysicalOperatorType : uint8_t {
 	INVALID,
-	LEAF,
 	ORDER_BY,
 	LIMIT,
 	TOP_N,
-	AGGREGATE,
 	WINDOW,
 	UNNEST,
 	SIMPLE_AGGREGATE,
 	HASH_GROUP_BY,
 	PERFECT_HASH_GROUP_BY,
-	SORT_GROUP_BY,
 	FILTER,
 	PROJECTION,
 	COPY_TO_FILE,
@@ -41,8 +38,6 @@ enum class PhysicalOperatorType : uint8_t {
 	CHUNK_SCAN,
 	RECURSIVE_CTE_SCAN,
 	DELIM_SCAN,
-	EXTERNAL_FILE_SCAN,
-	QUERY_DERIVED_SCAN,
 	EXPRESSION_SCAN,
 	// -----------------------------
 	// Joins
@@ -64,10 +59,8 @@ enum class PhysicalOperatorType : uint8_t {
 	// Updates
 	// -----------------------------
 	INSERT,
-	INSERT_SELECT,
 	DELETE_OPERATOR,
 	UPDATE,
-	EXPORT_EXTERNAL_FILE,
 
 	// -----------------------------
 	// Schema
@@ -84,6 +77,7 @@ enum class PhysicalOperatorType : uint8_t {
 	DROP,
 	PRAGMA,
 	TRANSACTION,
+	CREATE_TYPE,
 
 	// -----------------------------
 	// Helpers
@@ -93,7 +87,10 @@ enum class PhysicalOperatorType : uint8_t {
 	EXECUTE,
 	PREPARE,
 	VACUUM,
-	EXPORT
+	EXPORT,
+	SET,
+	LOAD,
+	INOUT_FUNCTION
 };
 
 string PhysicalOperatorToString(PhysicalOperatorType type);

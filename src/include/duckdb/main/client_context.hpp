@@ -10,27 +10,37 @@
 
 #include "duckdb/catalog/catalog_entry/schema_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_set.hpp"
+#include "duckdb/common/case_insensitive_map.hpp"
+#include "duckdb/common/deque.hpp"
 #include "duckdb/common/enums/output_type.hpp"
+#include "duckdb/common/pair.hpp"
+#include "duckdb/common/progress_bar.hpp"
 #include "duckdb/common/unordered_set.hpp"
 #include "duckdb/common/winapi.hpp"
 #include "duckdb/execution/executor.hpp"
 #include "duckdb/main/prepared_statement.hpp"
-#include "duckdb/main/query_profiler.hpp"
 #include "duckdb/main/stream_query_result.hpp"
 #include "duckdb/main/table_description.hpp"
 #include "duckdb/transaction/transaction_context.hpp"
-
 #include <random>
+#include "duckdb/common/atomic.hpp"
 
 namespace duckdb {
 class Appender;
 class Catalog;
+class CatalogSearchPath;
+class ChunkCollection;
 class DatabaseInstance;
+class FileOpener;
+class LogicalOperator;
 class PreparedStatementData;
 class Relation;
 class BufferedFileWriter;
-
+class QueryProfiler;
+class QueryProfilerHistory;
 class ClientContextLock;
+struct CreateScalarFunctionInfo;
+class ScalarFunctionCatalogEntry;
 
 class Csr {
 public:
@@ -58,34 +68,48 @@ class ClientContext : public std::enable_shared_from_this<ClientContext> {
 	friend class TransactionManager;
 
 public:
-	DUCKDB_API ClientContext(shared_ptr<DatabaseInstance> db);
+	DUCKDB_API explicit ClientContext(shared_ptr<DatabaseInstance> db);
 	DUCKDB_API ~ClientContext();
-
 	//! Query profiler
-	QueryProfiler profiler;
+	unique_ptr<QueryProfiler> profiler;
+	//! QueryProfiler History
+	unique_ptr<QueryProfilerHistory> query_profiler_history;
 	//! The database that this client is connected to
 	shared_ptr<DatabaseInstance> db;
 	//! Data for the currently running transaction
 	TransactionContext transaction;
 	//! Whether or not the query is interrupted
-	bool interrupted;
+	atomic<bool> interrupted;
 	//! The current query being executed by the client context
 	string query;
 
 	//! The query executor
 	Executor executor;
 
+	//! The Progress Bar
+	unique_ptr<ProgressBar> progress_bar;
+	//! If the progress bar is enabled or not.
+	bool enable_progress_bar = false;
+	//! If the print of the progress bar is enabled
+	bool print_progress_bar = true;
+	//! The wait time before showing the progress bar
+	int wait_time = 2000;
+
 	unique_ptr<SchemaCatalogEntry> temporary_objects;
 	unordered_map<string, shared_ptr<PreparedStatementData>> prepared_statements;
+
+	case_insensitive_map_t<Value> set_variables;
 
 	// Whether or not aggressive query verification is enabled
 	bool query_verification_enabled = false;
 	//! Enable the running of optimizers
 	bool enable_optimizer = true;
 	//! Force parallelism of small tables, used for testing
-	bool force_parallelism = false;
+	bool verify_parallelism = false;
 	//! Force index join independent of table cardinality, used for testing
 	bool force_index_join = false;
+	//! Force out-of-core computation for operators that support it, used for testing
+	bool force_external = false;
 	//! Maximum bits allowed for using a perfect hash table (i.e. the perfect HT can hold up to 2^perfect_ht_threshold
 	//! elements)
 	idx_t perfect_ht_threshold = 12;
@@ -101,6 +125,9 @@ public:
 	bool initialized_e = false;
 	vector<unique_ptr<Csr>> csr_list;
 	std::mutex csr_lock;
+	const unique_ptr<CatalogSearchPath> catalog_search_path;
+
+	unique_ptr<FileOpener> file_opener;
 
 public:
 	DUCKDB_API Transaction &ActiveTransaction() {
@@ -129,13 +156,13 @@ public:
 	//! Get the table info of a specific table, or nullptr if it cannot be found
 	DUCKDB_API unique_ptr<TableDescription> TableInfo(const string &schema_name, const string &table_name);
 	//! Appends a DataChunk to the specified table. Returns whether or not the append was successful.
-	DUCKDB_API void Append(TableDescription &description, DataChunk &chunk);
+	DUCKDB_API void Append(TableDescription &description, ChunkCollection &collection);
 	//! Try to bind a relation in the current client context; either throws an exception or fills the result_columns
 	//! list with the set of returned columns
 	DUCKDB_API void TryBindRelation(Relation &relation, vector<ColumnDefinition> &result_columns);
 
 	//! Execute a relation
-	DUCKDB_API unique_ptr<QueryResult> Execute(shared_ptr<Relation> relation);
+	DUCKDB_API unique_ptr<QueryResult> Execute(const shared_ptr<Relation> &relation);
 
 	//! Prepare a query
 	DUCKDB_API unique_ptr<PreparedStatement> Prepare(const string &query);
@@ -148,26 +175,35 @@ public:
 	DUCKDB_API unique_ptr<QueryResult> Execute(const string &query, shared_ptr<PreparedStatementData> &prepared,
 	                                           vector<Value> &values, bool allow_stream_result = true);
 
+	//! Gets current percentage of the query's progress, returns 0 in case the progress bar is disabled.
+	int GetProgress();
+
 	//! Register function in the temporary schema
 	DUCKDB_API void RegisterFunction(CreateFunctionInfo *info);
 
 	//! Parse statements from a query
 	DUCKDB_API vector<unique_ptr<SQLStatement>> ParseStatements(const string &query);
+	//! Extract the logical plan of a query
+	DUCKDB_API unique_ptr<LogicalOperator> ExtractPlan(const string &query);
 	void HandlePragmaStatements(vector<unique_ptr<SQLStatement>> &statements);
 
 	//! Runs a function with a valid transaction context, potentially starting a transaction if the context is in auto
 	//! commit mode.
-	DUCKDB_API void RunFunctionInTransaction(std::function<void(void)> fun, bool requires_valid_transaction = true);
+	DUCKDB_API void RunFunctionInTransaction(const std::function<void(void)> &fun,
+	                                         bool requires_valid_transaction = true);
 	//! Same as RunFunctionInTransaction, but does not obtain a lock on the client context or check for validation
-	DUCKDB_API void RunFunctionInTransactionInternal(ClientContextLock &lock, std::function<void(void)> fun,
+	DUCKDB_API void RunFunctionInTransactionInternal(ClientContextLock &lock, const std::function<void(void)> &fun,
 	                                                 bool requires_valid_transaction = true);
+
+	//! Equivalent to CURRENT_SETTING(key) SQL function.
+	DUCKDB_API bool TryGetCurrentSetting(const std::string &key, Value &result);
 
 private:
 	//! Parse statements from a query
 	vector<unique_ptr<SQLStatement>> ParseStatementsInternal(ClientContextLock &lock, const string &query);
 	//! Perform aggressive query verification of a SELECT statement. Only called when query_verification_enabled is
 	//! true.
-	string VerifyQuery(ClientContextLock &lock, string query, unique_ptr<SQLStatement> statement);
+	string VerifyQuery(ClientContextLock &lock, const string &query, unique_ptr<SQLStatement> statement);
 
 	void InitialCleanup(ClientContextLock &lock);
 	//! Internal clean up, does not lock. Caller must hold the context_lock.
@@ -197,15 +233,17 @@ private:
 	unique_ptr<QueryResult> RunStatementInternal(ClientContextLock &lock, const string &query,
 	                                             unique_ptr<SQLStatement> statement, bool allow_stream_result);
 	unique_ptr<PreparedStatement> PrepareInternal(ClientContextLock &lock, unique_ptr<SQLStatement> statement);
-	void LogQueryInternal(ClientContextLock &lock, string query);
+	void LogQueryInternal(ClientContextLock &lock, const string &query);
 
 	unique_ptr<ClientContextLock> LockContext();
+
+	bool UpdateFunctionInfoFromEntry(ScalarFunctionCatalogEntry *existing_function, CreateScalarFunctionInfo *new_info);
 
 private:
 	//! The currently opened StreamQueryResult (if any)
 	StreamQueryResult *open_result = nullptr;
 	//! Lock on using the ClientContext in parallel
-	std::mutex context_lock;
+	mutex context_lock;
 };
 
 } // namespace duckdb

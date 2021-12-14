@@ -8,7 +8,7 @@
 using namespace duckdb;
 using namespace std;
 
-TEST_CASE("Vectorized UDF functions using arguments", "[udf_function][.]") {
+TEST_CASE("Vectorized UDF functions using arguments", "[coverage][.]") {
 	unique_ptr<QueryResult> result;
 	DuckDB db(nullptr);
 	Connection con(db);
@@ -244,20 +244,6 @@ TEST_CASE("Vectorized UDF functions using arguments", "[udf_function][.]") {
 				result = con.Query("SELECT " + func_name + "_3(a, b, c) FROM " + table_name);
 				REQUIRE(CHECK_COLUMN(result, 0, {"2010-01-01 00:00:00", "2010-01-01 00:00:00", "2010-01-01 00:00:00"}));
 			}
-		}
-	}
-	SECTION("Cheking if the Vectorized UDF functions are temporary") {
-		Connection con_test(db);
-		con_test.EnableQueryVerification();
-		for (LogicalType sql_type : all_sql_types) {
-			table_name = StringUtil::Lower(LogicalTypeIdToString(sql_type.id()));
-			func_name = table_name;
-
-			REQUIRE_FAIL(con_test.Query("SELECT " + func_name + "_1(a) FROM " + table_name));
-
-			REQUIRE_FAIL(con_test.Query("SELECT " + func_name + "_2(a, b) FROM " + table_name));
-
-			REQUIRE_FAIL(con_test.Query("SELECT " + func_name + "_3(a, b, c) FROM " + table_name));
 		}
 	}
 

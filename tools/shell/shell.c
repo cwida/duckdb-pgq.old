@@ -745,7 +745,7 @@ static char *one_input_line(FILE *in, char *zPrior, int isContinuation){
 #else
     free(zPrior);
     zResult = shell_readline(zPrompt);
-    if( zResult && *zResult ) shell_add_history(zResult);
+    if( zResult && *zResult && *zResult != '\3' ) shell_add_history(zResult);
 #endif
   }
   return zResult;
@@ -10806,7 +10806,8 @@ struct ShellState {
 #define MODE_Markdown 14 /* Markdown formatting */
 #define MODE_Table   15  /* MySQL-style table formatting */
 #define MODE_Box     16  /* Unicode box-drawing characters */
-#define MODE_Latex   17  /* Unicode box-drawing characters */
+#define MODE_Latex   17  /* Latex tabular formatting */
+#define MODE_Trash   18  /* Discard output */
 
 static const char *modeDescr[] = {
   "line",
@@ -10826,7 +10827,8 @@ static const char *modeDescr[] = {
   "markdown",
   "table",
   "box",
-  "latex"
+  "latex",
+  "trash"
 };
 
 /*
@@ -12879,7 +12881,7 @@ static void exec_prepared_stmt(
    || pArg->cMode==MODE_Table
    || pArg->cMode==MODE_Box
    || pArg->cMode==MODE_Markdown
-   || pArg->cMode == MODE_Latex
+   || pArg->cMode==MODE_Latex
   ){
     exec_prepared_stmt_columnar(pArg, pStmt);
     return;
@@ -12907,24 +12909,26 @@ static void exec_prepared_stmt(
         azCols[i] = (char *)sqlite3_column_name(pStmt, i);
       }
       do{
-        /* extract the data and data types */
-        for(i=0; i<nCol; i++){
-          aiTypes[i] = x = sqlite3_column_type(pStmt, i);
-          if( x==SQLITE_BLOB && pArg && pArg->cMode==MODE_Insert ){
-            azVals[i] = "";
-          }else{
-            azVals[i] = (char*)sqlite3_column_text(pStmt, i);
-          }
-          if( !azVals[i] && (aiTypes[i]!=SQLITE_NULL) ){
-            rc = SQLITE_NOMEM;
-            break; /* from for */
-          }
-        } /* end for */
+        if (pArg->cMode!=MODE_Trash) {
+          /* extract the data and data types */
+          for(i=0; i<nCol; i++){
+            aiTypes[i] = x = sqlite3_column_type(pStmt, i);
+            if( x==SQLITE_BLOB && pArg && pArg->cMode==MODE_Insert ){
+              azVals[i] = "";
+            }else{
+              azVals[i] = (char*)sqlite3_column_text(pStmt, i);
+            }
+            if( !azVals[i] && (aiTypes[i]!=SQLITE_NULL) ){
+              rc = SQLITE_NOMEM;
+              break; /* from for */
+            }
+          } /* end for */
+        }
 
         /* if data and types extracted successfully... */
         if( SQLITE_ROW == rc ){
           /* call the supplied callback with the result row data */
-          if( shell_callback(pArg, nCol, azVals, azCols, aiTypes) ){
+          if( pArg->cMode!=MODE_Trash && shell_callback(pArg, nCol, azVals, azCols, aiTypes) ){
             rc = SQLITE_ABORT;
           }else{
             rc = sqlite3_step(pStmt);
@@ -13508,6 +13512,9 @@ static int run_schema_dump_query(
     }
     sqlite3_free(zErr);
     free(zQ2);
+  } else if( zErr ){
+    sqlite3_free(zErr);
+    zErr = 0;
   }
   return rc;
 }
@@ -17625,53 +17632,54 @@ static int do_meta_command(char *zLine, ShellState *p){
   }else
 
   if( c=='f' && strncmp(azArg[0], "fullschema", n)==0 ){
-    ShellState data;
-    char *zErrMsg = 0;
-    int doStats = 0;
-    memcpy(&data, p, sizeof(data));
-    data.showHeader = 0;
-    data.cMode = data.mode = MODE_Semi;
-    if( nArg==2 && optionMatch(azArg[1], "indent") ){
-      data.cMode = data.mode = MODE_Pretty;
-      nArg = 1;
-    }
-    if( nArg!=1 ){
-      raw_printf(stderr, "Usage: .fullschema ?--indent?\n");
-      rc = 1;
-      goto meta_command_exit;
-    }
-    open_db(p, 0);
-    rc = sqlite3_exec(p->db,
-       "SELECT sql FROM"
-       "  (SELECT sql sql, type type, tbl_name tbl_name, name name, rowid x"
-       "     FROM sqlite_schema UNION ALL"
-       "   SELECT sql, type, tbl_name, name, rowid FROM sqlite_temp_schema) "
-       "WHERE type!='meta' AND sql NOTNULL AND name NOT LIKE 'sqlite_%' "
-       "ORDER BY rowid",
-       callback, &data, &zErrMsg
-    );
-    if( rc==SQLITE_OK ){
-      sqlite3_stmt *pStmt;
-      rc = sqlite3_prepare_v2(p->db,
-               "SELECT rowid FROM sqlite_schema"
-               " WHERE name GLOB 'sqlite_stat[134]'",
-               -1, &pStmt, 0);
-      doStats = sqlite3_step(pStmt)==SQLITE_ROW;
-      sqlite3_finalize(pStmt);
-    }
-    if( doStats==0 ){
-      raw_printf(p->out, "/* No STAT tables available */\n");
-    }else{
-      raw_printf(p->out, "ANALYZE sqlite_schema;\n");
-      sqlite3_exec(p->db, "SELECT 'ANALYZE sqlite_schema'",
-                   callback, &data, &zErrMsg);
-      data.cMode = data.mode = MODE_Insert;
-      data.zDestTable = "sqlite_stat1";
-      shell_exec(&data, "SELECT * FROM sqlite_stat1", &zErrMsg);
-      data.zDestTable = "sqlite_stat4";
-      shell_exec(&data, "SELECT * FROM sqlite_stat4", &zErrMsg);
-      raw_printf(p->out, "ANALYZE sqlite_schema;\n");
-    }
+    raw_printf(p->out, "No STAT tables available\n");
+    // ShellState data;
+    // char *zErrMsg = 0;
+    // int doStats = 0;
+    // memcpy(&data, p, sizeof(data));
+    // data.showHeader = 0;
+    // data.cMode = data.mode = MODE_Semi;
+    // if( nArg==2 && optionMatch(azArg[1], "indent") ){
+    //   data.cMode = data.mode = MODE_Pretty;
+    //   nArg = 1;
+    // }
+    // if( nArg!=1 ){
+    //   raw_printf(stderr, "Usage: .fullschema ?--indent?\n");
+    //   rc = 1;
+    //   goto meta_command_exit;
+    // }
+    // open_db(p, 0);
+    // rc = sqlite3_exec(p->db,
+    //    "SELECT sql FROM"
+    //    "  (SELECT sql sql, type type, tbl_name tbl_name, name name, rowid x"
+    //    "     FROM sqlite_schema UNION ALL"
+    //    "   SELECT sql, type, tbl_name, name, rowid FROM sqlite_temp_schema) "
+    //    "WHERE type!='meta' AND sql NOTNULL AND name NOT LIKE 'sqlite_%' "
+    //    "ORDER BY rowid",
+    //    callback, &data, &zErrMsg
+    // );
+    // if( rc==SQLITE_OK ){
+    //   sqlite3_stmt *pStmt;
+    //   rc = sqlite3_prepare_v2(p->db,
+    //            "SELECT rowid FROM sqlite_schema"
+    //            " WHERE name GLOB 'sqlite_stat[134]'",
+    //            -1, &pStmt, 0);
+    //   doStats = sqlite3_step(pStmt)==SQLITE_ROW;
+    //   sqlite3_finalize(pStmt);
+    // }
+    // if( doStats==0 ){
+    //   raw_printf(p->out, "/* No STAT tables available */\n");
+    // }else{
+    //   raw_printf(p->out, "ANALYZE sqlite_schema;\n");
+    //   sqlite3_exec(p->db, "SELECT 'ANALYZE sqlite_schema'",
+    //                callback, &data, &zErrMsg);
+    //   data.cMode = data.mode = MODE_Insert;
+    //   data.zDestTable = "sqlite_stat1";
+    //   shell_exec(&data, "SELECT * FROM sqlite_stat1", &zErrMsg);
+    //   data.zDestTable = "sqlite_stat4";
+    //   shell_exec(&data, "SELECT * FROM sqlite_stat4", &zErrMsg);
+    //   raw_printf(p->out, "ANALYZE sqlite_schema;\n");
+    // }
   }else
 
   if( c=='h' && strncmp(azArg[0], "headers", n)==0 ){
@@ -18241,12 +18249,14 @@ static int do_meta_command(char *zLine, ShellState *p){
       p->mode = MODE_Json;
     }else if( c2=='l' && strncmp(azArg[1],"latex",n2)==0 ){
       p->mode = MODE_Latex;
+    }else if( c2=='t' && strncmp(azArg[1],"trash",n2)==0 ){
+      p->mode = MODE_Trash;
     }else if( nArg==1 ){
       raw_printf(p->out, "current output mode: %s\n", modeDescr[p->mode]);
     }else{
       raw_printf(stderr, "Error: mode should be one of: "
          "ascii box column csv html insert json line list markdown "
-         "quote table tabs tcl\n");
+         "quote table tabs tcl latex trash \n");
       rc = 1;
     }
     p->cMode = p->mode;
@@ -18716,7 +18726,6 @@ static int do_meta_command(char *zLine, ShellState *p){
     char *zErrMsg = 0;
     const char *zDiv = "(";
     const char *zName = 0;
-    int iSchema = 0;
     int bDebug = 0;
     int ii;
 
@@ -18761,47 +18770,7 @@ static int do_meta_command(char *zLine, ShellState *p){
       }
     }
     if( zDiv ){
-      sqlite3_stmt *pStmt = 0;
-      rc = sqlite3_prepare_v2(p->db, "SELECT name FROM pragma_database_list",
-                              -1, &pStmt, 0);
-      if( rc ){
-        utf8_printf(stderr, "Error: %s\n", sqlite3_errmsg(p->db));
-        sqlite3_finalize(pStmt);
-        rc = 1;
-        goto meta_command_exit;
-      }
-      appendText(&sSelect, "SELECT sql FROM", 0);
-      iSchema = 0;
-      while( sqlite3_step(pStmt)==SQLITE_ROW ){
-        const char *zDb = (const char*)sqlite3_column_text(pStmt, 0);
-        char zScNum[30];
-        sqlite3_snprintf(sizeof(zScNum), zScNum, "%d", ++iSchema);
-        appendText(&sSelect, zDiv, 0);
-        zDiv = " UNION ALL ";
-        appendText(&sSelect, "SELECT shell_add_schema(sql,", 0);
-        if( sqlite3_stricmp(zDb, "main")!=0 ){
-          appendText(&sSelect, zDb, '\'');
-        }else{
-          appendText(&sSelect, "NULL", 0);
-        }
-        appendText(&sSelect, ",name) AS sql, type, tbl_name, name, rowid,", 0);
-        appendText(&sSelect, zScNum, 0);
-        appendText(&sSelect, " AS snum, ", 0);
-        appendText(&sSelect, zDb, '\'');
-        appendText(&sSelect, " AS sname FROM ", 0);
-        appendText(&sSelect, zDb, quoteChar(zDb));
-        appendText(&sSelect, ".sqlite_schema", 0);
-      }
-      sqlite3_finalize(pStmt);
-#ifndef SQLITE_OMIT_INTROSPECTION_PRAGMAS
-      if( zName ){
-        appendText(&sSelect,
-           " UNION ALL SELECT shell_module_schema(name),"
-           " 'table', name, name, name, 9e+99, 'main' FROM pragma_module_list",
-        0);
-      }
-#endif
-      appendText(&sSelect, ") WHERE ", 0);
+      appendText(&sSelect, "SELECT sql FROM sqlite_master WHERE ", 0);
       if( zName ){
         char *zQarg = sqlite3_mprintf("%Q", zName);
         int bGlob = strchr(zName, '*') != 0 || strchr(zName, '?') != 0 ||
@@ -18820,7 +18789,7 @@ static int do_meta_command(char *zLine, ShellState *p){
         sqlite3_free(zQarg);
       }
       appendText(&sSelect, "type!='meta' AND sql IS NOT NULL"
-                           " ORDER BY snum, rowid", 0);
+                           " ORDER BY name", 0);
       if( bDebug ){
         utf8_printf(p->out, "SQL: %s;\n", sSelect.z);
       }else{
@@ -19974,13 +19943,13 @@ static int _all_whitespace(const char *z){
 */
 static int line_is_command_terminator(const char *zLine){
   while( IsSpace(zLine[0]) ){ zLine++; };
-  if( zLine[0]=='/' && _all_whitespace(&zLine[1]) ){
-    return 1;  /* Oracle */
-  }
-  if( ToLower(zLine[0])=='g' && ToLower(zLine[1])=='o'
-         && _all_whitespace(&zLine[2]) ){
-    return 1;  /* SQL Server */
-  }
+  // if( zLine[0]=='/' && _all_whitespace(&zLine[1]) ){
+  //   return 1;  /* Oracle */
+  // }
+  // if( ToLower(zLine[0])=='g' && ToLower(zLine[1])=='o'
+  //        && _all_whitespace(&zLine[2]) ){
+  //   return 1;  /* SQL Server */
+  // }
   return 0;
 }
 
@@ -20064,7 +20033,7 @@ static int process_input(ShellState *p){
   int rc;                   /* Error code */
   int errCnt = 0;           /* Number of errors seen */
   int startline = 0;        /* Line number for start of current input */
-
+  int numCtrlC = 0;
   p->lineno = 0;
   while( errCnt==0 || !bail_on_error || (p->in==0 && stdin_is_interactive) ){
     fflush(p->out);
@@ -20073,6 +20042,21 @@ static int process_input(ShellState *p){
       /* End of input */
       if( p->in==0 && stdin_is_interactive ) printf("\n");
       break;
+    }
+    if (*zLine == '\3') {
+      // ctrl c: reset sql statement
+      if (nSql == 0 && zLine[1] == '\0' && stdin_is_interactive) {
+        // if in interactive mode and we press ctrl c twice
+        // on an empty line, we exit
+        numCtrlC++;
+        if (numCtrlC >= 2) {
+          break;
+        }
+      }
+      nSql = 0;
+      continue;
+    } else {
+      numCtrlC = 0;
     }
     if( seenInterrupt ){
       if( p->in!=0 ) break;
@@ -20348,8 +20332,8 @@ static void main_init(ShellState *data) {
   sqlite3_config(SQLITE_CONFIG_URI, 1);
   sqlite3_config(SQLITE_CONFIG_LOG, shellLog, data);
   sqlite3_config(SQLITE_CONFIG_MULTITHREAD);
-  sqlite3_snprintf(sizeof(mainPrompt), mainPrompt,"D ");
-  sqlite3_snprintf(sizeof(continuePrompt), continuePrompt,"   ...> ");
+  sqlite3_snprintf(sizeof(mainPrompt), mainPrompt, "D ");
+  sqlite3_snprintf(sizeof(continuePrompt), continuePrompt, "> ");
 }
 
 /*

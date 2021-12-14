@@ -6,10 +6,10 @@
 #include "duckdb/parser/expression/comparison_expression.hpp"
 #include "duckdb/parser/expression/constant_expression.hpp"
 #include "duckdb/parser/expression/subquery_expression.hpp"
-#include "duckdb/parser/expression/table_star_expression.hpp"
 #include "duckdb/parser/query_node/select_node.hpp"
 #include "duckdb/parser/tableref/joinref.hpp"
 #include "duckdb/planner/binder.hpp"
+#include "duckdb/planner/expression_binder/column_alias_binder.hpp"
 #include "duckdb/planner/expression_binder/constant_binder.hpp"
 #include "duckdb/planner/expression_binder/group_binder.hpp"
 #include "duckdb/planner/expression_binder/having_binder.hpp"
@@ -17,14 +17,9 @@
 #include "duckdb/planner/expression_binder/select_binder.hpp"
 #include "duckdb/planner/expression_binder/where_binder.hpp"
 #include "duckdb/planner/query_node/bound_select_node.hpp"
-
-#include <duckdb/planner/expression_binder/aggregate_binder.hpp>
+#include "duckdb/planner/expression_binder/aggregate_binder.hpp"
 
 namespace duckdb {
-unique_ptr<Expression> Binder::BindFilter(unique_ptr<ParsedExpression> condition) {
-	WhereBinder where_binder(*this, context);
-	return where_binder.Bind(condition);
-}
 
 unique_ptr<Expression> Binder::BindOrderExpression(OrderBinder &order_binder, unique_ptr<ParsedExpression> expr) {
 	// we treat the Distinct list as a order by
@@ -38,10 +33,10 @@ unique_ptr<Expression> Binder::BindOrderExpression(OrderBinder &order_binder, un
 	return bound_expr;
 }
 
-unique_ptr<Expression> bind_delimiter(ClientContext &context, unique_ptr<ParsedExpression> delimiter,
-                                      int64_t &delimiter_value) {
-	Binder new_binder(context);
-	ExpressionBinder expr_binder(new_binder, context);
+unique_ptr<Expression> Binder::BindDelimiter(ClientContext &context, unique_ptr<ParsedExpression> delimiter,
+                                             int64_t &delimiter_value) {
+	auto new_binder = Binder::CreateBinder(context, this, true);
+	ExpressionBinder expr_binder(*new_binder, context);
 	expr_binder.target_type = LogicalType::UBIGINT;
 	auto expr = expr_binder.Bind(delimiter);
 	if (expr->IsFoldable()) {
@@ -56,10 +51,10 @@ unique_ptr<Expression> bind_delimiter(ClientContext &context, unique_ptr<ParsedE
 unique_ptr<BoundResultModifier> Binder::BindLimit(LimitModifier &limit_mod) {
 	auto result = make_unique<BoundLimitModifier>();
 	if (limit_mod.limit) {
-		result->limit = bind_delimiter(context, move(limit_mod.limit), result->limit_val);
+		result->limit = BindDelimiter(context, move(limit_mod.limit), result->limit_val);
 	}
 	if (limit_mod.offset) {
-		result->offset = bind_delimiter(context, move(limit_mod.offset), result->offset_val);
+		result->offset = BindDelimiter(context, move(limit_mod.offset), result->offset_val);
 	}
 	return move(result);
 }
@@ -85,14 +80,14 @@ void Binder::BindModifiers(OrderBinder &order_binder, QueryNode &statement, Boun
 			auto &order = (OrderModifier &)*mod;
 			auto bound_order = make_unique<BoundOrderModifier>();
 			auto &config = DBConfig::GetConfig(context);
-			for (auto &order_ : order.orders) {
-				auto order_expression = BindOrderExpression(order_binder, move(order_.expression));
+			for (auto &order_node : order.orders) {
+				auto order_expression = BindOrderExpression(order_binder, move(order_node.expression));
 				if (!order_expression) {
 					continue;
 				}
-				auto type = order_.type == OrderType::ORDER_DEFAULT ? config.default_order_type : order_.type;
-				auto null_order =
-				    order_.null_order == OrderByNullType::ORDER_DEFAULT ? config.default_null_order : order_.null_order;
+				auto type = order_node.type == OrderType::ORDER_DEFAULT ? config.default_order_type : order_node.type;
+				auto null_order = order_node.null_order == OrderByNullType::ORDER_DEFAULT ? config.default_null_order
+				                                                                          : order_node.null_order;
 				bound_order->orders.emplace_back(type, null_order, move(order_expression));
 			}
 			if (!bound_order->orders.empty()) {
@@ -139,16 +134,16 @@ void Binder::BindModifierTypes(BoundQueryNode &result, const vector<LogicalType>
 				auto &bound_colref = (BoundColumnRefExpression &)*target_distinct;
 				auto sql_type = sql_types[bound_colref.binding.column_index];
 				if (sql_type.id() == LogicalTypeId::VARCHAR) {
-					target_distinct =
-					    ExpressionBinder::PushCollation(context, move(target_distinct), sql_type.collation(), true);
+					target_distinct = ExpressionBinder::PushCollation(context, move(target_distinct),
+					                                                  StringType::GetCollation(sql_type), true);
 				}
 			}
 			break;
 		}
 		case ResultModifierType::ORDER_MODIFIER: {
 			auto &order = (BoundOrderModifier &)*bound_mod;
-			for (auto &order_ : order.orders) {
-				auto &expr = order_.expression;
+			for (auto &order_node : order.orders) {
+				auto &expr = order_node.expression;
 				D_ASSERT(expr->type == ExpressionType::BOUND_COLUMN_REF);
 				auto &bound_colref = (BoundColumnRefExpression &)*expr;
 				if (bound_colref.binding.column_index == INVALID_INDEX) {
@@ -158,8 +153,8 @@ void Binder::BindModifierTypes(BoundQueryNode &result, const vector<LogicalType>
 				auto sql_type = sql_types[bound_colref.binding.column_index];
 				bound_colref.return_type = sql_types[bound_colref.binding.column_index];
 				if (sql_type.id() == LogicalTypeId::VARCHAR) {
-					order_.expression =
-					    ExpressionBinder::PushCollation(context, move(order_.expression), sql_type.collation());
+					order_node.expression = ExpressionBinder::PushCollation(context, move(order_node.expression),
+					                                                        StringType::GetCollation(sql_type));
 				}
 			}
 			break;
@@ -175,6 +170,7 @@ unique_ptr<BoundQueryNode> Binder::BindNode(SelectNode &statement) {
 	result->projection_index = GenerateTableIndex();
 	result->group_index = GenerateTableIndex();
 	result->aggregate_index = GenerateTableIndex();
+	result->groupings_index = GenerateTableIndex();
 	result->window_index = GenerateTableIndex();
 	result->unnest_index = GenerateTableIndex();
 	result->prune_index = GenerateTableIndex();
@@ -192,14 +188,14 @@ unique_ptr<BoundQueryNode> Binder::BindNode(SelectNode &statement) {
 	for (auto &select_element : statement.select_list) {
 		if (select_element->GetExpressionType() == ExpressionType::STAR) {
 			// * statement, expand to all columns from the FROM clause
-			bind_context.GenerateAllColumnExpressions(new_select_list);
-		} else if (select_element->GetExpressionType() == ExpressionType::TABLE_STAR) {
-			auto table_star = (TableStarExpression *)select_element.get();
-			bind_context.GenerateAllColumnExpressions(new_select_list, table_star->relation_name);
+			bind_context.GenerateAllColumnExpressions((StarExpression &)*select_element, new_select_list);
 		} else {
 			// regular statement, add it to the list
 			new_select_list.push_back(move(select_element));
 		}
+	}
+	if (new_select_list.empty()) {
+		throw BinderException("SELECT list is empty after resolving * expressions!");
 	}
 	statement.select_list = move(new_select_list);
 
@@ -222,7 +218,10 @@ unique_ptr<BoundQueryNode> Binder::BindNode(SelectNode &statement) {
 	// first visit the WHERE clause
 	// the WHERE clause happens before the GROUP BY, PROJECTION or HAVING clauses
 	if (statement.where_clause) {
-		result->where_clause = BindFilter(move(statement.where_clause));
+		ColumnAliasBinder alias_binder(*result, alias_map);
+		WhereBinder where_binder(*this, context, &alias_binder);
+		unique_ptr<ParsedExpression> condition = move(statement.where_clause);
+		result->where_clause = where_binder.Bind(condition);
 	}
 
 	// now bind all the result modifiers; including DISTINCT and ORDER BY targets
@@ -231,27 +230,29 @@ unique_ptr<BoundQueryNode> Binder::BindNode(SelectNode &statement) {
 
 	vector<unique_ptr<ParsedExpression>> unbound_groups;
 	BoundGroupInformation info;
-	if (!statement.groups.empty()) {
+	auto &group_expressions = statement.groups.group_expressions;
+	if (!group_expressions.empty()) {
 		// the statement has a GROUP BY clause, bind it
-		unbound_groups.resize(statement.groups.size());
+		unbound_groups.resize(group_expressions.size());
 		GroupBinder group_binder(*this, context, statement, result->group_index, alias_map, info.alias_map);
-		for (idx_t i = 0; i < statement.groups.size(); i++) {
+		for (idx_t i = 0; i < group_expressions.size(); i++) {
 
 			// we keep a copy of the unbound expression;
 			// we keep the unbound copy around to check for group references in the SELECT and HAVING clause
 			// the reason we want the unbound copy is because we want to figure out whether an expression
 			// is a group reference BEFORE binding in the SELECT/HAVING binder
-			group_binder.unbound_expression = statement.groups[i]->Copy();
+			group_binder.unbound_expression = group_expressions[i]->Copy();
 			group_binder.bind_index = i;
 
 			// bind the groups
 			LogicalType group_type;
-			auto bound_expr = group_binder.Bind(statement.groups[i], &group_type);
+			auto bound_expr = group_binder.Bind(group_expressions[i], &group_type);
 			D_ASSERT(bound_expr->return_type.id() != LogicalTypeId::INVALID);
 
 			// push a potential collation, if necessary
-			bound_expr = ExpressionBinder::PushCollation(context, move(bound_expr), group_type.collation(), true);
-			result->groups.push_back(move(bound_expr));
+			bound_expr =
+			    ExpressionBinder::PushCollation(context, move(bound_expr), StringType::GetCollation(group_type), true);
+			result->groups.group_expressions.push_back(move(bound_expr));
 
 			// in the unbound expression we DO bind the table names of any ColumnRefs
 			// we do this to make sure that "table.a" and "a" are treated the same
@@ -262,6 +263,7 @@ unique_ptr<BoundQueryNode> Binder::BindNode(SelectNode &statement) {
 			info.map[unbound_groups[i].get()] = i;
 		}
 	}
+	result->groups.grouping_sets = move(statement.groups.grouping_sets);
 
 	// bind the HAVING clause, if any
 	if (statement.having) {
@@ -276,15 +278,15 @@ unique_ptr<BoundQueryNode> Binder::BindNode(SelectNode &statement) {
 	for (idx_t i = 0; i < statement.select_list.size(); i++) {
 		LogicalType result_type;
 		auto expr = select_binder.Bind(statement.select_list[i], &result_type);
-		if (statement.aggregate_handling == AggregateHandling::FORCE_AGGREGATES && select_binder.BoundColumns()) {
+		if (statement.aggregate_handling == AggregateHandling::FORCE_AGGREGATES && select_binder.HasBoundColumns()) {
 			if (select_binder.BoundAggregates()) {
 				throw BinderException("Cannot mix aggregates with non-aggregated columns!");
 			}
 			// we are forcing aggregates, and the node has columns bound
 			// this entry becomes a group
 			auto group_ref = make_unique<BoundColumnRefExpression>(
-			    expr->return_type, ColumnBinding(result->group_index, result->groups.size()));
-			result->groups.push_back(move(expr));
+			    expr->return_type, ColumnBinding(result->group_index, result->groups.group_expressions.size()));
+			result->groups.group_expressions.push_back(move(expr));
 			expr = move(group_ref);
 		}
 		result->select_list.push_back(move(expr));
@@ -302,12 +304,17 @@ unique_ptr<BoundQueryNode> Binder::BindNode(SelectNode &statement) {
 	// i.e. in the query [SELECT i, SUM(i) FROM integers;] the "i" will be bound as a normal column
 	// since we have an aggregation, we need to either (1) throw an error, or (2) wrap the column in a FIRST() aggregate
 	// we choose the former one [CONTROVERSIAL: this is the PostgreSQL behavior]
-	if (!result->groups.empty() || !result->aggregates.empty() || statement.having) {
+	if (!result->groups.group_expressions.empty() || !result->aggregates.empty() || statement.having ||
+	    !result->groups.grouping_sets.empty()) {
 		if (statement.aggregate_handling == AggregateHandling::NO_AGGREGATES_ALLOWED) {
 			throw BinderException("Aggregates cannot be present in a Project relation!");
 		} else if (statement.aggregate_handling == AggregateHandling::STANDARD_HANDLING) {
-			if (select_binder.BoundColumns()) {
-				throw BinderException("column must appear in the GROUP BY clause or be used in an aggregate function");
+			if (select_binder.HasBoundColumns()) {
+				auto &bound_columns = select_binder.GetBoundColumns();
+				throw BinderException(
+				    FormatError(bound_columns[0].query_location,
+				                "column \"%s\" must appear in the GROUP BY clause or be used in an aggregate function",
+				                bound_columns[0].name));
 			}
 		}
 	}

@@ -7,9 +7,9 @@ struct DefaultSchema {
 	const char *name;
 };
 
-static DefaultSchema internal_schemas[] = {{"information_schema"}, {nullptr}};
+static DefaultSchema internal_schemas[] = {{"information_schema"}, {"pg_catalog"}, {nullptr}};
 
-static bool GetDefaultSchema(string schema) {
+static bool GetDefaultSchema(const string &schema) {
 	for (idx_t index = 0; internal_schemas[index].name != nullptr; index++) {
 		if (internal_schemas[index].name == schema) {
 			return true;
@@ -26,6 +26,14 @@ unique_ptr<CatalogEntry> DefaultSchemaGenerator::CreateDefaultEntry(ClientContex
 		return make_unique_base<CatalogEntry, SchemaCatalogEntry>(&catalog, entry_name, true);
 	}
 	return nullptr;
+}
+
+vector<string> DefaultSchemaGenerator::GetDefaultEntries() {
+	vector<string> result;
+	for (idx_t index = 0; internal_schemas[index].name != nullptr; index++) {
+		result.emplace_back(internal_schemas[index].name);
+	}
+	return result;
 }
 
 } // namespace duckdb

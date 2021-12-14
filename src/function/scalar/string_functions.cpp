@@ -1,5 +1,6 @@
 #include "duckdb/function/scalar/string_functions.hpp"
 #include "duckdb/function/scalar/blob_functions.hpp"
+#include "duckdb/function/scalar/uuid_functions.hpp"
 
 namespace duckdb {
 
@@ -32,10 +33,16 @@ void BuiltinFunctions::RegisterStringFunctions() {
 	Register<StringSplitFun>();
 	Register<ASCII>();
 	Register<CHR>();
+	Register<MismatchesFun>();
+	Register<LevenshteinFun>();
+	Register<JaccardFun>();
 
 	// blob functions
 	Register<Base64Fun>();
 	Register<EncodeFun>();
+
+	// uuid functions
+	Register<UUIDFun>();
 }
 
 } // namespace duckdb

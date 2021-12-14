@@ -13,10 +13,10 @@
 namespace duckdb {
 
 struct RadixPartitionInfo {
-	RadixPartitionInfo(idx_t _n_partitions_upper_bound);
-	idx_t n_partitions;
-	idx_t radix_bits;
-	hash_t radix_mask;
+	explicit RadixPartitionInfo(idx_t _n_partitions_upper_bound);
+	const idx_t n_partitions;
+	const idx_t radix_bits;
+	const hash_t radix_mask;
 	constexpr static idx_t RADIX_SHIFT = 40;
 };
 
@@ -24,9 +24,9 @@ typedef vector<unique_ptr<GroupedAggregateHashTable>> HashTableList;
 
 class PartitionableHashTable {
 public:
-	PartitionableHashTable(BufferManager &_buffer_manager, RadixPartitionInfo &_partition_info,
-	                       vector<LogicalType> _group_types, vector<LogicalType> _payload_types,
-	                       vector<BoundAggregateExpression *> _bindings);
+	PartitionableHashTable(BufferManager &buffer_manager_p, RadixPartitionInfo &partition_info_p,
+	                       vector<LogicalType> group_types_p, vector<LogicalType> payload_types_p,
+	                       vector<BoundAggregateExpression *> bindings_p);
 
 	idx_t AddChunk(DataChunk &groups, DataChunk &payload, bool do_partition);
 	void Partition();

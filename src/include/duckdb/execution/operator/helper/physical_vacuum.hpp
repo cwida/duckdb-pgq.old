@@ -16,14 +16,16 @@ namespace duckdb {
 //! PhysicalVacuum represents a VACUUM operation (e.g. VACUUM or ANALYZE)
 class PhysicalVacuum : public PhysicalOperator {
 public:
-	PhysicalVacuum(unique_ptr<VacuumInfo> info)
-	    : PhysicalOperator(PhysicalOperatorType::VACUUM, {LogicalType::BOOLEAN}), info(move(info)) {
+	explicit PhysicalVacuum(unique_ptr<VacuumInfo> info, idx_t estimated_cardinality)
+	    : PhysicalOperator(PhysicalOperatorType::VACUUM, {LogicalType::BOOLEAN}, estimated_cardinality),
+	      info(move(info)) {
 	}
 
 	unique_ptr<VacuumInfo> info;
 
 public:
-	void GetChunkInternal(ExecutionContext &context, DataChunk &chunk, PhysicalOperatorState *state) override;
+	void GetData(ExecutionContext &context, DataChunk &chunk, GlobalSourceState &gstate,
+	             LocalSourceState &lstate) const override;
 };
 
 } // namespace duckdb

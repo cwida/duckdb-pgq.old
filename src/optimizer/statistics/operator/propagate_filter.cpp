@@ -1,15 +1,15 @@
+#include "duckdb/function/scalar/generic_functions.hpp"
 #include "duckdb/optimizer/statistics_propagator.hpp"
-#include "duckdb/planner/operator/logical_filter.hpp"
 #include "duckdb/planner/expression/bound_between_expression.hpp"
+#include "duckdb/planner/expression/bound_columnref_expression.hpp"
 #include "duckdb/planner/expression/bound_comparison_expression.hpp"
 #include "duckdb/planner/expression/bound_constant_expression.hpp"
-#include "duckdb/planner/expression/bound_columnref_expression.hpp"
+#include "duckdb/planner/operator/logical_filter.hpp"
 #include "duckdb/storage/statistics/numeric_statistics.hpp"
-#include "duckdb/function/scalar/generic_functions.hpp"
 
 namespace duckdb {
 
-bool StatisticsPropagator::ExpressionIsConstant(Expression &expr, Value val) {
+bool StatisticsPropagator::ExpressionIsConstant(Expression &expr, const Value &val) {
 	if (expr.GetExpressionClass() != ExpressionClass::BOUND_CONSTANT) {
 		return false;
 	}
@@ -18,7 +18,7 @@ bool StatisticsPropagator::ExpressionIsConstant(Expression &expr, Value val) {
 	return bound_constant.value == val;
 }
 
-bool StatisticsPropagator::ExpressionIsConstantOrNull(Expression &expr, Value val) {
+bool StatisticsPropagator::ExpressionIsConstantOrNull(Expression &expr, const Value &val) {
 	if (expr.GetExpressionClass() != ExpressionClass::BOUND_FUNCTION) {
 		return false;
 	}
@@ -31,13 +31,13 @@ void StatisticsPropagator::SetStatisticsNotNull(ColumnBinding binding) {
 	if (entry == statistics_map.end()) {
 		return;
 	}
-	entry->second->has_null = false;
+	entry->second->validity_stats = make_unique<ValidityStatistics>(false);
 }
 
 void StatisticsPropagator::UpdateFilterStatistics(BaseStatistics &stats, ExpressionType comparison_type,
-                                                  Value constant) {
+                                                  const Value &constant) {
 	// any comparison filter removes all null values
-	stats.has_null = false;
+	stats.validity_stats = make_unique<ValidityStatistics>(false);
 	if (!stats.type.IsNumeric()) {
 		// don't handle non-numeric columns here (yet)
 		return;
@@ -74,8 +74,8 @@ void StatisticsPropagator::UpdateFilterStatistics(BaseStatistics &stats, Express
 void StatisticsPropagator::UpdateFilterStatistics(BaseStatistics &lstats, BaseStatistics &rstats,
                                                   ExpressionType comparison_type) {
 	// any comparison filter removes all null values
-	lstats.has_null = false;
-	rstats.has_null = false;
+	lstats.validity_stats = make_unique<ValidityStatistics>(false);
+	rstats.validity_stats = make_unique<ValidityStatistics>(false);
 	D_ASSERT(lstats.type == rstats.type);
 	if (!lstats.type.IsNumeric()) {
 		// don't handle non-numeric columns here (yet)
@@ -221,7 +221,7 @@ unique_ptr<NodeStatistics> StatisticsPropagator::PropagateStatistics(LogicalFilt
 			// erase this condition
 			filter.expressions.erase(filter.expressions.begin() + i);
 			i--;
-			if (filter.expressions.size() == 0) {
+			if (filter.expressions.empty()) {
 				// all conditions have been erased: remove the entire filter
 				*node_ptr = move(filter.children[0]);
 				break;

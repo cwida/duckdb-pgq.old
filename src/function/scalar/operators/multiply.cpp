@@ -3,6 +3,7 @@
 #include "duckdb/common/limits.hpp"
 #include "duckdb/common/types/hugeint.hpp"
 #include "duckdb/common/types/value.hpp"
+#include "duckdb/common/windows_undefs.hpp"
 
 #include <limits>
 #include <algorithm>
@@ -114,6 +115,28 @@ bool TryMultiplyOperator::Operation(int64_t left, int64_t right, int64_t &result
 		return false;
 	}
 #else
+	if (left == std::numeric_limits<int64_t>::min()) {
+		if (right == 0) {
+			result = 0;
+			return true;
+		}
+		if (right == 1) {
+			result = left;
+			return true;
+		}
+		return false;
+	}
+	if (right == std::numeric_limits<int64_t>::min()) {
+		if (left == 0) {
+			result = 0;
+			return true;
+		}
+		if (left == 1) {
+			result = right;
+			return true;
+		}
+		return false;
+	}
 	uint64_t left_non_negative = uint64_t(std::abs(left));
 	uint64_t right_non_negative = uint64_t(std::abs(right));
 	// split values into 2 32-bit parts
@@ -158,10 +181,6 @@ bool TryMultiplyOperator::Operation(int64_t left, int64_t right, int64_t &result
 	// now we know that there is no overflow, we can just perform the multiplication
 	result = left * right;
 #endif
-	// FIXME: this check can be removed if we get rid of NullValue<T>
-	if (result == std::numeric_limits<int64_t>::min()) {
-		return false;
-	}
 	return true;
 }
 
@@ -194,7 +213,7 @@ bool TryDecimalMultiply::Operation(int64_t left, int64_t right, int64_t &result)
 template <>
 bool TryDecimalMultiply::Operation(hugeint_t left, hugeint_t right, hugeint_t &result) {
 	result = left * right;
-	if (result <= -Hugeint::PowersOfTen[38] || result >= Hugeint::PowersOfTen[38]) {
+	if (result <= -Hugeint::POWERS_OF_TEN[38] || result >= Hugeint::POWERS_OF_TEN[38]) {
 		return false;
 	}
 	return true;

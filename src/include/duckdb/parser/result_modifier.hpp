@@ -20,7 +20,7 @@ enum ResultModifierType : uint8_t { LIMIT_MODIFIER = 1, ORDER_MODIFIER = 2, DIST
 //! A ResultModifier
 class ResultModifier {
 public:
-	ResultModifier(ResultModifierType type) : type(type) {
+	explicit ResultModifier(ResultModifierType type) : type(type) {
 	}
 	virtual ~ResultModifier() {
 	}
@@ -54,6 +54,7 @@ struct OrderByNode {
 
 public:
 	void Serialize(Serializer &serializer);
+	string ToString() const;
 	static OrderByNode Deserialize(Deserializer &source);
 };
 

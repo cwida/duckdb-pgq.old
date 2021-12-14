@@ -16,20 +16,19 @@ namespace duckdb {
 class VectorBuffer;
 
 struct SelectionData {
-	SelectionData(idx_t count) {
+	explicit SelectionData(idx_t count) {
 		owned_data = unique_ptr<sel_t[]>(new sel_t[count]);
 	}
-
 	unique_ptr<sel_t[]> owned_data;
 };
 
 struct SelectionVector {
 	SelectionVector() : sel_vector(nullptr) {
 	}
-	SelectionVector(sel_t *sel) {
+	explicit SelectionVector(sel_t *sel) {
 		Initialize(sel);
 	}
-	SelectionVector(idx_t count) {
+	explicit SelectionVector(idx_t count) {
 		Initialize(count);
 	}
 	SelectionVector(idx_t start, idx_t count) {
@@ -41,7 +40,7 @@ struct SelectionVector {
 	SelectionVector(const SelectionVector &sel_vector) {
 		Initialize(sel_vector);
 	}
-	SelectionVector(buffer_ptr<SelectionData> data) {
+	explicit SelectionVector(buffer_ptr<SelectionData> data) {
 		Initialize(move(data));
 	}
 
@@ -63,9 +62,6 @@ public:
 		sel_vector = other.sel_vector;
 	}
 
-	bool empty() const {
-		return !sel_vector;
-	}
 	void set_index(idx_t idx, idx_t loc) {
 		sel_vector[idx] = loc;
 	}
@@ -75,22 +71,61 @@ public:
 		sel_vector[j] = tmp;
 	}
 	idx_t get_index(idx_t idx) const {
-		return sel_vector[idx];
+		return sel_vector ? sel_vector[idx] : idx;
 	}
 	sel_t *data() {
+		return sel_vector;
+	}
+	const sel_t *data() const {
 		return sel_vector;
 	}
 	buffer_ptr<SelectionData> sel_data() {
 		return selection_data;
 	}
-	buffer_ptr<SelectionData> Slice(const SelectionVector &sel, idx_t count);
+	buffer_ptr<SelectionData> Slice(const SelectionVector &sel, idx_t count) const;
 
 	string ToString(idx_t count = 0) const;
 	void Print(idx_t count = 0) const;
 
+	sel_t &operator[](idx_t index) {
+		return sel_vector[index];
+	}
+
 private:
 	sel_t *sel_vector;
 	buffer_ptr<SelectionData> selection_data;
+};
+
+class OptionalSelection {
+public:
+	explicit inline OptionalSelection(SelectionVector *sel_p) : sel(sel_p) {
+
+		if (sel) {
+			vec.Initialize(sel->data());
+			sel = &vec;
+		}
+	}
+
+	inline operator SelectionVector *() {
+		return sel;
+	}
+
+	inline void Append(idx_t &count, const idx_t idx) {
+		if (sel) {
+			sel->set_index(count, idx);
+		}
+		++count;
+	}
+
+	inline void Advance(idx_t completed) {
+		if (sel) {
+			sel->Initialize(sel->data() + completed);
+		}
+	}
+
+private:
+	SelectionVector *sel;
+	SelectionVector vec;
 };
 
 } // namespace duckdb

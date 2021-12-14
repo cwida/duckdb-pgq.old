@@ -8,21 +8,14 @@
 
 namespace duckdb {
 
-template <class T>
-struct sum_state_t {
-	T value;
-	bool isset;
-};
-
 struct SumSetOperation {
 	template <class STATE>
 	static void Initialize(STATE *state) {
-		state->isset = false;
+		state->Initialize();
 	}
 	template <class STATE>
-	static void Combine(STATE source, STATE *target) {
-		target->isset = source.isset || target->isset;
-		target->value += source.value;
+	static void Combine(const STATE &source, STATE *target) {
+		target->Combine(source);
 	}
 	template <class STATE>
 	static void AddValues(STATE *state, idx_t count) {
@@ -32,9 +25,9 @@ struct SumSetOperation {
 
 struct IntegerSumOperation : public BaseSumOperation<SumSetOperation, RegularAdd> {
 	template <class T, class STATE>
-	static void Finalize(Vector &result, FunctionData *, STATE *state, T *target, nullmask_t &nullmask, idx_t idx) {
+	static void Finalize(Vector &result, FunctionData *, STATE *state, T *target, ValidityMask &mask, idx_t idx) {
 		if (!state->isset) {
-			nullmask[idx] = true;
+			mask.SetInvalid(idx);
 		} else {
 			target[idx] = Hugeint::Convert(state->value);
 		}
@@ -43,20 +36,21 @@ struct IntegerSumOperation : public BaseSumOperation<SumSetOperation, RegularAdd
 
 struct SumToHugeintOperation : public BaseSumOperation<SumSetOperation, HugeintAdd> {
 	template <class T, class STATE>
-	static void Finalize(Vector &result, FunctionData *, STATE *state, T *target, nullmask_t &nullmask, idx_t idx) {
+	static void Finalize(Vector &result, FunctionData *, STATE *state, T *target, ValidityMask &mask, idx_t idx) {
 		if (!state->isset) {
-			nullmask[idx] = true;
+			mask.SetInvalid(idx);
 		} else {
 			target[idx] = state->value;
 		}
 	}
 };
 
-struct NumericSumOperation : public BaseSumOperation<SumSetOperation, RegularAdd> {
+template <class ADD_OPERATOR>
+struct DoubleSumOperation : public BaseSumOperation<SumSetOperation, ADD_OPERATOR> {
 	template <class T, class STATE>
-	static void Finalize(Vector &result, FunctionData *, STATE *state, T *target, nullmask_t &nullmask, idx_t idx) {
+	static void Finalize(Vector &result, FunctionData *, STATE *state, T *target, ValidityMask &mask, idx_t idx) {
 		if (!state->isset) {
-			nullmask[idx] = true;
+			mask.SetInvalid(idx);
 		} else {
 			if (!Value::DoubleIsValid(state->value)) {
 				throw OutOfRangeException("SUM is out of range!");
@@ -66,20 +60,23 @@ struct NumericSumOperation : public BaseSumOperation<SumSetOperation, RegularAdd
 	}
 };
 
+using NumericSumOperation = DoubleSumOperation<RegularAdd>;
+using KahanSumOperation = DoubleSumOperation<KahanAdd>;
+
 struct HugeintSumOperation : public BaseSumOperation<SumSetOperation, RegularAdd> {
 	template <class T, class STATE>
-	static void Finalize(Vector &result, FunctionData *, STATE *state, T *target, nullmask_t &nullmask, idx_t idx) {
+	static void Finalize(Vector &result, FunctionData *, STATE *state, T *target, ValidityMask &mask, idx_t idx) {
 		if (!state->isset) {
-			nullmask[idx] = true;
+			mask.SetInvalid(idx);
 		} else {
 			target[idx] = state->value;
 		}
 	}
 };
 
-unique_ptr<BaseStatistics> sum_propagate_stats(ClientContext &context, BoundAggregateExpression &expr,
-                                               FunctionData *bind_data, vector<unique_ptr<BaseStatistics>> &child_stats,
-                                               NodeStatistics *node_stats) {
+unique_ptr<BaseStatistics> SumPropagateStats(ClientContext &context, BoundAggregateExpression &expr,
+                                             FunctionData *bind_data, vector<unique_ptr<BaseStatistics>> &child_stats,
+                                             NodeStatistics *node_stats) {
 	if (child_stats[0] && node_stats && node_stats->has_max_cardinality) {
 		auto &numeric_stats = (NumericStatistics &)*child_stats[0];
 		if (numeric_stats.min.is_null || numeric_stats.max.is_null) {
@@ -98,7 +95,6 @@ unique_ptr<BaseStatistics> sum_propagate_stats(ClientContext &context, BoundAggr
 			max_positive = numeric_stats.max.GetValueUnsafe<int64_t>();
 			break;
 		default:
-			// unhandled type here
 			throw InternalException("Unsupported type for propagate sum stats");
 		}
 		auto max_sum_negative = max_negative * hugeint_t(node_stats->max_cardinality);
@@ -112,13 +108,13 @@ unique_ptr<BaseStatistics> sum_propagate_stats(ClientContext &context, BoundAggr
 		switch (internal_type) {
 		case PhysicalType::INT32:
 			expr.function =
-			    AggregateFunction::UnaryAggregate<sum_state_t<int64_t>, int32_t, hugeint_t, IntegerSumOperation>(
+			    AggregateFunction::UnaryAggregate<SumState<int64_t>, int32_t, hugeint_t, IntegerSumOperation>(
 			        LogicalType::INTEGER, LogicalType::HUGEINT);
 			expr.function.name = "sum";
 			break;
 		case PhysicalType::INT64:
 			expr.function =
-			    AggregateFunction::UnaryAggregate<sum_state_t<int64_t>, int64_t, hugeint_t, IntegerSumOperation>(
+			    AggregateFunction::UnaryAggregate<SumState<int64_t>, int64_t, hugeint_t, IntegerSumOperation>(
 			        LogicalType::BIGINT, LogicalType::HUGEINT);
 			expr.function.name = "sum";
 			break;
@@ -129,58 +125,69 @@ unique_ptr<BaseStatistics> sum_propagate_stats(ClientContext &context, BoundAggr
 	return nullptr;
 }
 
-AggregateFunction GetSumAggregate(PhysicalType type) {
+AggregateFunction SumFun::GetSumAggregate(PhysicalType type) {
 	switch (type) {
 	case PhysicalType::INT16:
-		return AggregateFunction::UnaryAggregate<sum_state_t<int64_t>, int16_t, hugeint_t, IntegerSumOperation>(
+		return AggregateFunction::UnaryAggregate<SumState<int64_t>, int16_t, hugeint_t, IntegerSumOperation>(
 		    LogicalType::SMALLINT, LogicalType::HUGEINT);
 	case PhysicalType::INT32: {
 		auto function =
-		    AggregateFunction::UnaryAggregate<sum_state_t<hugeint_t>, int32_t, hugeint_t, SumToHugeintOperation>(
+		    AggregateFunction::UnaryAggregate<SumState<hugeint_t>, int32_t, hugeint_t, SumToHugeintOperation>(
 		        LogicalType::INTEGER, LogicalType::HUGEINT);
-		function.statistics = sum_propagate_stats;
+		function.statistics = SumPropagateStats;
 		return function;
 	}
 	case PhysicalType::INT64: {
 		auto function =
-		    AggregateFunction::UnaryAggregate<sum_state_t<hugeint_t>, int64_t, hugeint_t, SumToHugeintOperation>(
+		    AggregateFunction::UnaryAggregate<SumState<hugeint_t>, int64_t, hugeint_t, SumToHugeintOperation>(
 		        LogicalType::BIGINT, LogicalType::HUGEINT);
-		function.statistics = sum_propagate_stats;
+		function.statistics = SumPropagateStats;
 		return function;
 	}
 	case PhysicalType::INT128:
-		return AggregateFunction::UnaryAggregate<sum_state_t<hugeint_t>, hugeint_t, hugeint_t, HugeintSumOperation>(
+		return AggregateFunction::UnaryAggregate<SumState<hugeint_t>, hugeint_t, hugeint_t, HugeintSumOperation>(
 		    LogicalType::HUGEINT, LogicalType::HUGEINT);
 	default:
-		throw NotImplementedException("Unimplemented sum aggregate");
+		throw InternalException("Unimplemented sum aggregate");
 	}
 }
 
-unique_ptr<FunctionData> bind_decimal_sum(ClientContext &context, AggregateFunction &function,
-                                          vector<unique_ptr<Expression>> &arguments) {
+unique_ptr<FunctionData> BindDecimalSum(ClientContext &context, AggregateFunction &function,
+                                        vector<unique_ptr<Expression>> &arguments) {
 	auto decimal_type = arguments[0]->return_type;
-	function = GetSumAggregate(decimal_type.InternalType());
+	function = SumFun::GetSumAggregate(decimal_type.InternalType());
 	function.name = "sum";
 	function.arguments[0] = decimal_type;
-	function.return_type = LogicalType(LogicalTypeId::DECIMAL, Decimal::MAX_WIDTH_DECIMAL, decimal_type.scale());
+	function.return_type = LogicalType::DECIMAL(Decimal::MAX_WIDTH_DECIMAL, DecimalType::GetScale(decimal_type));
 	return nullptr;
 }
 
 void SumFun::RegisterFunction(BuiltinFunctions &set) {
 	AggregateFunctionSet sum("sum");
 	// decimal
-	sum.AddFunction(AggregateFunction({LogicalType::DECIMAL}, LogicalType::DECIMAL, nullptr, nullptr, nullptr, nullptr,
-	                                  nullptr, nullptr, bind_decimal_sum));
+	sum.AddFunction(AggregateFunction({LogicalTypeId::DECIMAL}, LogicalTypeId::DECIMAL, nullptr, nullptr, nullptr,
+	                                  nullptr, nullptr, nullptr, BindDecimalSum));
 	sum.AddFunction(GetSumAggregate(PhysicalType::INT16));
 	sum.AddFunction(GetSumAggregate(PhysicalType::INT32));
 	sum.AddFunction(GetSumAggregate(PhysicalType::INT64));
 	sum.AddFunction(GetSumAggregate(PhysicalType::INT128));
-	// float sums to float
-	// FIXME: implement http://ic.ese.upenn.edu/pdf/parallel_fpaccum_tc2016.pdf for parallel FP sums
-	sum.AddFunction(AggregateFunction::UnaryAggregate<sum_state_t<double>, double, double, NumericSumOperation>(
+	sum.AddFunction(AggregateFunction::UnaryAggregate<SumState<double>, double, double, NumericSumOperation>(
 	    LogicalType::DOUBLE, LogicalType::DOUBLE));
 
 	set.AddFunction(sum);
+
+	// fsum
+	AggregateFunctionSet fsum("fsum");
+	fsum.AddFunction(AggregateFunction::UnaryAggregate<KahanSumState, double, double, KahanSumOperation>(
+	    LogicalType::DOUBLE, LogicalType::DOUBLE));
+
+	set.AddFunction(fsum);
+
+	fsum.name = "kahan_sum";
+	set.AddFunction(fsum);
+
+	fsum.name = "sumKahan";
+	set.AddFunction(fsum);
 }
 
 } // namespace duckdb

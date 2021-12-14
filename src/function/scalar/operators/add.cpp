@@ -7,6 +7,7 @@
 #include "duckdb/common/types/interval.hpp"
 #include "duckdb/common/types/timestamp.hpp"
 #include "duckdb/common/types/hugeint.hpp"
+#include "duckdb/common/windows_undefs.hpp"
 
 #include <limits>
 
@@ -42,6 +43,20 @@ interval_t AddOperator::Operation(interval_t left, interval_t right) {
 }
 
 template <>
+date_t AddOperator::Operation(date_t left, int32_t right) {
+	int32_t result;
+	if (!TryAddOperator::Operation(left.days, right, result)) {
+		throw OutOfRangeException("Date out of range");
+	}
+	return date_t(result);
+}
+
+template <>
+date_t AddOperator::Operation(int32_t left, date_t right) {
+	return AddOperator::Operation<date_t, int32_t, date_t>(right, left);
+}
+
+template <>
 date_t AddOperator::Operation(date_t left, interval_t right) {
 	date_t result;
 	if (right.months != 0) {
@@ -57,15 +72,20 @@ date_t AddOperator::Operation(date_t left, interval_t right) {
 			year--;
 			month += Interval::MONTHS_PER_YEAR;
 		}
+		day = MinValue<int32_t>(day, Date::MonthDays(year, month));
 		result = Date::FromDate(year, month, day);
 	} else {
 		result = left;
 	}
 	if (right.days != 0) {
-		result += right.days;
+		if (!TryAddOperator::Operation(result.days, right.days, result.days)) {
+			throw OutOfRangeException("Date out of range");
+		}
 	}
 	if (right.micros != 0) {
-		result += right.micros / Interval::MICROS_PER_DAY;
+		if (!TryAddOperator::Operation(result.days, int32_t(right.micros / Interval::MICROS_PER_DAY), result.days)) {
+			throw OutOfRangeException("Date out of range");
+		}
 	}
 	return result;
 }
@@ -75,13 +95,26 @@ date_t AddOperator::Operation(interval_t left, date_t right) {
 	return AddOperator::Operation<date_t, interval_t, date_t>(right, left);
 }
 
+dtime_t AddIntervalToTimeOperation(dtime_t left, interval_t right, date_t &date) {
+	int64_t diff = right.micros - ((right.micros / Interval::MICROS_PER_DAY) * Interval::MICROS_PER_DAY);
+	left += diff;
+	if (left.micros >= Interval::MICROS_PER_DAY) {
+		left.micros -= Interval::MICROS_PER_DAY;
+		date.days++;
+	} else if (left.micros < 0) {
+		left.micros += Interval::MICROS_PER_DAY;
+		date.days--;
+	}
+	return left;
+}
+
 template <>
 timestamp_t AddOperator::Operation(timestamp_t left, interval_t right) {
 	date_t date;
 	dtime_t time;
 	Timestamp::Convert(left, date, time);
 	auto new_date = AddOperator::Operation<date_t, interval_t, date_t>(date, right);
-	auto new_time = AddTimeOperator::Operation<dtime_t, interval_t, dtime_t>(time, right);
+	auto new_time = AddIntervalToTimeOperation(time, right, new_date);
 	return Timestamp::FromDatetime(new_date, new_time);
 }
 
@@ -154,10 +187,6 @@ bool TryAddOperator::Operation(int64_t left, int64_t right, int64_t &result) {
 		return false;
 	}
 #endif
-	// FIXME: this check can be removed if we get rid of NullValue<T>
-	if (result == std::numeric_limits<int64_t>::min()) {
-		return false;
-	}
 	return true;
 }
 
@@ -197,7 +226,7 @@ bool TryDecimalAdd::Operation(int64_t left, int64_t right, int64_t &result) {
 template <>
 bool TryDecimalAdd::Operation(hugeint_t left, hugeint_t right, hugeint_t &result) {
 	result = left + right;
-	if (result <= -Hugeint::PowersOfTen[38] || result >= Hugeint::PowersOfTen[38]) {
+	if (result <= -Hugeint::POWERS_OF_TEN[38] || result >= Hugeint::POWERS_OF_TEN[38]) {
 		return false;
 	}
 	return true;
@@ -217,14 +246,8 @@ hugeint_t DecimalAddOverflowCheck::Operation(hugeint_t left, hugeint_t right) {
 //===--------------------------------------------------------------------===//
 template <>
 dtime_t AddTimeOperator::Operation(dtime_t left, interval_t right) {
-	int64_t diff = right.micros - ((right.micros / Interval::MICROS_PER_DAY) * Interval::MICROS_PER_DAY);
-	left += diff;
-	if (left >= Interval::MICROS_PER_DAY) {
-		left -= Interval::MICROS_PER_DAY;
-	} else if (left < 0) {
-		left += Interval::MICROS_PER_DAY;
-	}
-	return left;
+	date_t date(0);
+	return AddIntervalToTimeOperation(left, right, date);
 }
 
 template <>

@@ -12,17 +12,12 @@ IndexCatalogEntry::~IndexCatalogEntry() {
 	if (!info || !index) {
 		return;
 	}
-	for (idx_t i = 0; i < info->indexes.size(); i++) {
-		if (info->indexes[i].get() == index) {
-			info->indexes.erase(info->indexes.begin() + i);
-			break;
-		}
-	}
+	info->indexes.RemoveIndex(index);
 }
 
 string IndexCatalogEntry::ToSQL() {
-	if (sql.size() == 0) {
-		throw NotImplementedException("Cannot convert INDEX to SQL because it was not created with a SQL statement");
+	if (sql.empty()) {
+		throw InternalException("Cannot convert INDEX to SQL because it was not created with a SQL statement");
 	}
 	return sql;
 }

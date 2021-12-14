@@ -16,14 +16,18 @@ namespace duckdb {
 //! PhysicalAlter represents an ALTER TABLE command
 class PhysicalAlter : public PhysicalOperator {
 public:
-	PhysicalAlter(unique_ptr<AlterInfo> info)
-	    : PhysicalOperator(PhysicalOperatorType::ALTER, {LogicalType::BOOLEAN}), info(move(info)) {
+	explicit PhysicalAlter(unique_ptr<AlterInfo> info, idx_t estimated_cardinality)
+	    : PhysicalOperator(PhysicalOperatorType::ALTER, {LogicalType::BOOLEAN}, estimated_cardinality),
+	      info(move(info)) {
 	}
 
 	unique_ptr<AlterInfo> info;
 
 public:
-	void GetChunkInternal(ExecutionContext &context, DataChunk &chunk, PhysicalOperatorState *state) override;
+	// Source interface
+	unique_ptr<GlobalSourceState> GetGlobalSourceState(ClientContext &context) const override;
+	void GetData(ExecutionContext &context, DataChunk &chunk, GlobalSourceState &gstate,
+	             LocalSourceState &lstate) const override;
 };
 
 } // namespace duckdb

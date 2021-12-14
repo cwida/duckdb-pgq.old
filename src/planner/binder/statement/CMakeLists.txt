@@ -10,10 +10,13 @@ add_library_unity(
   bind_explain.cpp
   bind_export.cpp
   bind_insert.cpp
+  bind_load.cpp
   bind_pragma.cpp
   bind_relation.cpp
   bind_select.cpp
+  bind_set.cpp
   bind_simple.cpp
+  bind_summarize.cpp
   bind_update.cpp
   bind_vacuum.cpp
   bind_show.cpp)

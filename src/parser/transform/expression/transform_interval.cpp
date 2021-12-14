@@ -6,9 +6,7 @@
 
 namespace duckdb {
 
-using namespace duckdb_libpgquery;
-
-unique_ptr<ParsedExpression> Transformer::TransformInterval(PGIntervalConstant *node) {
+unique_ptr<ParsedExpression> Transformer::TransformInterval(duckdb_libpgquery::PGIntervalConstant *node) {
 	// handle post-fix notation of INTERVAL
 
 	// three scenarios
@@ -17,35 +15,35 @@ unique_ptr<ParsedExpression> Transformer::TransformInterval(PGIntervalConstant *
 	// interval int year
 	unique_ptr<ParsedExpression> expr;
 	switch (node->val_type) {
-	case T_PGAExpr:
+	case duckdb_libpgquery::T_PGAExpr:
 		expr = TransformExpression(node->eval);
 		break;
-	case T_PGString:
+	case duckdb_libpgquery::T_PGString:
 		expr = make_unique<ConstantExpression>(Value(node->sval));
 		break;
-	case T_PGInteger:
+	case duckdb_libpgquery::T_PGInteger:
 		expr = make_unique<ConstantExpression>(Value(node->ival));
 		break;
 	default:
-		throw ParserException("Unsupported interval transformation");
+		throw InternalException("Unsupported interval transformation");
 	}
 
 	if (!node->typmods) {
 		return make_unique<CastExpression>(LogicalType::INTERVAL, move(expr));
 	}
 
-	int mask = ((PGAConst *)node->typmods->head->data.ptr_value)->val.val.ival;
+	int32_t mask = ((duckdb_libpgquery::PGAConst *)node->typmods->head->data.ptr_value)->val.val.ival;
 	// these seemingly random constants are from datetime.hpp
 	// they are copied here to avoid having to include this header
 	// the bitshift is from the function INTERVAL_MASK in the parser
-	constexpr int MONTH_MASK = 1 << 1;
-	constexpr int YEAR_MASK = 1 << 2;
-	constexpr int DAY_MASK = 1 << 3;
-	constexpr int HOUR_MASK = 1 << 10;
-	constexpr int MINUTE_MASK = 1 << 11;
-	constexpr int SECOND_MASK = 1 << 12;
-	constexpr int MILLISECOND_MASK = 1 << 13;
-	constexpr int MICROSECOND_MASK = 1 << 14;
+	constexpr int32_t MONTH_MASK = 1 << 1;
+	constexpr int32_t YEAR_MASK = 1 << 2;
+	constexpr int32_t DAY_MASK = 1 << 3;
+	constexpr int32_t HOUR_MASK = 1 << 10;
+	constexpr int32_t MINUTE_MASK = 1 << 11;
+	constexpr int32_t SECOND_MASK = 1 << 12;
+	constexpr int32_t MILLISECOND_MASK = 1 << 13;
+	constexpr int32_t MICROSECOND_MASK = 1 << 14;
 
 	// we need to check certain combinations
 	// because certain interval masks (e.g. INTERVAL '10' HOURS TO DAYS) set multiple bits
@@ -108,14 +106,14 @@ unique_ptr<ParsedExpression> Transformer::TransformInterval(PGIntervalConstant *
 		fname = "to_microseconds";
 		target_type = LogicalType::BIGINT;
 	} else {
-		throw ParserException("Unsupported interval post-fix");
+		throw InternalException("Unsupported interval post-fix");
 	}
 	// first push a cast to the target type
 	expr = make_unique<CastExpression>(target_type, move(expr));
 	// now push the operation
 	vector<unique_ptr<ParsedExpression>> children;
 	children.push_back(move(expr));
-	return make_unique<FunctionExpression>(fname, children);
+	return make_unique<FunctionExpression>(fname, move(children));
 }
 
 } // namespace duckdb

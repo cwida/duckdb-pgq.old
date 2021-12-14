@@ -8,15 +8,17 @@
 #include "duckdb/common/types/cast_helpers.hpp"
 #include "duckdb/common/operator/add.hpp"
 #include "duckdb/common/operator/multiply.hpp"
+#include "duckdb/common/string_util.hpp"
 
 namespace duckdb {
 
-bool Interval::FromString(string str, interval_t &result) {
-	return Interval::FromCString(str.c_str(), str.size(), result);
+bool Interval::FromString(const string &str, interval_t &result) {
+	string error_message;
+	return Interval::FromCString(str.c_str(), str.size(), result, &error_message, false);
 }
 
 template <class T>
-void interval_try_addition(T &target, int64_t input, int64_t multiplier) {
+void IntervalTryAddition(T &target, int64_t input, int64_t multiplier) {
 	int64_t addition;
 	if (!TryMultiplyOperator::Operation<int64_t, int64_t, int64_t>(input, multiplier, addition)) {
 		throw OutOfRangeException("interval value is out of range");
@@ -27,13 +29,14 @@ void interval_try_addition(T &target, int64_t input, int64_t multiplier) {
 	}
 }
 
-bool Interval::FromCString(const char *str, idx_t len, interval_t &result) {
+bool Interval::FromCString(const char *str, idx_t len, interval_t &result, string *error_message, bool strict) {
 	idx_t pos = 0;
 	idx_t start_pos;
 	bool negative;
 	bool found_any = false;
 	int64_t number;
 	DatePartSpecifier specifier;
+	string specifier_str;
 
 	result.days = 0;
 	result.micros = 0;
@@ -105,8 +108,12 @@ interval_parse_number:
 	goto end_of_string;
 interval_parse_time : {
 	// parse the remainder of the time as a Time type
-	dtime_t time = Time::FromCString(str + start_pos, len);
-	result.micros += time;
+	dtime_t time;
+	idx_t pos;
+	if (!Time::TryConvertTime(str + start_pos, len, pos, time)) {
+		return false;
+	}
+	result.micros += time.micros;
 	found_any = true;
 	goto end_of_string;
 }
@@ -131,67 +138,72 @@ interval_parse_identifier:
 			break;
 		}
 	}
-	specifier = GetDatePartSpecifier(string(str + start_pos, pos - start_pos));
+	specifier_str = string(str + start_pos, pos - start_pos);
+	if (!TryGetDatePartSpecifier(specifier_str, specifier)) {
+		HandleCastError::AssignError(StringUtil::Format("extract specifier \"%s\" not recognized", specifier_str),
+		                             error_message);
+		return false;
+	}
 	// add the specifier to the interval
 	switch (specifier) {
 	case DatePartSpecifier::MILLENNIUM:
-		interval_try_addition<int32_t>(result.months, number, MONTHS_PER_MILLENIUM);
+		IntervalTryAddition<int32_t>(result.months, number, MONTHS_PER_MILLENIUM);
 		break;
 	case DatePartSpecifier::CENTURY:
-		interval_try_addition<int32_t>(result.months, number, MONTHS_PER_CENTURY);
+		IntervalTryAddition<int32_t>(result.months, number, MONTHS_PER_CENTURY);
 		break;
 	case DatePartSpecifier::DECADE:
-		interval_try_addition<int32_t>(result.months, number, MONTHS_PER_DECADE);
+		IntervalTryAddition<int32_t>(result.months, number, MONTHS_PER_DECADE);
 		break;
 	case DatePartSpecifier::YEAR:
-		interval_try_addition<int32_t>(result.months, number, MONTHS_PER_YEAR);
+		IntervalTryAddition<int32_t>(result.months, number, MONTHS_PER_YEAR);
 		break;
 	case DatePartSpecifier::QUARTER:
-		interval_try_addition<int32_t>(result.months, number, MONTHS_PER_QUARTER);
+		IntervalTryAddition<int32_t>(result.months, number, MONTHS_PER_QUARTER);
 		break;
 	case DatePartSpecifier::MONTH:
-		interval_try_addition<int32_t>(result.months, number, 1);
+		IntervalTryAddition<int32_t>(result.months, number, 1);
 		break;
 	case DatePartSpecifier::DAY:
-		interval_try_addition<int32_t>(result.days, number, 1);
+		IntervalTryAddition<int32_t>(result.days, number, 1);
 		break;
 	case DatePartSpecifier::WEEK:
-		interval_try_addition<int32_t>(result.days, number, DAYS_PER_WEEK);
+		IntervalTryAddition<int32_t>(result.days, number, DAYS_PER_WEEK);
 		break;
 	case DatePartSpecifier::MICROSECONDS:
-		interval_try_addition<int64_t>(result.micros, number, 1);
+		IntervalTryAddition<int64_t>(result.micros, number, 1);
 		break;
 	case DatePartSpecifier::MILLISECONDS:
-		interval_try_addition<int64_t>(result.micros, number, MICROS_PER_MSEC);
+		IntervalTryAddition<int64_t>(result.micros, number, MICROS_PER_MSEC);
 		break;
 	case DatePartSpecifier::SECOND:
-		interval_try_addition<int64_t>(result.micros, number, MICROS_PER_SEC);
+		IntervalTryAddition<int64_t>(result.micros, number, MICROS_PER_SEC);
 		break;
 	case DatePartSpecifier::MINUTE:
-		interval_try_addition<int64_t>(result.micros, number, MICROS_PER_MINUTE);
+		IntervalTryAddition<int64_t>(result.micros, number, MICROS_PER_MINUTE);
 		break;
 	case DatePartSpecifier::HOUR:
-		interval_try_addition<int64_t>(result.micros, number, MICROS_PER_HOUR);
+		IntervalTryAddition<int64_t>(result.micros, number, MICROS_PER_HOUR);
 		break;
 	default:
+		HandleCastError::AssignError(
+		    StringUtil::Format("extract specifier \"%s\" not supported for interval", specifier_str), error_message);
 		return false;
 	}
 	found_any = true;
 	goto standard_interval;
 interval_parse_ago:
-	// parse the "ago" string at the end of the
+	D_ASSERT(str[pos] == 'a' || str[pos] == 'A');
+	// parse the "ago" string at the end of the interval
 	if (len - pos < 3) {
 		return false;
 	}
-	if (!(str[pos] == 'a' || str[pos == 'A'])) {
+	pos++;
+	if (!(str[pos] == 'g' || str[pos] == 'G')) {
 		return false;
 	}
 	pos++;
-	if (!(str[pos] == 'g' || str[pos == 'G'])) {
-		return false;
-	}
-	pos++;
-	if (!(str[pos] == 'o' || str[pos == 'O'])) {
+	if (!(str[pos] == 'o' || str[pos] == 'O')) {
 		return false;
 	}
 	pos++;
@@ -219,13 +231,60 @@ posix_interval:
 	return false;
 }
 
-string Interval::ToString(interval_t interval) {
+string Interval::ToString(const interval_t &interval) {
 	char buffer[70];
 	idx_t length = IntervalToStringCast::Format(interval, buffer);
 	return string(buffer, length);
 }
 
-interval_t Interval::GetDifference(timestamp_t timestamp_1, timestamp_t timestamp_2) {
+int64_t Interval::GetMilli(const interval_t &val) {
+	int64_t milli_month, milli_day, milli;
+	if (!TryMultiplyOperator::Operation((int64_t)val.months, Interval::MICROS_PER_MONTH / 1000, milli_month)) {
+		throw ConversionException("Could not convert Interval to Milliseconds");
+	}
+	if (!TryMultiplyOperator::Operation((int64_t)val.days, Interval::MICROS_PER_DAY / 1000, milli_day)) {
+		throw ConversionException("Could not convert Interval to Milliseconds");
+	}
+	milli = val.micros / 1000;
+	if (!TryAddOperator::Operation<int64_t, int64_t, int64_t>(milli, milli_month, milli)) {
+		throw ConversionException("Could not convert Interval to Milliseconds");
+	}
+	if (!TryAddOperator::Operation<int64_t, int64_t, int64_t>(milli, milli_day, milli)) {
+		throw ConversionException("Could not convert Interval to Milliseconds");
+	}
+	return milli;
+}
+
+int64_t Interval::GetMicro(const interval_t &val) {
+	int64_t micro_month, micro_day, micro_total;
+	micro_total = val.micros;
+	if (!TryMultiplyOperator::Operation((int64_t)val.months, MICROS_PER_MONTH, micro_month)) {
+		throw ConversionException("Could not convert Month to Microseconds");
+	}
+	if (!TryMultiplyOperator::Operation((int64_t)val.days, MICROS_PER_DAY, micro_day)) {
+		throw ConversionException("Could not convert Day to Microseconds");
+	}
+	if (!TryAddOperator::Operation<int64_t, int64_t, int64_t>(micro_total, micro_month, micro_total)) {
+		throw ConversionException("Could not convert Interval to Microseconds");
+	}
+	if (!TryAddOperator::Operation<int64_t, int64_t, int64_t>(micro_total, micro_day, micro_total)) {
+		throw ConversionException("Could not convert Interval to Microseconds");
+	}
+
+	return micro_total;
+}
+
+int64_t Interval::GetNanoseconds(const interval_t &val) {
+	int64_t nano;
+	const auto micro_total = GetMicro(val);
+	if (!TryMultiplyOperator::Operation(micro_total, NANOS_PER_MICRO, nano)) {
+		throw ConversionException("Could not convert Interval to Nanoseconds");
+	}
+
+	return nano;
+}
+
+interval_t Interval::GetAge(timestamp_t timestamp_1, timestamp_t timestamp_2) {
 	date_t date1, date2;
 	dtime_t time1, time2;
 
@@ -242,7 +301,7 @@ interval_t Interval::GetDifference(timestamp_t timestamp_1, timestamp_t timestam
 	auto month_diff = month1 - month2;
 	auto day_diff = day1 - day2;
 
-	// and from time extract hours, minutes, seconds and miliseconds
+	// and from time extract hours, minutes, seconds and milliseconds
 	int32_t hour1, min1, sec1, micros1;
 	int32_t hour2, min2, sec2, micros2;
 	Time::Convert(time1, hour1, min1, sec1, micros1);
@@ -254,6 +313,7 @@ interval_t Interval::GetDifference(timestamp_t timestamp_1, timestamp_t timestam
 	auto micros_diff = micros1 - micros2;
 
 	// flip sign if necessary
+	bool sign_flipped = false;
 	if (timestamp_1 < timestamp_2) {
 		year_diff = -year_diff;
 		month_diff = -month_diff;
@@ -262,6 +322,7 @@ interval_t Interval::GetDifference(timestamp_t timestamp_1, timestamp_t timestam
 		min_diff = -min_diff;
 		sec_diff = -sec_diff;
 		micros_diff = -micros_diff;
+		sign_flipped = true;
 	}
 	// now propagate any negative field into the next higher field
 	while (micros_diff < 0) {
@@ -282,10 +343,10 @@ interval_t Interval::GetDifference(timestamp_t timestamp_1, timestamp_t timestam
 	}
 	while (day_diff < 0) {
 		if (timestamp_1 < timestamp_2) {
-			day_diff += Date::IsLeapYear(year1) ? Date::LeapDays[month1] : Date::NormalDays[month1];
+			day_diff += Date::IsLeapYear(year1) ? Date::LEAP_DAYS[month1] : Date::NORMAL_DAYS[month1];
 			month_diff--;
 		} else {
-			day_diff += Date::IsLeapYear(year2) ? Date::LeapDays[month2] : Date::NormalDays[month2];
+			day_diff += Date::IsLeapYear(year2) ? Date::LEAP_DAYS[month2] : Date::NORMAL_DAYS[month2];
 			month_diff--;
 		}
 	}
@@ -295,7 +356,7 @@ interval_t Interval::GetDifference(timestamp_t timestamp_1, timestamp_t timestam
 	}
 
 	// recover sign if necessary
-	if (timestamp_1 < timestamp_2 && (month_diff != 0 || day_diff != 0)) {
+	if (sign_flipped) {
 		year_diff = -year_diff;
 		month_diff = -month_diff;
 		day_diff = -day_diff;
@@ -307,12 +368,28 @@ interval_t Interval::GetDifference(timestamp_t timestamp_1, timestamp_t timestam
 	interval_t interval;
 	interval.months = year_diff * MONTHS_PER_YEAR + month_diff;
 	interval.days = day_diff;
-	interval.micros = Time::FromTime(hour_diff, min_diff, sec_diff, micros_diff);
+	interval.micros = Time::FromTime(hour_diff, min_diff, sec_diff, micros_diff).micros;
 
 	return interval;
 }
 
-static void normalize_interval_entries(interval_t input, int64_t &months, int64_t &days, int64_t &micros) {
+interval_t Interval::GetDifference(timestamp_t timestamp_1, timestamp_t timestamp_2) {
+	const auto us_1 = Timestamp::GetEpochMicroSeconds(timestamp_1);
+	const auto us_2 = Timestamp::GetEpochMicroSeconds(timestamp_2);
+	const auto delta_us = us_1 - us_2;
+	return FromMicro(delta_us);
+}
+
+interval_t Interval::FromMicro(int64_t delta_us) {
+	interval_t result;
+	result.months = 0;
+	result.days = delta_us / Interval::MICROS_PER_DAY;
+	result.micros = delta_us % Interval::MICROS_PER_DAY;
+
+	return result;
+}
+
+static void NormalizeIntervalEntries(interval_t input, int64_t &months, int64_t &days, int64_t &micros) {
 	int64_t extra_months_d = input.days / Interval::DAYS_PER_MONTH;
 	int64_t extra_months_micros = input.micros / Interval::MICROS_PER_MONTH;
 	input.days -= extra_months_d * Interval::DAYS_PER_MONTH;
@@ -333,8 +410,8 @@ bool Interval::Equals(interval_t left, interval_t right) {
 bool Interval::GreaterThan(interval_t left, interval_t right) {
 	int64_t lmonths, ldays, lmicros;
 	int64_t rmonths, rdays, rmicros;
-	normalize_interval_entries(left, lmonths, ldays, lmicros);
-	normalize_interval_entries(right, rmonths, rdays, rmicros);
+	NormalizeIntervalEntries(left, lmonths, ldays, lmicros);
+	NormalizeIntervalEntries(right, rmonths, rdays, rmicros);
 
 	if (lmonths > rmonths) {
 		return true;

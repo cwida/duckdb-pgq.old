@@ -1,6 +1,7 @@
 #include "duckdb/execution/expression_executor.hpp"
 
 #include "duckdb/common/vector_operations/vector_operations.hpp"
+#include "duckdb/execution/execution_context.hpp"
 #include "duckdb/storage/statistics/base_statistics.hpp"
 
 namespace duckdb {
@@ -8,39 +9,39 @@ namespace duckdb {
 ExpressionExecutor::ExpressionExecutor() {
 }
 
-ExpressionExecutor::ExpressionExecutor(Expression *expression) {
+ExpressionExecutor::ExpressionExecutor(const Expression *expression) : ExpressionExecutor() {
 	D_ASSERT(expression);
 	AddExpression(*expression);
 }
 
-ExpressionExecutor::ExpressionExecutor(Expression &expression) {
+ExpressionExecutor::ExpressionExecutor(const Expression &expression) : ExpressionExecutor() {
 	AddExpression(expression);
 }
 
-ExpressionExecutor::ExpressionExecutor(vector<unique_ptr<Expression>> &exprs) {
+ExpressionExecutor::ExpressionExecutor(const vector<unique_ptr<Expression>> &exprs) : ExpressionExecutor() {
 	D_ASSERT(exprs.size() > 0);
 	for (auto &expr : exprs) {
 		AddExpression(*expr);
 	}
 }
 
-void ExpressionExecutor::AddExpression(Expression &expr) {
+void ExpressionExecutor::AddExpression(const Expression &expr) {
 	expressions.push_back(&expr);
-	auto state = make_unique<ExpressionExecutorState>();
+	auto state = make_unique<ExpressionExecutorState>(expr.ToString());
 	Initialize(expr, *state);
 	states.push_back(move(state));
 }
 
-void ExpressionExecutor::Initialize(Expression &expression, ExpressionExecutorState &state) {
+void ExpressionExecutor::Initialize(const Expression &expression, ExpressionExecutorState &state) {
 	state.root_state = InitializeState(expression, state);
 	state.executor = this;
 }
 
 void ExpressionExecutor::Execute(DataChunk *input, DataChunk &result) {
 	SetChunk(input);
-
 	D_ASSERT(expressions.size() == result.ColumnCount());
 	D_ASSERT(!expressions.empty());
+
 	for (idx_t i = 0; i < expressions.size(); i++) {
 		ExecuteExpression(i, result.data[i]);
 	}
@@ -56,7 +57,10 @@ void ExpressionExecutor::ExecuteExpression(DataChunk &input, Vector &result) {
 idx_t ExpressionExecutor::SelectExpression(DataChunk &input, SelectionVector &sel) {
 	D_ASSERT(expressions.size() == 1);
 	SetChunk(&input);
-	return Select(*expressions[0], states[0]->root_state.get(), nullptr, input.size(), &sel, nullptr);
+	states[0]->profiler.BeginSample();
+	idx_t selected_tuples = Select(*expressions[0], states[0]->root_state.get(), nullptr, input.size(), &sel, nullptr);
+	states[0]->profiler.EndSample(chunk ? chunk->size() : 0);
+	return selected_tuples;
 }
 
 void ExpressionExecutor::ExecuteExpression(Vector &result) {
@@ -66,11 +70,13 @@ void ExpressionExecutor::ExecuteExpression(Vector &result) {
 
 void ExpressionExecutor::ExecuteExpression(idx_t expr_idx, Vector &result) {
 	D_ASSERT(expr_idx < expressions.size());
-	D_ASSERT(result.type == expressions[expr_idx]->return_type);
+	D_ASSERT(result.GetType().id() == expressions[expr_idx]->return_type.id());
+	states[expr_idx]->profiler.BeginSample();
 	Execute(*expressions[expr_idx], states[expr_idx]->root_state.get(), nullptr, chunk ? chunk->size() : 1, result);
+	states[expr_idx]->profiler.EndSample(chunk ? chunk->size() : 0);
 }
 
-Value ExpressionExecutor::EvaluateScalar(Expression &expr) {
+Value ExpressionExecutor::EvaluateScalar(const Expression &expr) {
 	D_ASSERT(expr.IsFoldable());
 	// use an ExpressionExecutor to execute the expression
 	ExpressionExecutor executor(expr);
@@ -78,91 +84,107 @@ Value ExpressionExecutor::EvaluateScalar(Expression &expr) {
 	Vector result(expr.return_type);
 	executor.ExecuteExpression(result);
 
-	D_ASSERT(result.vector_type == VectorType::CONSTANT_VECTOR);
+	D_ASSERT(result.GetVectorType() == VectorType::CONSTANT_VECTOR);
 	auto result_value = result.GetValue(0);
-	D_ASSERT(result_value.type() == expr.return_type);
+	D_ASSERT(result_value.type().InternalType() == expr.return_type.InternalType());
 	return result_value;
 }
 
-void ExpressionExecutor::Verify(Expression &expr, Vector &vector, idx_t count) {
-	D_ASSERT(expr.return_type == vector.type);
-	vector.Verify(count);
-	if (expr.stats) {
-		expr.stats->Verify(vector, count);
+bool ExpressionExecutor::TryEvaluateScalar(const Expression &expr, Value &result) {
+	try {
+		result = EvaluateScalar(expr);
+		return true;
+	} catch (...) {
+		return false;
 	}
 }
 
-unique_ptr<ExpressionState> ExpressionExecutor::InitializeState(Expression &expr, ExpressionExecutorState &state) {
+void ExpressionExecutor::Verify(const Expression &expr, Vector &vector, idx_t count) {
+	D_ASSERT(expr.return_type.id() == vector.GetType().id());
+	vector.Verify(count);
+	if (expr.verification_stats) {
+		expr.verification_stats->Verify(vector, count);
+	}
+}
+
+unique_ptr<ExpressionState> ExpressionExecutor::InitializeState(const Expression &expr,
+                                                                ExpressionExecutorState &state) {
 	switch (expr.expression_class) {
 	case ExpressionClass::BOUND_REF:
-		return InitializeState((BoundReferenceExpression &)expr, state);
+		return InitializeState((const BoundReferenceExpression &)expr, state);
 	case ExpressionClass::BOUND_BETWEEN:
-		return InitializeState((BoundBetweenExpression &)expr, state);
+		return InitializeState((const BoundBetweenExpression &)expr, state);
 	case ExpressionClass::BOUND_CASE:
-		return InitializeState((BoundCaseExpression &)expr, state);
+		return InitializeState((const BoundCaseExpression &)expr, state);
 	case ExpressionClass::BOUND_CAST:
-		return InitializeState((BoundCastExpression &)expr, state);
+		return InitializeState((const BoundCastExpression &)expr, state);
 	case ExpressionClass::BOUND_COMPARISON:
-		return InitializeState((BoundComparisonExpression &)expr, state);
+		return InitializeState((const BoundComparisonExpression &)expr, state);
 	case ExpressionClass::BOUND_CONJUNCTION:
-		return InitializeState((BoundConjunctionExpression &)expr, state);
+		return InitializeState((const BoundConjunctionExpression &)expr, state);
 	case ExpressionClass::BOUND_CONSTANT:
-		return InitializeState((BoundConstantExpression &)expr, state);
+		return InitializeState((const BoundConstantExpression &)expr, state);
 	case ExpressionClass::BOUND_FUNCTION:
-		return InitializeState((BoundFunctionExpression &)expr, state);
+		return InitializeState((const BoundFunctionExpression &)expr, state);
 	case ExpressionClass::BOUND_OPERATOR:
-		return InitializeState((BoundOperatorExpression &)expr, state);
+		return InitializeState((const BoundOperatorExpression &)expr, state);
 	case ExpressionClass::BOUND_PARAMETER:
-		return InitializeState((BoundParameterExpression &)expr, state);
+		return InitializeState((const BoundParameterExpression &)expr, state);
 	default:
-		throw NotImplementedException("Attempting to initialize state of expression of unknown type!");
+		throw InternalException("Attempting to initialize state of expression of unknown type!");
 	}
 }
 
-void ExpressionExecutor::Execute(Expression &expr, ExpressionState *state, const SelectionVector *sel, idx_t count,
-                                 Vector &result) {
+void ExpressionExecutor::Execute(const Expression &expr, ExpressionState *state, const SelectionVector *sel,
+                                 idx_t count, Vector &result) {
+#ifdef DEBUG
+	if (result.GetVectorType() == VectorType::FLAT_VECTOR) {
+		D_ASSERT(FlatVector::Validity(result).CheckAllValid(count));
+	}
+#endif
+
 	if (count == 0) {
 		return;
 	}
 	switch (expr.expression_class) {
 	case ExpressionClass::BOUND_BETWEEN:
-		Execute((BoundBetweenExpression &)expr, state, sel, count, result);
+		Execute((const BoundBetweenExpression &)expr, state, sel, count, result);
 		break;
 	case ExpressionClass::BOUND_REF:
-		Execute((BoundReferenceExpression &)expr, state, sel, count, result);
+		Execute((const BoundReferenceExpression &)expr, state, sel, count, result);
 		break;
 	case ExpressionClass::BOUND_CASE:
-		Execute((BoundCaseExpression &)expr, state, sel, count, result);
+		Execute((const BoundCaseExpression &)expr, state, sel, count, result);
 		break;
 	case ExpressionClass::BOUND_CAST:
-		Execute((BoundCastExpression &)expr, state, sel, count, result);
+		Execute((const BoundCastExpression &)expr, state, sel, count, result);
 		break;
 	case ExpressionClass::BOUND_COMPARISON:
-		Execute((BoundComparisonExpression &)expr, state, sel, count, result);
+		Execute((const BoundComparisonExpression &)expr, state, sel, count, result);
 		break;
 	case ExpressionClass::BOUND_CONJUNCTION:
-		Execute((BoundConjunctionExpression &)expr, state, sel, count, result);
+		Execute((const BoundConjunctionExpression &)expr, state, sel, count, result);
 		break;
 	case ExpressionClass::BOUND_CONSTANT:
-		Execute((BoundConstantExpression &)expr, state, sel, count, result);
+		Execute((const BoundConstantExpression &)expr, state, sel, count, result);
 		break;
 	case ExpressionClass::BOUND_FUNCTION:
-		Execute((BoundFunctionExpression &)expr, state, sel, count, result);
+		Execute((const BoundFunctionExpression &)expr, state, sel, count, result);
 		break;
 	case ExpressionClass::BOUND_OPERATOR:
-		Execute((BoundOperatorExpression &)expr, state, sel, count, result);
+		Execute((const BoundOperatorExpression &)expr, state, sel, count, result);
 		break;
 	case ExpressionClass::BOUND_PARAMETER:
-		Execute((BoundParameterExpression &)expr, state, sel, count, result);
+		Execute((const BoundParameterExpression &)expr, state, sel, count, result);
 		break;
 	default:
-		throw NotImplementedException("Attempting to execute expression of unknown type!");
+		throw InternalException("Attempting to execute expression of unknown type!");
 	}
 	Verify(expr, result, count);
 }
 
-idx_t ExpressionExecutor::Select(Expression &expr, ExpressionState *state, const SelectionVector *sel, idx_t count,
-                                 SelectionVector *true_sel, SelectionVector *false_sel) {
+idx_t ExpressionExecutor::Select(const Expression &expr, ExpressionState *state, const SelectionVector *sel,
+                                 idx_t count, SelectionVector *true_sel, SelectionVector *false_sel) {
 	if (count == 0) {
 		return 0;
 	}
@@ -181,14 +203,14 @@ idx_t ExpressionExecutor::Select(Expression &expr, ExpressionState *state, const
 }
 
 template <bool NO_NULL, bool HAS_TRUE_SEL, bool HAS_FALSE_SEL>
-static inline idx_t DefaultSelectLoop(const SelectionVector *bsel, uint8_t *__restrict bdata, nullmask_t &nullmask,
+static inline idx_t DefaultSelectLoop(const SelectionVector *bsel, uint8_t *__restrict bdata, ValidityMask &mask,
                                       const SelectionVector *sel, idx_t count, SelectionVector *true_sel,
                                       SelectionVector *false_sel) {
 	idx_t true_count = 0, false_count = 0;
 	for (idx_t i = 0; i < count; i++) {
 		auto bidx = bsel->get_index(i);
 		auto result_idx = sel->get_index(i);
-		if (bdata[bidx] > 0 && (NO_NULL || !nullmask[bidx])) {
+		if (bdata[bidx] > 0 && (NO_NULL || mask.RowIsValid(bidx))) {
 			if (HAS_TRUE_SEL) {
 				true_sel->set_index(true_count++, result_idx);
 			}
@@ -209,19 +231,19 @@ template <bool NO_NULL>
 static inline idx_t DefaultSelectSwitch(VectorData &idata, const SelectionVector *sel, idx_t count,
                                         SelectionVector *true_sel, SelectionVector *false_sel) {
 	if (true_sel && false_sel) {
-		return DefaultSelectLoop<NO_NULL, true, true>(idata.sel, (uint8_t *)idata.data, *idata.nullmask, sel, count,
+		return DefaultSelectLoop<NO_NULL, true, true>(idata.sel, (uint8_t *)idata.data, idata.validity, sel, count,
 		                                              true_sel, false_sel);
 	} else if (true_sel) {
-		return DefaultSelectLoop<NO_NULL, true, false>(idata.sel, (uint8_t *)idata.data, *idata.nullmask, sel, count,
+		return DefaultSelectLoop<NO_NULL, true, false>(idata.sel, (uint8_t *)idata.data, idata.validity, sel, count,
 		                                               true_sel, false_sel);
 	} else {
 		D_ASSERT(false_sel);
-		return DefaultSelectLoop<NO_NULL, false, true>(idata.sel, (uint8_t *)idata.data, *idata.nullmask, sel, count,
+		return DefaultSelectLoop<NO_NULL, false, true>(idata.sel, (uint8_t *)idata.data, idata.validity, sel, count,
 		                                               true_sel, false_sel);
 	}
 }
 
-idx_t ExpressionExecutor::DefaultSelect(Expression &expr, ExpressionState *state, const SelectionVector *sel,
+idx_t ExpressionExecutor::DefaultSelect(const Expression &expr, ExpressionState *state, const SelectionVector *sel,
                                         idx_t count, SelectionVector *true_sel, SelectionVector *false_sel) {
 	// generic selection of boolean expression:
 	// resolve the true/false expression first
@@ -233,13 +255,17 @@ idx_t ExpressionExecutor::DefaultSelect(Expression &expr, ExpressionState *state
 	VectorData idata;
 	intermediate.Orrify(count, idata);
 	if (!sel) {
-		sel = &FlatVector::IncrementalSelectionVector;
+		sel = &FlatVector::INCREMENTAL_SELECTION_VECTOR;
 	}
-	if (idata.nullmask->any()) {
+	if (!idata.validity.AllValid()) {
 		return DefaultSelectSwitch<false>(idata, sel, count, true_sel, false_sel);
 	} else {
 		return DefaultSelectSwitch<true>(idata, sel, count, true_sel, false_sel);
 	}
+}
+
+vector<unique_ptr<ExpressionExecutorState>> &ExpressionExecutor::GetStates() {
+	return states;
 }
 
 } // namespace duckdb

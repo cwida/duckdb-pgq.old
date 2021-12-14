@@ -11,8 +11,10 @@
 #include "duckdb/catalog/catalog_entry/sequence_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/table_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/table_function_catalog_entry.hpp"
+#include "duckdb/catalog/catalog_entry/type_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/view_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/property_graph_catalog_entry.hpp"
+#include "duckdb/catalog/default/default_functions.hpp"
 #include "duckdb/catalog/default/default_views.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/parser/parsed_data/alter_table_info.hpp"
@@ -24,10 +26,12 @@
 #include "duckdb/parser/parsed_data/create_schema_info.hpp"
 #include "duckdb/parser/parsed_data/create_sequence_info.hpp"
 #include "duckdb/parser/parsed_data/create_table_function_info.hpp"
+#include "duckdb/parser/parsed_data/create_type_info.hpp"
 #include "duckdb/parser/parsed_data/create_view_info.hpp"
 #include "duckdb/parser/parsed_data/create_property_graph_info.hpp"
 #include "duckdb/parser/parsed_data/drop_info.hpp"
 #include "duckdb/planner/parsed_data/bound_create_table_info.hpp"
+#include "duckdb/storage/data_table.hpp"
 #include "duckdb/transaction/transaction.hpp"
 
 #include <algorithm>
@@ -35,11 +39,12 @@
 
 namespace duckdb {
 
-SchemaCatalogEntry::SchemaCatalogEntry(Catalog *catalog, string name, bool internal)
-    : CatalogEntry(CatalogType::SCHEMA_ENTRY, catalog, name),
+SchemaCatalogEntry::SchemaCatalogEntry(Catalog *catalog, string name_p, bool internal)
+    : CatalogEntry(CatalogType::SCHEMA_ENTRY, catalog, move(name_p)),
       tables(*catalog, make_unique<DefaultViewGenerator>(*catalog, this)), indexes(*catalog), table_functions(*catalog),
-      copy_functions(*catalog), pragma_functions(*catalog), functions(*catalog), sequences(*catalog),
-      collations(*catalog) {
+      copy_functions(*catalog), pragma_functions(*catalog),
+      functions(*catalog, make_unique<DefaultFunctionGenerator>(*catalog, this)), sequences(*catalog),
+      collations(*catalog), types(*catalog) {
 	this->internal = internal;
 }
 
@@ -91,8 +96,14 @@ CatalogEntry *SchemaCatalogEntry::CreateSequence(ClientContext &context, CreateS
 	return AddEntry(context, move(sequence), info->on_conflict);
 }
 
+CatalogEntry *SchemaCatalogEntry::CreateType(ClientContext &context, CreateTypeInfo *info) {
+	auto sequence = make_unique<TypeCatalogEntry>(catalog, this, info);
+	return AddEntry(context, move(sequence), info->on_conflict);
+}
+
 CatalogEntry *SchemaCatalogEntry::CreateTable(ClientContext &context, BoundCreateTableInfo *info) {
 	auto table = make_unique<TableCatalogEntry>(catalog, this, info);
+	table->storage->info->cardinality = table->storage->GetTotalRows();
 	return AddEntry(context, move(table), info->Base().on_conflict, info->dependencies);
 }
 
@@ -151,7 +162,7 @@ CatalogEntry *SchemaCatalogEntry::CreateFunction(ClientContext &context, CreateF
 		                                                                          (CreateAggregateFunctionInfo *)info);
 		break;
 	default:
-		throw CatalogException("Unknown function type \"%s\"", CatalogTypeToString(info->type));
+		throw InternalException("Unknown function type \"%s\"", CatalogTypeToString(info->type));
 	}
 	return AddEntry(context, move(function), info->on_conflict);
 }
@@ -185,32 +196,13 @@ void SchemaCatalogEntry::Alter(ClientContext &context, AlterInfo *info) {
 	}
 }
 
-CatalogEntry *SchemaCatalogEntry::GetEntry(ClientContext &context, CatalogType type, const string &entry_name,
-                                           bool if_exists, QueryErrorContext error_context) {
-	auto &set = GetCatalogSet(type);
-
-	auto entry = set.GetEntry(context, entry_name);
-	if (!entry) {
-		if (!if_exists) {
-			auto entry = set.SimilarEntry(context, entry_name);
-			string did_you_mean;
-			if (!entry.empty()) {
-				did_you_mean = "\nDid you mean \"" + entry + "\"?";
-			}
-			throw CatalogException(error_context.FormatError("%s with name %s does not exist!%s",
-			                                                 CatalogTypeToString(type), entry_name, did_you_mean));
-		}
-		return nullptr;
-	}
-	return entry;
-}
-
-void SchemaCatalogEntry::Scan(ClientContext &context, CatalogType type, std::function<void(CatalogEntry *)> callback) {
+void SchemaCatalogEntry::Scan(ClientContext &context, CatalogType type,
+                              const std::function<void(CatalogEntry *)> &callback) {
 	auto &set = GetCatalogSet(type);
 	set.Scan(context, callback);
 }
 
-void SchemaCatalogEntry::Scan(CatalogType type, std::function<void(CatalogEntry *)> callback) {
+void SchemaCatalogEntry::Scan(CatalogType type, const std::function<void(CatalogEntry *)> &callback) {
 	auto &set = GetCatalogSet(type);
 	set.Scan(callback);
 }
@@ -253,8 +245,10 @@ CatalogSet &SchemaCatalogEntry::GetCatalogSet(CatalogType type) {
 		return sequences;
 	case CatalogType::COLLATION_ENTRY:
 		return collations;
+	case CatalogType::TYPE_ENTRY:
+		return types;
 	default:
-		throw CatalogException("Unsupported catalog type in schema");
+		throw InternalException("Unsupported catalog type in schema");
 	}
 }
 

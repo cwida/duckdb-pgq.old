@@ -14,10 +14,11 @@ namespace duckdb {
 
 class DefaultSchemaGenerator : public DefaultGenerator {
 public:
-	DefaultSchemaGenerator(Catalog &catalog);
+	explicit DefaultSchemaGenerator(Catalog &catalog);
 
 public:
 	unique_ptr<CatalogEntry> CreateDefaultEntry(ClientContext &context, const string &entry_name) override;
+	vector<string> GetDefaultEntries() override;
 };
 
 } // namespace duckdb

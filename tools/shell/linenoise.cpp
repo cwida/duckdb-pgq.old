@@ -116,7 +116,7 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include "linenoise.h"
-#include "utf8proc_wrapper.h"
+#include "utf8proc_wrapper.hpp"
 
 #if defined(_WIN32) || defined(__WIN32__) || defined(WIN32)
 // disable highlighting on windows (for now?)
@@ -211,8 +211,6 @@ FILE *lndebug_fp = NULL;
 	do {                                                                                                               \
 		if (lndebug_fp == NULL) {                                                                                      \
 			lndebug_fp = fopen("/tmp/lndebug.txt", "a");                                                               \
-			fprintf(lndebug_fp, "[%d %d %d] p: %d, rows: %d, rpos: %d, max: %d, oldmax: %d\n", (int)l->len,            \
-			        (int)l->pos, (int)l->oldpos, plen, rows, rpos, (int)l->maxrows, old_rows);                         \
 		}                                                                                                              \
 		fprintf(lndebug_fp, ", " __VA_ARGS__);                                                                         \
 		fflush(lndebug_fp);                                                                                            \
@@ -226,6 +224,9 @@ FILE *lndebug_fp = NULL;
 /* Set if to use or not the multi line mode. */
 void linenoiseSetMultiLine(int ml) {
 	mlmode = ml;
+	if (ml) {
+		keyword = "\033[32m";
+	}
 }
 
 /* Return true if the terminal name is in the list of terminals we know are
@@ -545,34 +546,36 @@ void refreshShowHints(struct abuf *ab, struct linenoiseState *l, int plen) {
 }
 
 size_t linenoiseComputeRenderWidth(const char *buf, size_t len) {
-	if (utf8proc_is_valid(buf, len)) {
-		// utf8 in prompt, get render width
-		size_t cpos = 0;
-		size_t render_width = 0;
-		while (cpos < len) {
-			size_t char_render_width = utf8proc_render_width(buf, len, cpos);
-			cpos = utf8proc_next_grapheme_cluster(buf, len, cpos);
-			render_width += char_render_width;
+	// utf8 in prompt, get render width
+	size_t cpos = 0;
+	size_t render_width = 0;
+	int sz;
+	while (cpos < len) {
+		if (duckdb::Utf8Proc::UTF8ToCodepoint(buf + cpos, sz) < 0) {
+			cpos++;
+			render_width++;
+			continue;
 		}
-		return render_width;
-	} else {
-		// invalid utf8 in prompt, use length in bytes
-		return len;
+
+		size_t char_render_width = duckdb::Utf8Proc::RenderWidth(buf, len, cpos);
+		cpos = duckdb::Utf8Proc::NextGraphemeCluster(buf, len, cpos);
+		render_width += char_render_width;
 	}
+	return render_width;
 }
 
 int linenoiseGetRenderPosition(const char *buf, size_t len, int max_width, int *n) {
-	if (utf8proc_is_valid(buf, len)) {
+	if (duckdb::Utf8Proc::IsValid(buf, len)) {
 		// utf8 in prompt, get render width
 		size_t cpos = 0;
 		size_t render_width = 0;
 		while (cpos < len) {
-			size_t char_render_width = utf8proc_render_width(buf, len, cpos);
+			size_t char_render_width = duckdb::Utf8Proc::RenderWidth(buf, len, cpos);
 			if (int(render_width + char_render_width) > max_width) {
 				*n = render_width;
 				return cpos;
 			}
-			cpos = utf8proc_next_grapheme_cluster(buf, len, cpos);
+			cpos = duckdb::Utf8Proc::NextGraphemeCluster(buf, len, cpos);
 			render_width += char_render_width;
 		}
 		*n = render_width;
@@ -648,6 +651,12 @@ int linenoiseParseOption(const char **azArg, int nArg, const char **out_error) {
 		}
 		*out_error = "Expected usage: .constantcode [terminal_code]";
 		return 1;
+	} else if (strcmp(azArg[0], "multiline") == 0) {
+		linenoiseSetMultiLine(1);
+		return 1;
+	} else if (strcmp(azArg[0], "singleline") == 0) {
+		linenoiseSetMultiLine(0);
+		return 1;
 	}
 #endif
 	return 0;
@@ -708,7 +717,7 @@ static void refreshSingleLine(struct linenoiseState *l) {
 	std::string highlight_buffer;
 #endif
 
-	if (utf8proc_is_valid(l->buf, l->len)) {
+	if (duckdb::Utf8Proc::IsValid(l->buf, l->len)) {
 		// utf8 in prompt, handle rendering
 		size_t remaining_render_width = l->cols - plen - 1;
 		size_t start_pos = 0;
@@ -716,9 +725,9 @@ static void refreshSingleLine(struct linenoiseState *l) {
 		size_t prev_pos = 0;
 		size_t total_render_width = 0;
 		while (cpos < len) {
-			size_t char_render_width = utf8proc_render_width(buf, len, cpos);
+			size_t char_render_width = duckdb::Utf8Proc::RenderWidth(buf, len, cpos);
 			prev_pos = cpos;
-			cpos = utf8proc_next_grapheme_cluster(buf, len, cpos);
+			cpos = duckdb::Utf8Proc::NextGraphemeCluster(buf, len, cpos);
 			total_render_width += cpos - prev_pos;
 			if (total_render_width >= remaining_render_width) {
 				// character does not fit anymore! we need to figure something out
@@ -729,8 +738,8 @@ static void refreshSingleLine(struct linenoiseState *l) {
 				} else {
 					// we did not pass the cursor yet! remove characters from the start until it fits again
 					while (total_render_width >= remaining_render_width) {
-						size_t start_char_width = utf8proc_render_width(buf, len, start_pos);
-						size_t new_start = utf8proc_next_grapheme_cluster(buf, len, start_pos);
+						size_t start_char_width = duckdb::Utf8Proc::RenderWidth(buf, len, start_pos);
+						size_t new_start = duckdb::Utf8Proc::NextGraphemeCluster(buf, len, start_pos);
 						total_render_width -= new_start - start_pos;
 						start_pos = new_start;
 						render_pos -= start_char_width;
@@ -791,18 +800,35 @@ static void refreshSingleLine(struct linenoiseState *l) {
  * cursor position, and number of columns of the terminal. */
 static void refreshMultiLine(struct linenoiseState *l) {
 	char seq[64];
-	int plen = strlen(l->prompt);
-	int rows = (plen + l->len + l->cols - 1) / l->cols; /* rows used by current buf. */
-	int rpos = (plen + l->oldpos + l->cols) / l->cols;  /* cursor relative row. */
-	int rpos2;                                          /* rpos after refresh. */
-	int col;                                            /* colum position, zero-based. */
+	int plen = linenoiseComputeRenderWidth(l->prompt, strlen(l->prompt));
+	int total_len = linenoiseComputeRenderWidth(l->buf, l->len);
+	int cursor_old_pos = linenoiseComputeRenderWidth(l->buf, l->oldpos);
+	int cursor_pos = linenoiseComputeRenderWidth(l->buf, l->pos);
+	int rows = (plen + total_len + l->cols - 1) / l->cols;  /* rows used by current buf. */
+	int rpos = (plen + cursor_old_pos + l->cols) / l->cols; /* cursor relative row. */
+	int rpos2;                                              /* rpos after refresh. */
+	int col;                                                /* colum position, zero-based. */
 	int old_rows = l->maxrows;
 	int fd = l->ofd, j;
 	struct abuf ab;
+	std::string highlight_buffer;
+	auto buf = l->buf;
+	auto len = l->len;
 
 	/* Update maxrows if needed. */
-	if (rows > (int)l->maxrows)
+	if (rows > (int)l->maxrows) {
 		l->maxrows = rows;
+	}
+
+	if (duckdb::Utf8Proc::IsValid(l->buf, l->len)) {
+#ifndef DISABLE_HIGHLIGHT
+		if (enableHighlighting) {
+			highlight_buffer = highlightText(buf, len, 0, len);
+			buf = (char *)highlight_buffer.c_str();
+			len = highlight_buffer.size();
+		}
+#endif
+	}
 
 	/* First step: clear all the lines used before. To do so start by
 	 * going to the last row. */
@@ -815,27 +841,27 @@ static void refreshMultiLine(struct linenoiseState *l) {
 
 	/* Now for every row clear it, go up. */
 	for (j = 0; j < old_rows - 1; j++) {
-		lndebug("clear+up");
+		lndebug("clear+up", 0);
 		snprintf(seq, 64, "\r\x1b[0K\x1b[1A");
 		abAppend(&ab, seq, strlen(seq));
 	}
 
 	/* Clean the top line. */
-	lndebug("clear");
+	lndebug("clear", 0);
 	snprintf(seq, 64, "\r\x1b[0K");
 	abAppend(&ab, seq, strlen(seq));
 
 	/* Write the prompt and the current buffer content */
 	abAppend(&ab, l->prompt, strlen(l->prompt));
-	abAppend(&ab, l->buf, l->len);
+	abAppend(&ab, buf, len);
 
-	/* Show hits if any. */
+	/* Show hints if any. */
 	refreshShowHints(&ab, l, plen);
 
 	/* If we are at the very end of the screen with our prompt, we need to
 	 * emit a newline and move the prompt to the first column. */
-	if (l->pos && l->pos == l->len && (l->pos + plen) % l->cols == 0) {
-		lndebug("<newline>");
+	if (l->pos && l->pos == len && (cursor_pos + plen) % l->cols == 0) {
+		lndebug("<newline>", 0);
 		abAppend(&ab, "\n", 1);
 		snprintf(seq, 64, "\r");
 		abAppend(&ab, seq, strlen(seq));
@@ -845,7 +871,7 @@ static void refreshMultiLine(struct linenoiseState *l) {
 	}
 
 	/* Move cursor to right position. */
-	rpos2 = (plen + l->pos + l->cols) / l->cols; /* current cursor relative row. */
+	rpos2 = (plen + cursor_pos + l->cols) / l->cols; /* current cursor relative row. */
 	lndebug("rpos2 %d", rpos2);
 
 	/* Go up till we reach the expected positon. */
@@ -856,7 +882,7 @@ static void refreshMultiLine(struct linenoiseState *l) {
 	}
 
 	/* Set column. */
-	col = (plen + (int)l->pos) % (int)l->cols;
+	col = (plen + (int)cursor_pos) % (int)l->cols;
 	lndebug("set col %d", 1 + col);
 	if (col)
 		snprintf(seq, 64, "\r\x1b[%dC", col);
@@ -864,7 +890,7 @@ static void refreshMultiLine(struct linenoiseState *l) {
 		snprintf(seq, 64, "\r");
 	abAppend(&ab, seq, strlen(seq));
 
-	lndebug("\n");
+	lndebug("\n", 0);
 	l->oldpos = l->pos;
 
 	if (write(fd, ab.b, ab.len) == -1) {
@@ -913,11 +939,11 @@ int linenoiseEditInsert(struct linenoiseState *l, char c) {
 }
 
 static size_t prev_char(struct linenoiseState *l) {
-	return utf8proc_prev_grapheme_cluster(l->buf, l->len, l->pos);
+	return duckdb::Utf8Proc::PreviousGraphemeCluster(l->buf, l->len, l->pos);
 }
 
 static size_t next_char(struct linenoiseState *l) {
-	return utf8proc_next_grapheme_cluster(l->buf, l->len, l->pos);
+	return duckdb::Utf8Proc::NextGraphemeCluster(l->buf, l->len, l->pos);
 }
 
 /* Move cursor on the left. */
@@ -934,6 +960,41 @@ void linenoiseEditMoveRight(struct linenoiseState *l) {
 		l->pos = next_char(l);
 		refreshLine(l);
 	}
+}
+
+bool characterIsWordBoundary(char c) {
+	if (c >= 'a' && c <= 'z') {
+		return false;
+	}
+	if (c >= 'A' && c <= 'Z') {
+		return false;
+	}
+	if (c >= '0' && c <= '9') {
+		return false;
+	}
+	return true;
+}
+
+/* Move cursor to the next left word. */
+void linenoiseEditMoveWordLeft(struct linenoiseState *l) {
+	if (l->pos == 0) {
+		return;
+	}
+	do {
+		l->pos = prev_char(l);
+	} while (l->pos > 0 && !characterIsWordBoundary(l->buf[l->pos]));
+	refreshLine(l);
+}
+
+/* Move cursor on the right. */
+void linenoiseEditMoveWordRight(struct linenoiseState *l) {
+	if (l->pos == l->len) {
+		return;
+	}
+	do {
+		l->pos = next_char(l);
+	} while (l->pos != l->len && !characterIsWordBoundary(l->buf[l->pos]));
+	refreshLine(l);
 }
 
 /* Move cursor to the start of the line. */
@@ -1004,7 +1065,7 @@ void linenoiseEditBackspace(struct linenoiseState *l) {
 	}
 }
 
-/* Delete the previosu word, maintaining the cursor at the start of the
+/* Delete the previous word, maintaining the cursor at the start of the
  * current word. */
 void linenoiseEditDeletePrevWord(struct linenoiseState *l) {
 	size_t old_pos = l->pos;
@@ -1058,7 +1119,7 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
 	while (1) {
 		char c;
 		int nread;
-		char seq[3];
+		char seq[5];
 
 		nread = read(l.ifd, &c, 1);
 		if (nread <= 0)
@@ -1077,13 +1138,15 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
 				continue;
 		}
 
+		lndebug("%d\n", (int)c);
 		switch (c) {
 		case 10:
 		case ENTER: /* enter */
 			history_len--;
 			free(history[history_len]);
-			if (mlmode)
+			if (mlmode) {
 				linenoiseEditMoveEnd(&l);
+			}
 			if (hintsCallback) {
 				/* Force a refresh without hints to leave the previous
 				 * line as the user typed it after a newline. */
@@ -1093,9 +1156,23 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
 				hintsCallback = hc;
 			}
 			return (int)l.len;
-		case CTRL_C: /* ctrl-c */
-			errno = EAGAIN;
-			return -1;
+		case CTRL_C: /* ctrl-c */ {
+			l.buf[0] = '\3';
+			// we keep track of whether or not the line was empty by writing \3 to the second position of the line
+			// this is because at a higher level we might want to know if we pressed ctrl c to clear the line
+			// or to exit the process
+			if (l.len > 0) {
+				l.buf[1] = '\3';
+				l.buf[2] = '\0';
+				l.pos = 2;
+				l.len = 2;
+			} else {
+				l.buf[1] = '\0';
+				l.pos = 1;
+				l.len = 1;
+			}
+			return (int)l.len;
+		}
 		case BACKSPACE: /* backspace */
 		case 8:         /* ctrl-h */
 			linenoiseEditBackspace(&l);
@@ -1142,8 +1219,17 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
 			 * chars at different times. */
 			if (read(l.ifd, seq, 1) == -1)
 				break;
+			if (seq[0] == 'b') {
+				linenoiseEditMoveWordLeft(&l);
+				break;
+			} else if (seq[0] == 'f') {
+				linenoiseEditMoveWordRight(&l);
+				break;
+			}
+			// lndebug("seq0: %d\n", seq[0]);
 			if (read(l.ifd, seq + 1, 1) == -1)
 				break;
+			// lndebug("seq1: %d\n", seq[1]);
 
 			/* ESC [ sequences. */
 			if (seq[0] == '[') {
@@ -1153,10 +1239,39 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
 						break;
 					if (seq[2] == '~') {
 						switch (seq[1]) {
+						case '1':
+							linenoiseEditMoveHome(&l);
+							break;
 						case '3': /* Delete key. */
 							linenoiseEditDelete(&l);
 							break;
+						case '4':
+							linenoiseEditMoveEnd(&l);
+							break;
+						case '8':
+							linenoiseEditMoveEnd(&l);
+							break;
+						default:
+							lndebug("unrecognized escape sequence (~) %d", seq[1]);
+							break;
 						}
+					} else if (seq[2] == ';') {
+						// read 2 extra bytes
+						if (read(l.ifd, seq + 3, 2) == -1)
+							break;
+						if (memcmp(seq, "[1;5C", 5) == 0) {
+							// [1;5C: move word right
+							linenoiseEditMoveWordRight(&l);
+						} else if (memcmp(seq, "[1;5D", 5) == 0) {
+							// [1;5D: move word left
+							linenoiseEditMoveWordLeft(&l);
+						} else {
+							lndebug("unrecognized escape sequence (;) %d", seq[1]);
+						}
+					} else if (seq[1] == '5' && seq[2] == 'C') {
+						linenoiseEditMoveWordRight(&l);
+					} else if (seq[1] == '5' && seq[2] == 'D') {
+						linenoiseEditMoveWordLeft(&l);
 					}
 				} else {
 					switch (seq[1]) {
@@ -1178,10 +1293,12 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
 					case 'F': /* End*/
 						linenoiseEditMoveEnd(&l);
 						break;
+					default:
+						lndebug("unrecognized escape sequence (seq[1]) %d", seq[1]);
+						break;
 					}
 				}
 			}
-
 			/* ESC O sequences. */
 			else if (seq[0] == 'O') {
 				switch (seq[1]) {
@@ -1190,6 +1307,15 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
 					break;
 				case 'F': /* End*/
 					linenoiseEditMoveEnd(&l);
+					break;
+				case 'c':
+					linenoiseEditMoveWordRight(&l);
+					break;
+				case 'd':
+					linenoiseEditMoveWordLeft(&l);
+					break;
+				default:
+					lndebug("unrecognized escape sequence (O) %d", seq[1]);
 					break;
 				}
 			}
@@ -1217,10 +1343,12 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
 		case CTRL_W: /* ctrl+w, delete previous word */
 			linenoiseEditDeletePrevWord(&l);
 			break;
-		default:
-			if (linenoiseEditInsert(&l, c))
+		default: {
+			if (linenoiseEditInsert(&l, c)) {
 				return -1;
+			}
 			break;
+		}
 		}
 	}
 	return l.len;

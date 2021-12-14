@@ -1,21 +1,34 @@
 #include "column_reader.hpp"
 #include "parquet_timestamp.hpp"
 #include "utf8proc_wrapper.hpp"
+#include "parquet_reader.hpp"
+
+#include "boolean_column_reader.hpp"
+#include "callback_column_reader.hpp"
+#include "decimal_column_reader.hpp"
+#include "list_column_reader.hpp"
+#include "string_column_reader.hpp"
+#include "struct_column_reader.hpp"
+#include "templated_column_reader.hpp"
 
 #include "snappy.h"
 #include "miniz_wrapper.hpp"
 #include "zstd.h"
 #include <iostream>
 
+#include "duckdb.hpp"
+#ifndef DUCKDB_AMALGAMATION
+#include "duckdb/common/types/blob.hpp"
 #include "duckdb/common/types/chunk_collection.hpp"
+#endif
 
 namespace duckdb {
 
-using parquet::format::CompressionCodec;
-using parquet::format::ConvertedType;
-using parquet::format::Encoding;
-using parquet::format::PageType;
-using parquet::format::Type;
+using duckdb_parquet::format::CompressionCodec;
+using duckdb_parquet::format::ConvertedType;
+using duckdb_parquet::format::Encoding;
+using duckdb_parquet::format::PageType;
+using duckdb_parquet::format::Type;
 
 const uint32_t RleBpDecoder::BITPACK_MASKS[] = {
     0,       1,       3,        7,        15,       31,        63,        127,       255,        511,       1023,
@@ -24,51 +37,63 @@ const uint32_t RleBpDecoder::BITPACK_MASKS[] = {
 
 const uint8_t RleBpDecoder::BITPACK_DLEN = 8;
 
+ColumnReader::ColumnReader(ParquetReader &reader, LogicalType type_p, const SchemaElement &schema_p, idx_t file_idx_p,
+                           idx_t max_define_p, idx_t max_repeat_p)
+    : schema(schema_p), file_idx(file_idx_p), max_define(max_define_p), max_repeat(max_repeat_p), reader(reader),
+      type(move(type_p)), page_rows_available(0) {
+
+	// dummies for Skip()
+	none_filter.none();
+	dummy_define.resize(reader.allocator, STANDARD_VECTOR_SIZE);
+	dummy_repeat.resize(reader.allocator, STANDARD_VECTOR_SIZE);
+}
+
 ColumnReader::~ColumnReader() {
 }
 
-unique_ptr<ColumnReader> ColumnReader::CreateReader(LogicalType type_p, const SchemaElement &schema_p, idx_t file_idx_p,
-                                                    idx_t max_define, idx_t max_repeat) {
+unique_ptr<ColumnReader> ColumnReader::CreateReader(ParquetReader &reader, const LogicalType &type_p,
+                                                    const SchemaElement &schema_p, idx_t file_idx_p, idx_t max_define,
+                                                    idx_t max_repeat) {
 	switch (type_p.id()) {
 	case LogicalTypeId::BOOLEAN:
-		return make_unique<BooleanColumnReader>(type_p, schema_p, file_idx_p, max_define, max_repeat);
+		return make_unique<BooleanColumnReader>(reader, type_p, schema_p, file_idx_p, max_define, max_repeat);
 	case LogicalTypeId::UTINYINT:
 		return make_unique<TemplatedColumnReader<uint8_t, TemplatedParquetValueConversion<uint32_t>>>(
-		    type_p, schema_p, file_idx_p, max_define, max_repeat);
+		    reader, type_p, schema_p, file_idx_p, max_define, max_repeat);
 	case LogicalTypeId::USMALLINT:
 		return make_unique<TemplatedColumnReader<uint16_t, TemplatedParquetValueConversion<uint32_t>>>(
-		    type_p, schema_p, file_idx_p, max_define, max_repeat);
+		    reader, type_p, schema_p, file_idx_p, max_define, max_repeat);
 	case LogicalTypeId::UINTEGER:
 		return make_unique<TemplatedColumnReader<uint32_t, TemplatedParquetValueConversion<uint32_t>>>(
-		    type_p, schema_p, file_idx_p, max_define, max_repeat);
+		    reader, type_p, schema_p, file_idx_p, max_define, max_repeat);
 	case LogicalTypeId::UBIGINT:
 		return make_unique<TemplatedColumnReader<uint64_t, TemplatedParquetValueConversion<uint64_t>>>(
-		    type_p, schema_p, file_idx_p, max_define, max_repeat);
+		    reader, type_p, schema_p, file_idx_p, max_define, max_repeat);
 	case LogicalTypeId::INTEGER:
 		return make_unique<TemplatedColumnReader<int32_t, TemplatedParquetValueConversion<int32_t>>>(
-		    type_p, schema_p, file_idx_p, max_define, max_repeat);
+		    reader, type_p, schema_p, file_idx_p, max_define, max_repeat);
 	case LogicalTypeId::BIGINT:
 		return make_unique<TemplatedColumnReader<int64_t, TemplatedParquetValueConversion<int64_t>>>(
-		    type_p, schema_p, file_idx_p, max_define, max_repeat);
+		    reader, type_p, schema_p, file_idx_p, max_define, max_repeat);
 	case LogicalTypeId::FLOAT:
 		return make_unique<TemplatedColumnReader<float, TemplatedParquetValueConversion<float>>>(
-		    type_p, schema_p, file_idx_p, max_define, max_repeat);
+		    reader, type_p, schema_p, file_idx_p, max_define, max_repeat);
 	case LogicalTypeId::DOUBLE:
 		return make_unique<TemplatedColumnReader<double, TemplatedParquetValueConversion<double>>>(
-		    type_p, schema_p, file_idx_p, max_define, max_repeat);
+		    reader, type_p, schema_p, file_idx_p, max_define, max_repeat);
 	case LogicalTypeId::TIMESTAMP:
 		switch (schema_p.type) {
 		case Type::INT96:
-			return make_unique<CallbackColumnReader<Int96, timestamp_t, impala_timestamp_to_timestamp_t>>(
-			    type_p, schema_p, file_idx_p, max_define, max_repeat);
+			return make_unique<CallbackColumnReader<Int96, timestamp_t, ImpalaTimestampToTimestamp>>(
+			    reader, type_p, schema_p, file_idx_p, max_define, max_repeat);
 		case Type::INT64:
 			switch (schema_p.converted_type) {
 			case ConvertedType::TIMESTAMP_MICROS:
-				return make_unique<CallbackColumnReader<int64_t, timestamp_t, parquet_timestamp_micros_to_timestamp>>(
-				    type_p, schema_p, file_idx_p, max_define, max_repeat);
+				return make_unique<CallbackColumnReader<int64_t, timestamp_t, ParquetTimestampMicrosToTimestamp>>(
+				    reader, type_p, schema_p, file_idx_p, max_define, max_repeat);
 			case ConvertedType::TIMESTAMP_MILLIS:
-				return make_unique<CallbackColumnReader<int64_t, timestamp_t, parquet_timestamp_ms_to_timestamp>>(
-				    type_p, schema_p, file_idx_p, max_define, max_repeat);
+				return make_unique<CallbackColumnReader<int64_t, timestamp_t, ParquetTimestampMsToTimestamp>>(
+				    reader, type_p, schema_p, file_idx_p, max_define, max_repeat);
 			default:
 				break;
 			}
@@ -77,22 +102,26 @@ unique_ptr<ColumnReader> ColumnReader::CreateReader(LogicalType type_p, const Sc
 		}
 		break;
 	case LogicalTypeId::DATE:
-		return make_unique<CallbackColumnReader<int32_t, date_t, parquet_int_to_date>>(type_p, schema_p, file_idx_p,
-		                                                                               max_define, max_repeat);
+		return make_unique<CallbackColumnReader<int32_t, date_t, ParquetIntToDate>>(reader, type_p, schema_p,
+		                                                                            file_idx_p, max_define, max_repeat);
 	case LogicalTypeId::BLOB:
 	case LogicalTypeId::VARCHAR:
-		return make_unique<StringColumnReader>(type_p, schema_p, file_idx_p, max_define, max_repeat);
+		return make_unique<StringColumnReader>(reader, type_p, schema_p, file_idx_p, max_define, max_repeat);
 	case LogicalTypeId::DECIMAL:
 		// we have to figure out what kind of int we need
 		switch (type_p.InternalType()) {
 		case PhysicalType::INT16:
-			return make_unique<DecimalColumnReader<int16_t>>(type_p, schema_p, file_idx_p, max_define, max_repeat);
+			return make_unique<DecimalColumnReader<int16_t>>(reader, type_p, schema_p, file_idx_p, max_define,
+			                                                 max_repeat);
 		case PhysicalType::INT32:
-			return make_unique<DecimalColumnReader<int32_t>>(type_p, schema_p, file_idx_p, max_define, max_repeat);
+			return make_unique<DecimalColumnReader<int32_t>>(reader, type_p, schema_p, file_idx_p, max_define,
+			                                                 max_repeat);
 		case PhysicalType::INT64:
-			return make_unique<DecimalColumnReader<int64_t>>(type_p, schema_p, file_idx_p, max_define, max_repeat);
+			return make_unique<DecimalColumnReader<int64_t>>(reader, type_p, schema_p, file_idx_p, max_define,
+			                                                 max_repeat);
 		case PhysicalType::INT128:
-			return make_unique<DecimalColumnReader<hugeint_t>>(type_p, schema_p, file_idx_p, max_define, max_repeat);
+			return make_unique<DecimalColumnReader<hugeint_t>>(reader, type_p, schema_p, file_idx_p, max_define,
+			                                                   max_repeat);
 
 		default:
 			break;
@@ -131,17 +160,14 @@ void ColumnReader::PrepareRead(parquet_filter_t &filter) {
 }
 
 void ColumnReader::PreparePage(idx_t compressed_page_size, idx_t uncompressed_page_size) {
-	auto trans = (ThriftFileTransport *)protocol->getTransport().get();
+	auto &trans = (ThriftFileTransport &)*protocol->getTransport();
 
-	block = make_shared<ResizeableBuffer>(compressed_page_size + 1);
-	trans->read((uint8_t *)block->ptr, compressed_page_size);
-
-	//			page_hdr.printTo(std::cout);
-	//			std::cout << '\n';
+	block = make_shared<ResizeableBuffer>(reader.allocator, compressed_page_size + 1);
+	trans.read((uint8_t *)block->ptr, compressed_page_size);
 
 	shared_ptr<ResizeableBuffer> unpacked_block;
 	if (chunk->meta_data.codec != CompressionCodec::UNCOMPRESSED) {
-		unpacked_block = make_shared<ResizeableBuffer>(uncompressed_page_size + 1);
+		unpacked_block = make_shared<ResizeableBuffer>(reader.allocator, uncompressed_page_size + 1);
 	}
 
 	switch (chunk->meta_data.codec) {
@@ -184,7 +210,7 @@ void ColumnReader::PreparePage(idx_t compressed_page_size, idx_t uncompressed_pa
 	}
 }
 
-static uint8_t bit_width(idx_t val) {
+static uint8_t ComputeBitWidth(idx_t val) {
 	if (val == 0) {
 		return 0;
 	}
@@ -209,18 +235,22 @@ void ColumnReader::PrepareDataPage(PageHeader &page_hdr) {
 	                                                          : page_hdr.data_page_header_v2.encoding;
 
 	if (HasRepeats()) {
-		// TODO there seems to be some confusion whether this is in the bytes for v2
-		uint32_t rep_length = block->read<uint32_t>();
+		uint32_t rep_length = page_hdr.type == PageType::DATA_PAGE
+		                          ? block->read<uint32_t>()
+		                          : page_hdr.data_page_header_v2.repetition_levels_byte_length;
 		block->available(rep_length);
-		repeated_decoder = make_unique<RleBpDecoder>((const uint8_t *)block->ptr, rep_length, bit_width(max_repeat));
+		repeated_decoder =
+		    make_unique<RleBpDecoder>((const uint8_t *)block->ptr, rep_length, ComputeBitWidth(max_repeat));
 		block->inc(rep_length);
 	}
 
 	if (HasDefines()) {
-		// TODO there seems to be some confusion whether this is in the bytes for v2
-		uint32_t def_length = block->read<uint32_t>();
+		uint32_t def_length = page_hdr.type == PageType::DATA_PAGE
+		                          ? block->read<uint32_t>()
+		                          : page_hdr.data_page_header_v2.definition_levels_byte_length;
 		block->available(def_length);
-		defined_decoder = make_unique<RleBpDecoder>((const uint8_t *)block->ptr, def_length, bit_width(max_define));
+		defined_decoder =
+		    make_unique<RleBpDecoder>((const uint8_t *)block->ptr, def_length, ComputeBitWidth(max_define));
 		block->inc(def_length);
 	}
 
@@ -247,8 +277,8 @@ void ColumnReader::PrepareDataPage(PageHeader &page_hdr) {
 idx_t ColumnReader::Read(uint64_t num_values, parquet_filter_t &filter, uint8_t *define_out, uint8_t *repeat_out,
                          Vector &result) {
 	// we need to reset the location because multiple column readers share the same protocol
-	auto trans = (ThriftFileTransport *)protocol->getTransport().get();
-	trans->SetLocation(chunk_read_offset);
+	auto &trans = (ThriftFileTransport &)*protocol->getTransport();
+	trans.SetLocation(chunk_read_offset);
 
 	idx_t result_offset = 0;
 	auto to_read = num_values;
@@ -284,7 +314,7 @@ idx_t ColumnReader::Read(uint64_t num_values, parquet_filter_t &filter, uint8_t 
 				}
 			}
 
-			offset_buffer.resize(sizeof(uint32_t) * (read_now - null_count));
+			offset_buffer.resize(reader.allocator, sizeof(uint32_t) * (read_now - null_count));
 			dict_decoder->GetBatch<uint32_t>(offset_buffer.ptr, read_now - null_count);
 			DictReference(result);
 			Offsets((uint32_t *)offset_buffer.ptr, define_out, read_now, filter, result_offset, result);
@@ -298,7 +328,7 @@ idx_t ColumnReader::Read(uint64_t num_values, parquet_filter_t &filter, uint8_t 
 		to_read -= read_now;
 	}
 	group_rows_available -= num_values;
-	chunk_read_offset = trans->GetLocation();
+	chunk_read_offset = trans.GetLocation();
 
 	return num_values;
 }
@@ -308,21 +338,32 @@ void ColumnReader::Skip(idx_t num_values) {
 	dummy_repeat.zero();
 
 	// TODO this can be optimized, for example we dont actually have to bitunpack offsets
+	Vector dummy_result(type, nullptr);
 	auto values_read =
 	    Read(num_values, none_filter, (uint8_t *)dummy_define.ptr, (uint8_t *)dummy_repeat.ptr, dummy_result);
-	D_ASSERT(values_read == num_values);
+	if (values_read != num_values) {
+		throw std::runtime_error("Row count mismatch when skipping rows");
+	}
 }
 
-void StringColumnReader::VerifyString(const char *str_data, idx_t str_len) {
+uint32_t StringColumnReader::VerifyString(const char *str_data, uint32_t str_len) {
 	if (Type() != LogicalTypeId::VARCHAR) {
-		return;
+		return str_len;
 	}
 	// verify if a string is actually UTF8, and if there are no null bytes in the middle of the string
 	// technically Parquet should guarantee this, but reality is often disappointing
-	auto utf_type = Utf8Proc::Analyze(str_data, str_len);
+	UnicodeInvalidReason reason;
+	size_t pos;
+	auto utf_type = Utf8Proc::Analyze(str_data, str_len, &reason, &pos);
 	if (utf_type == UnicodeType::INVALID) {
-		throw InternalException("Invalid string encoding found in Parquet file: value is not valid UTF8!");
+		if (reason == UnicodeInvalidReason::NULL_BYTE) {
+			// for null bytes we just truncate the string
+			return pos;
+		}
+		throw InvalidInputException("Invalid string encoding found in Parquet file: value \"" +
+		                            Blob::ToString(string_t(str_data, str_len)) + "\" is not valid UTF8!");
 	}
+	return str_len;
 }
 
 void StringColumnReader::Dictionary(shared_ptr<ByteBuffer> data, idx_t num_entries) {
@@ -332,15 +373,15 @@ void StringColumnReader::Dictionary(shared_ptr<ByteBuffer> data, idx_t num_entri
 		uint32_t str_len = dict->read<uint32_t>();
 		dict->available(str_len);
 
-		VerifyString(dict->ptr, str_len);
-		dict_strings[dict_idx] = string_t(dict->ptr, str_len);
+		auto actual_str_len = VerifyString(dict->ptr, str_len);
+		dict_strings[dict_idx] = string_t(dict->ptr, actual_str_len);
 		dict->inc(str_len);
 	}
 }
 
 class ParquetStringVectorBuffer : public VectorBuffer {
 public:
-	ParquetStringVectorBuffer(shared_ptr<ByteBuffer> buffer_p)
+	explicit ParquetStringVectorBuffer(shared_ptr<ByteBuffer> buffer_p)
 	    : VectorBuffer(VectorBufferType::OPAQUE_BUFFER), buffer(move(buffer_p)) {
 	}
 
@@ -349,10 +390,10 @@ private:
 };
 
 void StringColumnReader::DictReference(Vector &result) {
-	StringVector::AddBuffer(result, make_unique<ParquetStringVectorBuffer>(dict));
+	StringVector::AddBuffer(result, make_buffer<ParquetStringVectorBuffer>(dict));
 }
 void StringColumnReader::PlainReference(shared_ptr<ByteBuffer> plain_data, Vector &result) {
-	StringVector::AddBuffer(result, make_unique<ParquetStringVectorBuffer>(move(plain_data)));
+	StringVector::AddBuffer(result, make_buffer<ParquetStringVectorBuffer>(move(plain_data)));
 }
 
 string_t StringParquetValueConversion::DictRead(ByteBuffer &dict, uint32_t &offset, ColumnReader &reader) {
@@ -361,78 +402,85 @@ string_t StringParquetValueConversion::DictRead(ByteBuffer &dict, uint32_t &offs
 }
 
 string_t StringParquetValueConversion::PlainRead(ByteBuffer &plain_data, ColumnReader &reader) {
-	uint32_t str_len = plain_data.read<uint32_t>();
+	auto &scr = ((StringColumnReader &)reader);
+	uint32_t str_len = scr.fixed_width_string_length == 0 ? plain_data.read<uint32_t>() : scr.fixed_width_string_length;
 	plain_data.available(str_len);
-	((StringColumnReader &)reader).VerifyString(plain_data.ptr, str_len);
-	auto ret_str = string_t(plain_data.ptr, str_len);
+	auto actual_str_len = ((StringColumnReader &)reader).VerifyString(plain_data.ptr, str_len);
+	auto ret_str = string_t(plain_data.ptr, actual_str_len);
 	plain_data.inc(str_len);
 	return ret_str;
 }
 
 void StringParquetValueConversion::PlainSkip(ByteBuffer &plain_data, ColumnReader &reader) {
-	uint32_t str_len = plain_data.read<uint32_t>();
+	auto &scr = ((StringColumnReader &)reader);
+	uint32_t str_len = scr.fixed_width_string_length == 0 ? plain_data.read<uint32_t>() : scr.fixed_width_string_length;
 	plain_data.available(str_len);
 	plain_data.inc(str_len);
 }
 
 idx_t ListColumnReader::Read(uint64_t num_values, parquet_filter_t &filter, uint8_t *define_out, uint8_t *repeat_out,
                              Vector &result_out) {
-	if (!ListVector::HasEntry(result_out)) {
-		auto list_child = make_unique<ChunkCollection>();
-		ListVector::SetEntry(result_out, move(list_child));
-	}
-
 	idx_t result_offset = 0;
 	auto result_ptr = FlatVector::GetData<list_entry_t>(result_out);
-	auto &list_cc = ListVector::GetEntry(result_out);
+	auto &result_mask = FlatVector::Validity(result_out);
 
-	while (result_offset < num_values) {
-		auto child_req_num_values = MinValue<idx_t>(STANDARD_VECTOR_SIZE, child_column_reader->GroupRowsAvailable());
-
-		if (child_req_num_values == 0) {
-			break;
-		}
-
-		child_defines.zero();
-		child_repeats.zero();
-
+	D_ASSERT(ListVector::GetListSize(result_out) == 0);
+	// if an individual list is longer than STANDARD_VECTOR_SIZE we actually have to loop the child read to fill it
+	bool finished = false;
+	while (!finished) {
 		idx_t child_actual_num_values = 0;
 
+		// check if we have any overflow from a previous read
 		if (overflow_child_count == 0) {
+			// we don't: read elements from the child reader
+			child_defines.zero();
+			child_repeats.zero();
+			// we don't know in advance how many values to read because of the beautiful repetition/definition setup
+			// we just read (up to) a vector from the child column, and see if we have read enough
+			// if we have not read enough, we read another vector
+			// if we have read enough, we leave any unhandled elements in the overflow vector for a subsequent read
+			auto child_req_num_values =
+			    MinValue<idx_t>(STANDARD_VECTOR_SIZE, child_column_reader->GroupRowsAvailable());
+			read_vector.ResetFromCache(read_cache);
 			child_actual_num_values = child_column_reader->Read(child_req_num_values, child_filter, child_defines_ptr,
-			                                                    child_repeats_ptr, child_result);
+			                                                    child_repeats_ptr, read_vector);
 		} else {
+			// we do: use the overflow values
 			child_actual_num_values = overflow_child_count;
 			overflow_child_count = 0;
-			child_result.Reference(overflow_child_vector);
 		}
 
-		append_chunk.data[0].Reference(child_result);
-		append_chunk.SetCardinality(child_actual_num_values);
-		append_chunk.Verify();
-
-		idx_t current_chunk_offset = list_cc.Count();
-		list_cc.Append(append_chunk);
+		if (child_actual_num_values == 0) {
+			// no more elements available: we are done
+			break;
+		}
+		read_vector.Verify(child_actual_num_values);
+		idx_t current_chunk_offset = ListVector::GetListSize(result_out);
 
 		// hard-won piece of code this, modify at your own risk
 		// the intuition is that we have to only collapse values into lists that are repeated *on this level*
 		// the rest is pretty much handed up as-is as a single-valued list or NULL
 		idx_t child_idx;
 		for (child_idx = 0; child_idx < child_actual_num_values; child_idx++) {
-			if (child_repeats_ptr[child_idx] == max_repeat) { // value repeats on this level, append
+			if (child_repeats_ptr[child_idx] == max_repeat) {
+				// value repeats on this level, append
 				D_ASSERT(result_offset > 0);
 				result_ptr[result_offset - 1].length++;
 				continue;
 			}
-			if (result_offset >= num_values) { // we ran out of output space
+
+			if (result_offset >= num_values) {
+				// we ran out of output space
+				finished = true;
 				break;
 			}
-			if (child_defines_ptr[child_idx] >=
-			    max_define) { // value has been defined down the stack, hence its NOT NULL
+			if (child_defines_ptr[child_idx] >= max_define) {
+				// value has been defined down the stack, hence its NOT NULL
 				result_ptr[result_offset].offset = child_idx + current_chunk_offset;
 				result_ptr[result_offset].length = 1;
-			} else { // value is NULL somewhere up the stack
-				FlatVector::Nullmask(result_out)[result_offset] = true;
+			} else {
+				// value is NULL somewhere up the stack
+				result_mask.SetInvalid(result_offset);
 				result_ptr[result_offset].offset = 0;
 				result_ptr[result_offset].length = 0;
 			}
@@ -442,13 +490,15 @@ idx_t ListColumnReader::Read(uint64_t num_values, parquet_filter_t &filter, uint
 
 			result_offset++;
 		}
+		// actually append the required elements to the child list
+		ListVector::Append(result_out, read_vector, child_idx);
 
 		// we have read more values from the child reader than we can fit into the result for this read
 		// we have to pass everything from child_idx to child_actual_num_values into the next call
 		if (child_idx < child_actual_num_values && result_offset == num_values) {
-			overflow_child_vector.Slice(child_result, child_idx);
+			read_vector.Slice(read_vector, child_idx);
 			overflow_child_count = child_actual_num_values - child_idx;
-			overflow_child_vector.Verify(overflow_child_count);
+			read_vector.Verify(overflow_child_count);
 
 			// move values in the child repeats and defines *backward* by child_idx
 			for (idx_t repdef_idx = 0; repdef_idx < overflow_child_count; repdef_idx++) {
@@ -459,6 +509,21 @@ idx_t ListColumnReader::Read(uint64_t num_values, parquet_filter_t &filter, uint
 	}
 	result_out.Verify(result_offset);
 	return result_offset;
+}
+
+ListColumnReader::ListColumnReader(ParquetReader &reader, LogicalType type_p, const SchemaElement &schema_p,
+                                   idx_t schema_idx_p, idx_t max_define_p, idx_t max_repeat_p,
+                                   unique_ptr<ColumnReader> child_column_reader_p)
+    : ColumnReader(reader, move(type_p), schema_p, schema_idx_p, max_define_p, max_repeat_p),
+      child_column_reader(move(child_column_reader_p)), read_cache(ListType::GetChildType(Type())),
+      read_vector(read_cache), overflow_child_count(0) {
+
+	child_defines.resize(reader.allocator, STANDARD_VECTOR_SIZE);
+	child_repeats.resize(reader.allocator, STANDARD_VECTOR_SIZE);
+	child_defines_ptr = (uint8_t *)child_defines.ptr;
+	child_repeats_ptr = (uint8_t *)child_repeats.ptr;
+
+	child_filter.set();
 }
 
 } // namespace duckdb

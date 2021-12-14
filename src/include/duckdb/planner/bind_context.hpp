@@ -11,6 +11,7 @@
 #include "duckdb/catalog/catalog.hpp"
 #include "duckdb/catalog/catalog_entry/table_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/table_function_catalog_entry.hpp"
+#include "duckdb/common/case_insensitive_map.hpp"
 #include "duckdb/common/unordered_map.hpp"
 #include "duckdb/common/unordered_set.hpp"
 #include "duckdb/parser/expression/columnref_expression.hpp"
@@ -25,6 +26,8 @@ class Binder;
 class LogicalGet;
 class BoundQueryNode;
 
+class StarExpression;
+
 struct UsingColumnSet {
 	string primary_binding;
 	unordered_set<string> bindings;
@@ -35,7 +38,7 @@ struct UsingColumnSet {
 class BindContext {
 public:
 	//! Keep track of recursive CTE references
-	unordered_map<string, std::shared_ptr<idx_t>> cte_references;
+	case_insensitive_map_t<std::shared_ptr<idx_t>> cte_references;
 
 public:
 	//! Given a column name, find the matching table it belongs to. Throws an
@@ -52,32 +55,43 @@ public:
 	//! Binds a column expression to the base table. Returns the bound expression
 	//! or throws an exception if the column could not be bound.
 	BindResult BindColumn(ColumnRefExpression &colref, idx_t depth);
+	string BindColumn(PositionalReferenceExpression &ref, string &table_name, string &column_name);
+	BindResult BindColumn(PositionalReferenceExpression &ref, idx_t depth);
 
 	//! Generate column expressions for all columns that are present in the
 	//! referenced tables. This is used to resolve the * expression in a
 	//! selection list.
-	void GenerateAllColumnExpressions(vector<unique_ptr<ParsedExpression>> &new_select_list, string relation_name = "");
+	void GenerateAllColumnExpressions(StarExpression &expr, vector<unique_ptr<ParsedExpression>> &new_select_list);
+	//! Check if the given (binding, column_name) is in the exclusion/replacement lists.
+	//! Returns true if it is in one of these lists, and should therefore be skipped.
+	bool CheckExclusionList(StarExpression &expr, Binding *binding, const string &column_name,
+	                        vector<unique_ptr<ParsedExpression>> &new_select_list,
+	                        case_insensitive_set_t &excluded_columns);
+
 	const vector<std::pair<string, Binding *>> &GetBindingsList() {
 		return bindings_list;
 	}
 
 	//! Adds a base table with the given alias to the BindContext.
-	void AddBaseTable(idx_t index, const string &alias, vector<string> names, vector<LogicalType> types,
+	void AddBaseTable(idx_t index, const string &alias, const vector<string> &names, const vector<LogicalType> &types,
 	                  LogicalGet &get);
 	//! Adds a call to a table function with the given alias to the BindContext.
-	void AddTableFunction(idx_t index, const string &alias, vector<string> names, vector<LogicalType> types,
-	                      LogicalGet &get);
+	void AddTableFunction(idx_t index, const string &alias, const vector<string> &names,
+	                      const vector<LogicalType> &types, LogicalGet &get);
 	//! Adds a subquery with a given alias to the BindContext.
 	void AddSubquery(idx_t index, const string &alias, SubqueryRef &ref, BoundQueryNode &subquery);
 	//! Adds a base table with the given alias to the BindContext.
-	void AddGenericBinding(idx_t index, const string &alias, vector<string> names, vector<LogicalType> types);
+	void AddGenericBinding(idx_t index, const string &alias, const vector<string> &names,
+	                       const vector<LogicalType> &types);
 
 	//! Adds a base table with the given alias to the CTE BindContext.
 	//! We need this to correctly bind recursive CTEs with multiple references.
-	void AddCTEBinding(idx_t index, const string &alias, vector<string> names, vector<LogicalType> types);
+	void AddCTEBinding(idx_t index, const string &alias, const vector<string> &names, const vector<LogicalType> &types);
 
 	//! Add an implicit join condition (e.g. USING (x))
-	void AddUsingBinding(const string &column_name, UsingColumnSet set);
+	void AddUsingBinding(const string &column_name, UsingColumnSet *set);
+
+	void AddUsingBindingSet(unique_ptr<UsingColumnSet> set);
 
 	//! Returns any using column set for the given column name, or nullptr if there is none. On conflict (multiple using
 	//! column sets with the same name) throw an exception.
@@ -86,17 +100,27 @@ public:
 	UsingColumnSet *GetUsingBinding(const string &column_name, const string &binding_name);
 	//! Erase a using binding from the set of using bindings
 	void RemoveUsingBinding(const string &column_name, UsingColumnSet *set);
+	//! Finds the using bindings for a given column. Returns true if any exists, false otherwise.
+	bool FindUsingBinding(const string &column_name, unordered_set<UsingColumnSet *> **using_columns);
+	//! Transfer a using binding from one bind context to this bind context
+	void TransferUsingBinding(BindContext &current_context, UsingColumnSet *current_set, UsingColumnSet *new_set,
+	                          const string &binding, const string &using_column);
 
-	unordered_map<string, std::shared_ptr<Binding>> GetCTEBindings() {
+	//! Fetch the actual column name from the given binding, or throws if none exists
+	//! This can be different from "column_name" because of case insensitivity
+	//! (e.g. "column_name" might return "COLUMN_NAME")
+	string GetActualColumnName(const string &binding, const string &column_name);
+
+	case_insensitive_map_t<std::shared_ptr<Binding>> GetCTEBindings() {
 		return cte_bindings;
 	}
-	void SetCTEBindings(unordered_map<string, std::shared_ptr<Binding>> bindings) {
+	void SetCTEBindings(case_insensitive_map_t<std::shared_ptr<Binding>> bindings) {
 		cte_bindings = bindings;
 	}
 
 	//! Alias a set of column names for the specified table, using the original names if there are not enough aliases
 	//! specified.
-	static vector<string> AliasColumnNames(string table_name, const vector<string> &names,
+	static vector<string> AliasColumnNames(const string &table_name, const vector<string> &names,
 	                                       const vector<string> &column_aliases);
 
 	//! Add all the bindings from a BindContext to this BindContext. The other BindContext is destroyed in the process.
@@ -110,13 +134,15 @@ private:
 
 private:
 	//! The set of bindings
-	unordered_map<string, unique_ptr<Binding>> bindings;
+	case_insensitive_map_t<unique_ptr<Binding>> bindings;
 	//! The list of bindings in insertion order
 	vector<std::pair<string, Binding *>> bindings_list;
 	//! The set of columns used in USING join conditions
-	unordered_map<string, vector<UsingColumnSet>> using_columns;
+	case_insensitive_map_t<unordered_set<UsingColumnSet *>> using_columns;
+	//! Using column sets
+	vector<unique_ptr<UsingColumnSet>> using_column_sets;
 
 	//! The set of CTE bindings
-	unordered_map<string, std::shared_ptr<Binding>> cte_bindings;
+	case_insensitive_map_t<std::shared_ptr<Binding>> cte_bindings;
 };
 } // namespace duckdb

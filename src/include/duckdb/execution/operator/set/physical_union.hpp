@@ -13,11 +13,8 @@
 namespace duckdb {
 class PhysicalUnion : public PhysicalOperator {
 public:
-	PhysicalUnion(vector<LogicalType> types, unique_ptr<PhysicalOperator> top, unique_ptr<PhysicalOperator> bottom);
-
-public:
-	void GetChunkInternal(ExecutionContext &context, DataChunk &chunk, PhysicalOperatorState *state) override;
-	unique_ptr<PhysicalOperatorState> GetOperatorState() override;
+	PhysicalUnion(vector<LogicalType> types, unique_ptr<PhysicalOperator> top, unique_ptr<PhysicalOperator> bottom,
+	              idx_t estimated_cardinality);
 };
 
 } // namespace duckdb

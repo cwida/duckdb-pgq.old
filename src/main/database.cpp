@@ -1,15 +1,24 @@
 #include "duckdb/main/database.hpp"
 
 #include "duckdb/catalog/catalog.hpp"
-#include "duckdb/common/file_system.hpp"
+#include "duckdb/common/virtual_file_system.hpp"
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/parallel/task_scheduler.hpp"
 #include "duckdb/storage/storage_manager.hpp"
 #include "duckdb/storage/object_cache.hpp"
 #include "duckdb/transaction/transaction_manager.hpp"
 #include "duckdb/main/connection_manager.hpp"
+#include "duckdb/function/compression_function.hpp"
+
+#ifndef DUCKDB_NO_THREADS
+#include "duckdb/common/thread.hpp"
+#endif
 
 namespace duckdb {
+
+DBConfig::DBConfig() {
+	compression_functions = make_unique<CompressionFunctionSet>();
+}
 
 DBConfig::~DBConfig() {
 }
@@ -18,7 +27,12 @@ DatabaseInstance::DatabaseInstance() {
 }
 
 DatabaseInstance::~DatabaseInstance() {
+	if (std::uncaught_exception()) {
+		return;
+	}
+
 	// shutting down: attempt to checkpoint the database
+	// but only if we are not cleaning up as part of an exception unwind
 	try {
 		auto &storage = StorageManager::GetStorageManager(*this);
 		if (!storage.InMemory()) {
@@ -113,6 +127,9 @@ void DatabaseInstance::Initialize(const char *path, DBConfig *new_config) {
 
 	// initialize the database
 	storage->Initialize();
+
+	// only increase thread count after storage init because we get races on catalog otherwise
+	scheduler->SetThreads(config.maximum_threads);
 }
 
 DuckDB::DuckDB(const char *path, DBConfig *new_config) : instance(make_shared<DatabaseInstance>()) {
@@ -157,30 +174,49 @@ FileSystem &DuckDB::GetFileSystem() {
 	return instance->GetFileSystem();
 }
 
+Allocator &Allocator::Get(ClientContext &context) {
+	return Allocator::Get(*context.db);
+}
+
+Allocator &Allocator::Get(DatabaseInstance &db) {
+	return db.config.allocator;
+}
+
 void DatabaseInstance::Configure(DBConfig &new_config) {
+	config.access_mode = AccessMode::READ_WRITE;
 	if (new_config.access_mode != AccessMode::UNDEFINED) {
 		config.access_mode = new_config.access_mode;
-	} else {
-		config.access_mode = AccessMode::READ_WRITE;
 	}
 	if (new_config.file_system) {
 		config.file_system = move(new_config.file_system);
 	} else {
-		config.file_system = make_unique<FileSystem>();
+		config.file_system = make_unique<VirtualFileSystem>();
 	}
+	config.maximum_memory = new_config.maximum_memory;
 	if (config.maximum_memory == (idx_t)-1) {
-		config.maximum_memory = config.file_system->GetAvailableMemory() * 8 / 10;
-	} else {
-		config.maximum_memory = new_config.maximum_memory;
+		config.maximum_memory = FileSystem::GetAvailableMemory() * 8 / 10;
 	}
+	if (new_config.maximum_threads == (idx_t)-1) {
+#ifndef DUCKDB_NO_THREADS
+		config.maximum_threads = std::thread::hardware_concurrency();
+#else
+		config.maximum_threads = 1;
+#endif
+	} else {
+		config.maximum_threads = new_config.maximum_threads;
+	}
+	config.force_compression = new_config.force_compression;
+	config.allocator = move(new_config.allocator);
 	config.checkpoint_wal_size = new_config.checkpoint_wal_size;
 	config.use_direct_io = new_config.use_direct_io;
-	config.maximum_memory = new_config.maximum_memory;
 	config.temporary_directory = new_config.temporary_directory;
 	config.collation = new_config.collation;
 	config.default_order_type = new_config.default_order_type;
 	config.default_null_order = new_config.default_null_order;
-	config.enable_copy = new_config.enable_copy;
+	config.enable_external_access = new_config.enable_external_access;
+	config.replacement_scans = move(new_config.replacement_scans);
+	config.initialize_default_database = new_config.initialize_default_database;
+	config.disabled_optimizers = move(new_config.disabled_optimizers);
 }
 
 DBConfig &DBConfig::GetConfig(ClientContext &context) {

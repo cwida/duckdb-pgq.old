@@ -24,11 +24,11 @@ string BoundParameterExpression::ToString() const {
 	return to_string(parameter_nr);
 }
 
-bool BoundParameterExpression::Equals(const BaseExpression *other_) const {
-	if (!Expression::Equals(other_)) {
+bool BoundParameterExpression::Equals(const BaseExpression *other_p) const {
+	if (!Expression::Equals(other_p)) {
 		return false;
 	}
-	auto other = (BoundParameterExpression *)other_;
+	auto other = (BoundParameterExpression *)other_p;
 	return parameter_nr == other->parameter_nr;
 }
 
@@ -42,6 +42,7 @@ unique_ptr<Expression> BoundParameterExpression::Copy() {
 	auto result = make_unique<BoundParameterExpression>(parameter_nr);
 	result->value = value;
 	result->return_type = return_type;
+	result->CopyProperties(*this);
 	return move(result);
 }
 

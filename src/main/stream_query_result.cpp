@@ -8,7 +8,7 @@ namespace duckdb {
 StreamQueryResult::StreamQueryResult(StatementType statement_type, shared_ptr<ClientContext> context,
                                      vector<LogicalType> types, vector<string> names,
                                      shared_ptr<PreparedStatementData> prepared)
-    : QueryResult(QueryResultType::STREAM_RESULT, statement_type, move(types), names), is_open(true),
+    : QueryResult(QueryResultType::STREAM_RESULT, statement_type, move(types), move(names)), is_open(true),
       context(move(context)), prepared(move(prepared)) {
 }
 
@@ -29,7 +29,8 @@ string StreamQueryResult::ToString() {
 
 unique_ptr<DataChunk> StreamQueryResult::FetchRaw() {
 	if (!success || !is_open) {
-		throw InvalidInputException("Attempting to fetch from an unsuccessful or closed streaming query result");
+		throw InvalidInputException(
+		    "Attempting to fetch from an unsuccessful or closed streaming query result\nError: %s", error);
 	}
 	auto chunk = context->Fetch();
 	if (!chunk || chunk->ColumnCount() == 0 || chunk->size() == 0) {
@@ -47,9 +48,12 @@ unique_ptr<MaterializedQueryResult> StreamQueryResult::Materialize() {
 	while (true) {
 		auto chunk = Fetch();
 		if (!chunk || chunk->size() == 0) {
-			return result;
+			break;
 		}
 		result->collection.Append(*chunk);
+	}
+	if (!success) {
+		return make_unique<MaterializedQueryResult>(error);
 	}
 	return result;
 }

@@ -133,11 +133,11 @@ template <typename TYPE>
 static void udf_unary_function(DataChunk &input, ExpressionState &state, Vector &result) {
 	switch (GetTypeId<TYPE>()) {
 	case PhysicalType::VARCHAR: {
-		result.vector_type = VectorType::FLAT_VECTOR;
+		result.SetVectorType(VectorType::FLAT_VECTOR);
 		auto result_data = FlatVector::GetData<string_t>(result);
 		auto ldata = FlatVector::GetData<string_t>(input.data[0]);
 
-		FlatVector::SetNullmask(result, FlatVector::Nullmask(input.data[0]));
+		FlatVector::SetValidity(result, FlatVector::Validity(input.data[0]));
 
 		for (idx_t i = 0; i < input.size(); i++) {
 			auto input_length = ldata[i].GetSize();
@@ -150,14 +150,14 @@ static void udf_unary_function(DataChunk &input, ExpressionState &state, Vector 
 		break;
 	}
 	default: {
-		result.vector_type = VectorType::FLAT_VECTOR;
+		result.SetVectorType(VectorType::FLAT_VECTOR);
 		auto result_data = FlatVector::GetData<TYPE>(result);
 		auto ldata = FlatVector::GetData<TYPE>(input.data[0]);
-		auto nullmask = FlatVector::Nullmask(input.data[0]);
-		FlatVector::SetNullmask(result, nullmask);
+		auto mask = FlatVector::Validity(input.data[0]);
+		FlatVector::SetValidity(result, mask);
 
 		for (idx_t i = 0; i < input.size(); i++) {
-			if (nullmask[i]) {
+			if (!mask.RowIsValid(i)) {
 				continue;
 			}
 			result_data[i] = ldata[i];
@@ -173,11 +173,11 @@ template <typename TYPE>
 static void udf_binary_function(DataChunk &input, ExpressionState &state, Vector &result) {
 	switch (GetTypeId<TYPE>()) {
 	case PhysicalType::VARCHAR: {
-		result.vector_type = VectorType::FLAT_VECTOR;
+		result.SetVectorType(VectorType::FLAT_VECTOR);
 		auto result_data = FlatVector::GetData<string_t>(result);
 		auto ldata = FlatVector::GetData<string_t>(input.data[1]);
 
-		FlatVector::SetNullmask(result, FlatVector::Nullmask(input.data[1]));
+		FlatVector::SetValidity(result, FlatVector::Validity(input.data[1]));
 
 		for (idx_t i = 0; i < input.size(); i++) {
 			auto input_length = ldata[i].GetSize();
@@ -190,14 +190,14 @@ static void udf_binary_function(DataChunk &input, ExpressionState &state, Vector
 		break;
 	}
 	default: {
-		result.vector_type = VectorType::FLAT_VECTOR;
+		result.SetVectorType(VectorType::FLAT_VECTOR);
 		auto result_data = FlatVector::GetData<TYPE>(result);
 		auto ldata = FlatVector::GetData<TYPE>(input.data[1]);
-		auto &nullmask = FlatVector::Nullmask(input.data[1]);
-		FlatVector::SetNullmask(result, nullmask);
+		auto &mask = FlatVector::Validity(input.data[1]);
+		FlatVector::SetValidity(result, mask);
 
 		for (idx_t i = 0; i < input.size(); i++) {
-			if (nullmask[i]) {
+			if (!mask.RowIsValid(i)) {
 				continue;
 			}
 			result_data[i] = ldata[i];
@@ -213,11 +213,11 @@ template <typename TYPE>
 static void udf_ternary_function(DataChunk &input, ExpressionState &state, Vector &result) {
 	switch (GetTypeId<TYPE>()) {
 	case PhysicalType::VARCHAR: {
-		result.vector_type = VectorType::FLAT_VECTOR;
+		result.SetVectorType(VectorType::FLAT_VECTOR);
 		auto result_data = FlatVector::GetData<string_t>(result);
 		auto ldata = FlatVector::GetData<string_t>(input.data[2]);
 
-		FlatVector::SetNullmask(result, FlatVector::Nullmask(input.data[2]));
+		FlatVector::SetValidity(result, FlatVector::Validity(input.data[2]));
 
 		for (idx_t i = 0; i < input.size(); i++) {
 			auto input_length = ldata[i].GetSize();
@@ -230,14 +230,14 @@ static void udf_ternary_function(DataChunk &input, ExpressionState &state, Vecto
 		break;
 	}
 	default: {
-		result.vector_type = VectorType::FLAT_VECTOR;
+		result.SetVectorType(VectorType::FLAT_VECTOR);
 		auto result_data = FlatVector::GetData<TYPE>(result);
 		auto ldata = FlatVector::GetData<TYPE>(input.data[2]);
-		auto &nullmask = FlatVector::Nullmask(input.data[2]);
-		FlatVector::SetNullmask(result, nullmask);
+		auto &mask = FlatVector::Validity(input.data[2]);
+		FlatVector::SetValidity(result, mask);
 
 		for (idx_t i = 0; i < input.size(); i++) {
-			if (nullmask[i]) {
+			if (!mask.RowIsValid(i)) {
 				continue;
 			}
 			result_data[i] = ldata[i];
@@ -251,7 +251,7 @@ static void udf_ternary_function(DataChunk &input, ExpressionState &state, Vecto
  */
 template <typename TYPE, int NUM_INPUT>
 static void udf_several_constant_input(DataChunk &input, ExpressionState &state, Vector &result) {
-	result.vector_type = VectorType::CONSTANT_VECTOR;
+	result.SetVectorType(VectorType::CONSTANT_VECTOR);
 	auto result_data = ConstantVector::GetData<TYPE>(result);
 	auto ldata = ConstantVector::GetData<TYPE>(input.data[NUM_INPUT - 1]);
 
@@ -266,7 +266,7 @@ static void udf_several_constant_input(DataChunk &input, ExpressionState &state,
 template <typename TYPE>
 static void udf_max_constant(DataChunk &args, ExpressionState &state, Vector &result) {
 	TYPE max = 0;
-	result.vector_type = VectorType::CONSTANT_VECTOR;
+	result.SetVectorType(VectorType::CONSTANT_VECTOR);
 	for (idx_t col_idx = 0; col_idx < args.ColumnCount(); col_idx++) {
 		auto &input = args.data[col_idx];
 		if (ConstantVector::IsNull(input)) {
@@ -289,7 +289,7 @@ template <typename TYPE>
 static void udf_max_flat(DataChunk &args, ExpressionState &state, Vector &result) {
 	D_ASSERT(TypeIsNumeric(GetTypeId<TYPE>()));
 
-	result.vector_type = VectorType::FLAT_VECTOR;
+	result.SetVectorType(VectorType::FLAT_VECTOR);
 	auto result_data = FlatVector::GetData<TYPE>(result);
 
 	// Initialize the result vector with the minimum value from TYPE.
@@ -297,7 +297,7 @@ static void udf_max_flat(DataChunk &args, ExpressionState &state, Vector &result
 
 	for (idx_t col_idx = 0; col_idx < args.ColumnCount(); col_idx++) {
 		auto &input = args.data[col_idx];
-		D_ASSERT((GetTypeId<TYPE>()) == input.type.InternalType());
+		D_ASSERT((GetTypeId<TYPE>()) == input.GetType().InternalType());
 		auto input_data = FlatVector::GetData<TYPE>(input);
 		for (idx_t i = 0; i < args.size(); ++i) {
 			if (result_data[i] < input_data[i]) {
@@ -324,31 +324,31 @@ struct UDFAverageFunction {
 	}
 
 	template <class INPUT_TYPE, class STATE, class OP>
-	static void Operation(STATE *state, FunctionData *bind_data, INPUT_TYPE *input, nullmask_t &nullmask, idx_t idx) {
+	static void Operation(STATE *state, FunctionData *bind_data, INPUT_TYPE *input, ValidityMask &mask, idx_t idx) {
 		state->sum += input[idx];
 		state->count++;
 	}
 
 	template <class INPUT_TYPE, class STATE, class OP>
-	static void ConstantOperation(STATE *state, FunctionData *bind_data, INPUT_TYPE *input, nullmask_t &nullmask,
+	static void ConstantOperation(STATE *state, FunctionData *bind_data, INPUT_TYPE *input, ValidityMask &mask,
 	                              idx_t count) {
 		state->count += count;
 		state->sum += input[0] * count;
 	}
 
 	template <class STATE, class OP>
-	static void Combine(STATE source, STATE *target) {
+	static void Combine(const STATE &source, STATE *target) {
 		target->count += source.count;
 		target->sum += source.sum;
 	}
 
 	template <class T, class STATE>
-	static void Finalize(Vector &result, FunctionData *bind_data, STATE *state, T *target, nullmask_t &nullmask,
+	static void Finalize(Vector &result, FunctionData *bind_data, STATE *state, T *target, ValidityMask &mask,
 	                     idx_t idx) {
-		if (!Value::DoubleIsValid(state->sum)) {
+		if (!Value::DoubleIsValid(double(state->sum))) {
 			throw OutOfRangeException("AVG is out of range!");
 		} else if (state->count == 0) {
-			nullmask[idx] = true;
+			mask.SetInvalid(idx);
 		} else {
 			target[idx] = state->sum / state->count;
 		}
@@ -379,8 +379,8 @@ struct UDFCovarOperation {
 	}
 
 	template <class A_TYPE, class B_TYPE, class STATE, class OP>
-	static void Operation(STATE *state, FunctionData *bind_data, A_TYPE *x_data, B_TYPE *y_data, nullmask_t &anullmask,
-	                      nullmask_t &bnullmask, idx_t xidx, idx_t yidx) {
+	static void Operation(STATE *state, FunctionData *bind_data, A_TYPE *x_data, B_TYPE *y_data, ValidityMask &amask,
+	                      ValidityMask &bmask, idx_t xidx, idx_t yidx) {
 		// update running mean and d^2
 		const uint64_t n = ++(state->count);
 
@@ -400,7 +400,7 @@ struct UDFCovarOperation {
 	}
 
 	template <class STATE, class OP>
-	static void Combine(STATE source, STATE *target) {
+	static void Combine(const STATE &source, STATE *target) {
 		if (target->count == 0) {
 			*target = source;
 		} else if (source.count > 0) {
@@ -426,10 +426,10 @@ struct UDFCovarOperation {
 
 struct UDFCovarPopOperation : public UDFCovarOperation {
 	template <class T, class STATE>
-	static void Finalize(Vector &result, FunctionData *bind_data, STATE *state, T *target, nullmask_t &nullmask,
+	static void Finalize(Vector &result, FunctionData *bind_data, STATE *state, T *target, ValidityMask &mask,
 	                     idx_t idx) {
 		if (state->count == 0) {
-			nullmask[idx] = true;
+			mask.SetInvalid(idx);
 		} else {
 			target[idx] = state->co_moment / state->count;
 		}
@@ -472,7 +472,8 @@ struct UDFSum {
 	static void Update(Vector inputs[], FunctionData *bind_data, idx_t input_count, Vector &states, idx_t count) {
 		D_ASSERT(input_count == 1);
 
-		if (inputs[0].vector_type == VectorType::CONSTANT_VECTOR && states.vector_type == VectorType::CONSTANT_VECTOR) {
+		if (inputs[0].GetVectorType() == VectorType::CONSTANT_VECTOR &&
+		    states.GetVectorType() == VectorType::CONSTANT_VECTOR) {
 			if (ConstantVector::IsNull(inputs[0])) {
 				// constant NULL input in function that ignores NULL values
 				return;
@@ -481,14 +482,15 @@ struct UDFSum {
 			auto idata = ConstantVector::GetData<INPUT_TYPE>(inputs[0]);
 			auto sdata = ConstantVector::GetData<STATE_TYPE *>(states);
 			UDFSum::ConstantOperation<INPUT_TYPE, STATE_TYPE>(*sdata, bind_data, idata, count);
-		} else if (inputs[0].vector_type == VectorType::FLAT_VECTOR && states.vector_type == VectorType::FLAT_VECTOR) {
+		} else if (inputs[0].GetVectorType() == VectorType::FLAT_VECTOR &&
+		           states.GetVectorType() == VectorType::FLAT_VECTOR) {
 			auto idata = FlatVector::GetData<INPUT_TYPE>(inputs[0]);
 			auto sdata = FlatVector::GetData<STATE_TYPE *>(states);
-			auto nullmask = FlatVector::Nullmask(inputs[0]);
-			if (nullmask.any()) {
+			auto mask = FlatVector::Validity(inputs[0]);
+			if (!mask.AllValid()) {
 				// potential NULL values and NULL values are ignored
 				for (idx_t i = 0; i < count; i++) {
-					if (!nullmask[i]) {
+					if (mask.RowIsValid(i)) {
 						UDFSum::Operation<INPUT_TYPE, STATE_TYPE>(sdata[i], bind_data, idata, i);
 					}
 				}
@@ -507,7 +509,7 @@ struct UDFSum {
 	static void SimpleUpdate(Vector inputs[], FunctionData *bind_data, idx_t input_count, data_ptr_t state,
 	                         idx_t count) {
 		D_ASSERT(input_count == 1);
-		switch (inputs[0].vector_type) {
+		switch (inputs[0].GetVectorType()) {
 		case VectorType::CONSTANT_VECTOR: {
 			if (ConstantVector::IsNull(inputs[0])) {
 				return;
@@ -518,11 +520,11 @@ struct UDFSum {
 		}
 		case VectorType::FLAT_VECTOR: {
 			auto idata = FlatVector::GetData<INPUT_TYPE>(inputs[0]);
-			auto nullmask = FlatVector::Nullmask(inputs[0]);
-			if (nullmask.any()) {
+			auto &mask = FlatVector::Validity(inputs[0]);
+			if (!mask.AllValid()) {
 				// potential NULL values and NULL values are ignored
 				for (idx_t i = 0; i < count; i++) {
-					if (!nullmask[i]) {
+					if (mask.RowIsValid(i)) {
 						UDFSum::Operation<INPUT_TYPE, STATE_TYPE>((STATE_TYPE *)state, bind_data, idata, i);
 					}
 				}
@@ -542,8 +544,8 @@ struct UDFSum {
 
 	template <class STATE_TYPE>
 	static void Combine(Vector &source, Vector &target, idx_t count) {
-		D_ASSERT(source.type.id() == LogicalTypeId::POINTER && target.type.id() == LogicalTypeId::POINTER);
-		auto sdata = FlatVector::GetData<STATE_TYPE *>(source);
+		D_ASSERT(source.GetType().id() == LogicalTypeId::POINTER && target.GetType().id() == LogicalTypeId::POINTER);
+		auto sdata = FlatVector::GetData<const STATE_TYPE *>(source);
 		auto tdata = FlatVector::GetData<STATE_TYPE *>(target);
 		// OP::template Combine<STATE_TYPE, OP>(*sdata[i], tdata[i]);
 		for (idx_t i = 0; i < count; i++) {
@@ -562,29 +564,30 @@ struct UDFSum {
 	}
 
 	template <class STATE_TYPE, class RESULT_TYPE>
-	static void Finalize(Vector &states, FunctionData *bind_data, Vector &result, idx_t count) {
-		if (states.vector_type == VectorType::CONSTANT_VECTOR) {
-			result.vector_type = VectorType::CONSTANT_VECTOR;
+	static void Finalize(Vector &states, FunctionData *bind_data, Vector &result, idx_t count, idx_t offset) {
+		if (states.GetVectorType() == VectorType::CONSTANT_VECTOR) {
+			result.SetVectorType(VectorType::CONSTANT_VECTOR);
 
 			auto sdata = ConstantVector::GetData<STATE_TYPE *>(states);
 			auto rdata = ConstantVector::GetData<RESULT_TYPE>(result);
-			UDFSum::Finalize<RESULT_TYPE, STATE_TYPE>(result, *sdata, rdata, ConstantVector::Nullmask(result), 0);
+			UDFSum::Finalize<RESULT_TYPE, STATE_TYPE>(result, *sdata, rdata, ConstantVector::Validity(result), 0);
 		} else {
-			D_ASSERT(states.vector_type == VectorType::FLAT_VECTOR);
-			result.vector_type = VectorType::FLAT_VECTOR;
+			D_ASSERT(states.GetVectorType() == VectorType::FLAT_VECTOR);
+			result.SetVectorType(VectorType::FLAT_VECTOR);
 
 			auto sdata = FlatVector::GetData<STATE_TYPE *>(states);
 			auto rdata = FlatVector::GetData<RESULT_TYPE>(result);
 			for (idx_t i = 0; i < count; i++) {
-				UDFSum::Finalize<RESULT_TYPE, STATE_TYPE>(result, sdata[i], rdata, FlatVector::Nullmask(result), i);
+				UDFSum::Finalize<RESULT_TYPE, STATE_TYPE>(result, sdata[i], rdata, FlatVector::Validity(result),
+				                                          i + offset);
 			}
 		}
 	}
 
 	template <class T, class STATE>
-	static void Finalize(Vector &result, STATE *state, T *target, nullmask_t &nullmask, idx_t idx) {
+	static void Finalize(Vector &result, STATE *state, T *target, ValidityMask &mask, idx_t idx) {
 		if (!state->isset) {
-			nullmask[idx] = true;
+			mask.SetInvalid(idx);
 		} else {
 			if (!Value::DoubleIsValid(state->value)) {
 				throw OutOfRangeException("SUM is out of range!");

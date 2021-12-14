@@ -16,9 +16,15 @@ namespace duckdb {
 
 class Block : public FileBuffer {
 public:
-	Block(block_id_t id);
+	Block(Allocator &allocator, block_id_t id);
+	Block(FileBuffer &source, block_id_t id);
 
 	block_id_t id;
+};
+
+struct BlockPointer {
+	block_id_t block_id;
+	uint32_t offset;
 };
 
 } // namespace duckdb

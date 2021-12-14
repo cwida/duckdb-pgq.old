@@ -14,3 +14,5 @@ src/Makevars.in
 ^docs$
 build-*
 deploy-*
+CMakeLists.txt
+NEWS.md

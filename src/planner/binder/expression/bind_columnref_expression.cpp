@@ -40,9 +40,9 @@ BindResult ExpressionBinder::BindExpression(ColumnRefExpression &colref, idx_t d
 		if (colref.table_name.empty()) {
 			auto similar_bindings = binder.bind_context.GetSimilarBindings(colref.column_name);
 			string candidate_str = StringUtil::CandidatesMessage(similar_bindings, "Candidate bindings");
-			return BindResult(
-			    binder.FormatError(colref, StringUtil::Format("Referenced column \"%s\" not found in FROM clause!%s",
-			                                                  colref.column_name.c_str(), candidate_str)));
+			return BindResult(binder.FormatError(colref.query_location,
+			                                     "Referenced column \"%s\" not found in FROM clause!%s",
+			                                     colref.column_name.c_str(), candidate_str));
 		}
 	}
 	// if it was a macro parameter, let macro_binding bind it to the argument
@@ -50,7 +50,10 @@ BindResult ExpressionBinder::BindExpression(ColumnRefExpression &colref, idx_t d
 	                        ? binder.macro_binding->Bind(colref, depth)
 	                        : binder.bind_context.BindColumn(colref, depth);
 	if (!result.HasError()) {
-		bound_columns = true;
+		BoundColumnReferenceInfo ref;
+		ref.name = colref.column_name;
+		ref.query_location = colref.query_location;
+		bound_columns.push_back(move(ref));
 	} else {
 		result.error = binder.FormatError(colref, result.error);
 	}

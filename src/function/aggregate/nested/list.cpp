@@ -5,20 +5,20 @@
 
 namespace duckdb {
 
-struct list_agg_state_t {
-	ChunkCollection *cc;
+struct ListAggState {
+	Vector *list_vector;
 };
 
 struct ListFunction {
 	template <class STATE>
 	static void Initialize(STATE *state) {
-		state->cc = nullptr;
+		state->list_vector = nullptr;
 	}
 
 	template <class STATE>
 	static void Destroy(STATE *state) {
-		if (state->cc) {
-			delete state->cc;
+		if (state->list_vector) {
+			delete state->list_vector;
 		}
 	}
 	static bool IgnoreNull() {
@@ -26,105 +26,96 @@ struct ListFunction {
 	}
 };
 
-static void list_update(Vector inputs[], FunctionData *, idx_t input_count, Vector &state_vector, idx_t count) {
+static void ListUpdateFunction(Vector inputs[], FunctionData *, idx_t input_count, Vector &state_vector, idx_t count) {
 	D_ASSERT(input_count == 1);
 
 	auto &input = inputs[0];
 	VectorData sdata;
 	state_vector.Orrify(count, sdata);
 
-	DataChunk insert_chunk;
+	auto list_vector_type = LogicalType::LIST(input.GetType());
 
-	vector<LogicalType> chunk_types;
-	chunk_types.push_back(input.type);
-	insert_chunk.Initialize(chunk_types);
-	insert_chunk.SetCardinality(1);
-
-	auto states = (list_agg_state_t **)sdata.data;
-	SelectionVector sel(STANDARD_VECTOR_SIZE);
+	auto states = (ListAggState **)sdata.data;
+	if (input.GetVectorType() == VectorType::SEQUENCE_VECTOR) {
+		input.Normalify(count);
+	}
 	for (idx_t i = 0; i < count; i++) {
 		auto state = states[sdata.sel->get_index(i)];
-		if (!state->cc) {
-			state->cc = new ChunkCollection();
+		if (!state->list_vector) {
+			state->list_vector = new Vector(list_vector_type);
 		}
-		sel.set_index(0, i);
-		insert_chunk.data[0].Slice(input, sel, 1);
-		state->cc->Append(insert_chunk);
+		ListVector::Append(*state->list_vector, input, i + 1, i);
 	}
 }
 
-static void list_combine(Vector &state, Vector &combined, idx_t count) {
+static void ListCombineFunction(Vector &state, Vector &combined, idx_t count) {
 	VectorData sdata;
 	state.Orrify(count, sdata);
-	auto states_ptr = (list_agg_state_t **)sdata.data;
+	auto states_ptr = (ListAggState **)sdata.data;
 
-	auto combined_ptr = FlatVector::GetData<list_agg_state_t *>(combined);
+	auto combined_ptr = FlatVector::GetData<ListAggState *>(combined);
 
 	for (idx_t i = 0; i < count; i++) {
 		auto state = states_ptr[sdata.sel->get_index(i)];
-		D_ASSERT(state->cc);
-		if (!combined_ptr[i]->cc) {
-			combined_ptr[i]->cc = new ChunkCollection();
+		D_ASSERT(state->list_vector);
+		if (!combined_ptr[i]->list_vector) {
+			combined_ptr[i]->list_vector = new Vector(state->list_vector->GetType());
 		}
-		combined_ptr[i]->cc->Append(*state->cc);
+		ListVector::Append(*combined_ptr[i]->list_vector, ListVector::GetEntry(*state->list_vector),
+		                   ListVector::GetListSize(*state->list_vector));
 	}
 }
 
-static void list_finalize(Vector &state_vector, FunctionData *, Vector &result, idx_t count) {
+static void ListFinalize(Vector &state_vector, FunctionData *, Vector &result, idx_t count, idx_t offset) {
 	VectorData sdata;
 	state_vector.Orrify(count, sdata);
-	auto states = (list_agg_state_t **)sdata.data;
+	auto states = (ListAggState **)sdata.data;
 
-	D_ASSERT(result.type.id() == LogicalTypeId::LIST);
-	result.Initialize(result.type); // deals with constants
-	auto list_struct_data = FlatVector::GetData<list_entry_t>(result);
-	auto &nullmask = FlatVector::Nullmask(result);
+	D_ASSERT(result.GetType().id() == LogicalTypeId::LIST);
 
-	size_t total_len = 0;
+	auto &mask = FlatVector::Validity(result);
+	size_t total_len = ListVector::GetListSize(result);
 	for (idx_t i = 0; i < count; i++) {
 		auto state = states[sdata.sel->get_index(i)];
-		if (!state->cc) {
-			nullmask[i] = true;
+		if (!state->list_vector) {
+			mask.SetInvalid(i);
 			continue;
 		}
-		D_ASSERT(state->cc);
-		auto &state_cc = *state->cc;
-		D_ASSERT(state_cc.Types().size() == 1);
-		list_struct_data[i].length = state_cc.Count();
-		list_struct_data[i].offset = total_len;
-		total_len += state_cc.Count();
+		D_ASSERT(state->list_vector);
+		auto list_struct_data = FlatVector::GetData<list_entry_t>(result);
+		auto &state_lv = *state->list_vector;
+		auto state_lv_count = ListVector::GetListSize(state_lv);
+		const auto rid = i + offset;
+		list_struct_data[rid].length = state_lv_count;
+		list_struct_data[rid].offset = total_len;
+		total_len += state_lv_count;
 	}
 
-	auto list_child = make_unique<ChunkCollection>();
 	for (idx_t i = 0; i < count; i++) {
 		auto state = states[sdata.sel->get_index(i)];
-		if (!state->cc) {
+		if (!state->list_vector) {
 			continue;
 		}
-		auto &state_cc = *state->cc;
-		D_ASSERT(state_cc.GetChunk(0).ColumnCount() == 1);
-		list_child->Append(state_cc);
+		auto &list_vec = *state->list_vector;
+		auto &list_vec_to_append = ListVector::GetEntry(list_vec);
+		ListVector::Append(result, list_vec_to_append, ListVector::GetListSize(list_vec));
 	}
-	D_ASSERT(list_child->Count() == total_len);
-	ListVector::SetEntry(result, move(list_child));
 }
 
-unique_ptr<FunctionData> list_bind(ClientContext &context, AggregateFunction &function,
-                                   vector<unique_ptr<Expression>> &arguments) {
+unique_ptr<FunctionData> ListBindFunction(ClientContext &context, AggregateFunction &function,
+                                          vector<unique_ptr<Expression>> &arguments) {
 	D_ASSERT(arguments.size() == 1);
-	child_list_t<LogicalType> children;
-	children.push_back(make_pair("", arguments[0]->return_type));
-
-	function.return_type = LogicalType(LogicalTypeId::LIST, move(children));
+	function.return_type = LogicalType::LIST(arguments[0]->return_type);
 	return make_unique<ListBindData>(); // TODO atm this is not used anywhere but it might not be required after all
 	                                    // except for sanity checking
 }
 
 void ListFun::RegisterFunction(BuiltinFunctions &set) {
-	auto agg = AggregateFunction(
-	    "list", {LogicalType::ANY}, LogicalType::LIST, AggregateFunction::StateSize<list_agg_state_t>,
-	    AggregateFunction::StateInitialize<list_agg_state_t, ListFunction>, list_update, list_combine, list_finalize,
-	    nullptr, list_bind, AggregateFunction::StateDestroy<list_agg_state_t, ListFunction>);
+	auto agg =
+	    AggregateFunction("list", {LogicalType::ANY}, LogicalTypeId::LIST, AggregateFunction::StateSize<ListAggState>,
+	                      AggregateFunction::StateInitialize<ListAggState, ListFunction>, ListUpdateFunction,
+	                      ListCombineFunction, ListFinalize, nullptr, ListBindFunction,
+	                      AggregateFunction::StateDestroy<ListAggState, ListFunction>, nullptr, nullptr, true);
 	set.AddFunction(agg);
 	agg.name = "array_agg";
 	set.AddFunction(agg);

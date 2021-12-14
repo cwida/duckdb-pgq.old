@@ -34,7 +34,7 @@ public:
 	//! Write a string with a length prefix
 	void WriteString(const string &val) {
 		Write<uint32_t>((uint32_t)val.size());
-		if (val.size() > 0) {
+		if (!val.empty()) {
 			WriteData((const_data_ptr_t)val.c_str(), val.size());
 		}
 	}
@@ -94,8 +94,8 @@ public:
 		}
 	}
 
-	template <class T>
-	unique_ptr<T> ReadOptional() {
+	template <class T, class RETURN_TYPE = T>
+	unique_ptr<RETURN_TYPE> ReadOptional() {
 		auto has_entry = Read<bool>();
 		if (has_entry) {
 			return T::Deserialize(*this);

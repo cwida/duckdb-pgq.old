@@ -11,6 +11,7 @@
 #include "duckdb/parser/parsed_expression.hpp"
 #include "duckdb/parser/tableref.hpp"
 #include "duckdb/common/vector.hpp"
+#include "duckdb/parser/statement/select_statement.hpp"
 
 namespace duckdb {
 //! Represents a Table producing function
@@ -22,12 +23,13 @@ public:
 	unique_ptr<ParsedExpression> function;
 	vector<string> column_name_alias;
 
-public:
-	string ToString() const override {
-		return function->ToString();
-	}
+	// if the function takes a subquery as argument its in here
+	unique_ptr<SelectStatement> subquery;
 
-	bool Equals(const TableRef *other_) const override;
+public:
+	string ToString() const override;
+
+	bool Equals(const TableRef *other_p) const override;
 
 	unique_ptr<TableRef> Copy() override;
 

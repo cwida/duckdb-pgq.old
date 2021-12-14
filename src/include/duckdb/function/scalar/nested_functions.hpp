@@ -8,20 +8,24 @@
 
 #pragma once
 
-#include "duckdb/function/scalar_function.hpp"
 #include "duckdb/function/function_set.hpp"
+#include "duckdb/function/scalar_function.hpp"
 
 namespace duckdb {
 
 struct VariableReturnBindData : public FunctionData {
 	LogicalType stype;
 
-	VariableReturnBindData(LogicalType stype) : stype(stype) {
+	explicit VariableReturnBindData(LogicalType stype) : stype(stype) {
 	}
 
 	unique_ptr<FunctionData> Copy() override {
 		return make_unique<VariableReturnBindData>(stype);
 	}
+};
+
+struct ArraySliceFun {
+	static void RegisterFunction(BuiltinFunctions &set);
 };
 
 struct StructPackFun {
@@ -32,7 +36,33 @@ struct ListValueFun {
 	static void RegisterFunction(BuiltinFunctions &set);
 };
 
+struct ListRangeFun {
+	static void RegisterFunction(BuiltinFunctions &set);
+};
+
+struct MapFun {
+	static void RegisterFunction(BuiltinFunctions &set);
+};
+
+struct MapExtractFun {
+	static void RegisterFunction(BuiltinFunctions &set);
+};
+
+struct ListExtractFun {
+	static void RegisterFunction(BuiltinFunctions &set);
+};
+
+struct ListConcatFun {
+	static ScalarFunction GetFunction();
+	static void RegisterFunction(BuiltinFunctions &set);
+};
+
+struct CardinalityFun {
+	static void RegisterFunction(BuiltinFunctions &set);
+};
+
 struct StructExtractFun {
+	static ScalarFunction GetFunction();
 	static void RegisterFunction(BuiltinFunctions &set);
 };
 

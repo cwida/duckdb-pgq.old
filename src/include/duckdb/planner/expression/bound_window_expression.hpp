@@ -29,6 +29,8 @@ public:
 	vector<unique_ptr<Expression>> children;
 	//! The set of expressions to partition by
 	vector<unique_ptr<Expression>> partitions;
+	//! Statistics belonging to the partitions expressions
+	vector<unique_ptr<BaseStatistics>> partitions_stats;
 	//! The set of ordering clauses
 	vector<BoundOrderByNode> orders;
 	//! The window boundaries
@@ -51,6 +53,7 @@ public:
 
 	string ToString() const override;
 
+	bool KeysAreCompatible(const BoundWindowExpression *other) const;
 	bool Equals(const BaseExpression *other) const override;
 
 	unique_ptr<Expression> Copy() override;

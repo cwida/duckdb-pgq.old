@@ -9,13 +9,13 @@
 namespace duckdb {
 
 unique_ptr<Expression> ExpressionRewriter::ApplyRules(LogicalOperator &op, const vector<Rule *> &rules,
-                                                      unique_ptr<Expression> expr, bool &changes_made) {
+                                                      unique_ptr<Expression> expr, bool &changes_made, bool is_root) {
 	for (auto &rule : rules) {
 		vector<Expression *> bindings;
 		if (rule->root->Match(expr.get(), bindings)) {
 			// the rule matches! try to apply it
 			bool rule_made_change = false;
-			auto result = rule->Apply(op, bindings, rule_made_change);
+			auto result = rule->Apply(op, bindings, rule_made_change, is_root);
 			if (result) {
 				changes_made = true;
 				// the base node changed: the rule applied changes
@@ -45,8 +45,9 @@ unique_ptr<Expression> ExpressionRewriter::ConstantOrNull(unique_ptr<Expression>
 }
 
 unique_ptr<Expression> ExpressionRewriter::ConstantOrNull(vector<unique_ptr<Expression>> children, Value value) {
-	return make_unique<BoundFunctionExpression>(value.type(), ConstantOrNull::GetFunction(value.type()), move(children),
-	                                            ConstantOrNull::Bind(value));
+	auto type = value.type();
+	return make_unique<BoundFunctionExpression>(type, ConstantOrNull::GetFunction(type), move(children),
+	                                            ConstantOrNull::Bind(move(value)));
 }
 
 void ExpressionRewriter::VisitOperator(LogicalOperator &op) {
@@ -61,7 +62,7 @@ void ExpressionRewriter::VisitOperator(LogicalOperator &op) {
 		}
 		to_apply_rules.push_back(rule.get());
 	}
-	if (to_apply_rules.size() == 0) {
+	if (to_apply_rules.empty()) {
 		// no rules to apply on this node
 		return;
 	}
@@ -79,7 +80,7 @@ void ExpressionRewriter::VisitExpression(unique_ptr<Expression> *expression) {
 	bool changes_made;
 	do {
 		changes_made = false;
-		*expression = ExpressionRewriter::ApplyRules(*op, to_apply_rules, move(*expression), changes_made);
+		*expression = ExpressionRewriter::ApplyRules(*op, to_apply_rules, move(*expression), changes_made, true);
 	} while (changes_made);
 }
 

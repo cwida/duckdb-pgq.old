@@ -12,10 +12,11 @@
 #include "duckdb/parser/parsed_expression.hpp"
 
 namespace duckdb {
+
 //! ConstantExpression represents a constant value in the query
 class ConstantExpression : public ParsedExpression {
 public:
-	ConstantExpression(Value val);
+	explicit ConstantExpression(Value val);
 
 	//! The constant value referenced
 	Value value;
@@ -31,4 +32,5 @@ public:
 	void Serialize(Serializer &serializer) override;
 	static unique_ptr<ParsedExpression> Deserialize(ExpressionType type, Deserializer &source);
 };
+
 } // namespace duckdb

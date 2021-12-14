@@ -5,23 +5,38 @@
 namespace duckdb {
 
 void ParsedExpressionIterator::EnumerateChildren(const ParsedExpression &expression,
-                                                 std::function<void(const ParsedExpression &child)> callback) {
-	EnumerateChildren((ParsedExpression &)expression, [&](unique_ptr<ParsedExpression> &child) { callback(*child); });
+                                                 const std::function<void(const ParsedExpression &child)> &callback) {
+	EnumerateChildren((ParsedExpression &)expression, [&](unique_ptr<ParsedExpression> &child) {
+		D_ASSERT(child);
+		callback(*child);
+	});
 }
 
 void ParsedExpressionIterator::EnumerateChildren(ParsedExpression &expr,
-                                                 std::function<void(ParsedExpression &child)> callback) {
-	EnumerateChildren(expr, [&](unique_ptr<ParsedExpression> &child) { callback(*child); });
+                                                 const std::function<void(ParsedExpression &child)> &callback) {
+	EnumerateChildren(expr, [&](unique_ptr<ParsedExpression> &child) {
+		D_ASSERT(child);
+		callback(*child);
+	});
 }
 
-void ParsedExpressionIterator::EnumerateChildren(ParsedExpression &expr,
-                                                 std::function<void(unique_ptr<ParsedExpression> &child)> callback) {
+void ParsedExpressionIterator::EnumerateChildren(
+    ParsedExpression &expr, const std::function<void(unique_ptr<ParsedExpression> &child)> &callback) {
 	switch (expr.expression_class) {
+	case ExpressionClass::BETWEEN: {
+		auto &cast_expr = (BetweenExpression &)expr;
+		callback(cast_expr.input);
+		callback(cast_expr.lower);
+		callback(cast_expr.upper);
+		break;
+	}
 	case ExpressionClass::CASE: {
 		auto &case_expr = (CaseExpression &)expr;
-		callback(case_expr.check);
-		callback(case_expr.result_if_true);
-		callback(case_expr.result_if_false);
+		for (auto &check : case_expr.case_checks) {
+			callback(check.when_expr);
+			callback(check.then_expr);
+		}
+		callback(case_expr.else_expr);
 		break;
 	}
 	case ExpressionClass::CAST: {
@@ -56,6 +71,11 @@ void ParsedExpressionIterator::EnumerateChildren(ParsedExpression &expr,
 		if (func_expr.filter) {
 			callback(func_expr.filter);
 		}
+		if (func_expr.order_bys) {
+			for (auto &order : func_expr.order_bys->orders) {
+				callback(order.expression);
+			}
+		}
 		break;
 	}
 	case ExpressionClass::LAMBDA: {
@@ -88,6 +108,12 @@ void ParsedExpressionIterator::EnumerateChildren(ParsedExpression &expr,
 		for (auto &child : window_expr.children) {
 			callback(child);
 		}
+		if (window_expr.start_expr) {
+			callback(window_expr.start_expr);
+		}
+		if (window_expr.end_expr) {
+			callback(window_expr.end_expr);
+		}
 		if (window_expr.offset_expr) {
 			callback(window_expr.offset_expr);
 		}
@@ -101,8 +127,8 @@ void ParsedExpressionIterator::EnumerateChildren(ParsedExpression &expr,
 	case ExpressionClass::CONSTANT:
 	case ExpressionClass::DEFAULT:
 	case ExpressionClass::STAR:
-	case ExpressionClass::TABLE_STAR:
 	case ExpressionClass::PARAMETER:
+	case ExpressionClass::POSITIONAL_REFERENCE:
 		// these node types have no children
 		break;
 	default:

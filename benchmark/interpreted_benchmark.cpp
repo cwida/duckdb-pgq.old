@@ -4,10 +4,9 @@
 
 #include <fstream>
 #include <sstream>
-
+#include "duckdb/main/query_profiler.hpp"
 #include "duckdb/common/string_util.hpp"
 #include "duckdb/main/client_context.hpp"
-
 #include "extension_helper.hpp"
 
 namespace duckdb {
@@ -36,9 +35,11 @@ struct InterpretedBenchmarkState : public BenchmarkState {
 	DuckDB db;
 	Connection con;
 	unique_ptr<MaterializedQueryResult> result;
-
 	InterpretedBenchmarkState() : db(nullptr), con(db) {
 		con.EnableProfiling();
+		auto &instance = BenchmarkRunner::GetInstance();
+		auto res = con.Query("PRAGMA threads=" + to_string(instance.threads));
+		D_ASSERT(res->success);
 	}
 };
 
@@ -171,7 +172,9 @@ void InterpretedBenchmark::LoadBenchmark() {
 				result_column_count = -1;
 				std::ifstream csv_infile(splits[1]);
 				bool skipped_header = false;
+				idx_t line_number = 0;
 				while (std::getline(csv_infile, line)) {
+					line_number++;
 					if (line.empty()) {
 						break;
 					}
@@ -183,7 +186,9 @@ void InterpretedBenchmark::LoadBenchmark() {
 					if (result_column_count < 0) {
 						result_column_count = result_splits.size();
 					} else if (idx_t(result_column_count) != result_splits.size()) {
-						throw std::runtime_error("error in file " + splits[1] + ", inconsistent amount of rows in CSV");
+						throw std::runtime_error("error in file " + splits[1] +
+						                         ", inconsistent amount of rows in CSV on line " +
+						                         to_string(line_number));
 					}
 					result_values.push_back(move(result_splits));
 				}
@@ -287,8 +292,11 @@ unique_ptr<BenchmarkState> InterpretedBenchmark::Initialize(BenchmarkConfigurati
 		}
 		result = move(result->next);
 	}
-	if (config.print_profile_info) {
+	if (config.profile_info == BenchmarkProfileInfo::NORMAL) {
 		state->con.Query("PRAGMA enable_profiling");
+	} else if (config.profile_info == BenchmarkProfileInfo::DETAILED) {
+		state->con.Query("PRAGMA enable_profiling");
+		state->con.Query("PRAGMA profiling_mode='detailed'");
 	}
 	return state;
 }
@@ -298,13 +306,13 @@ string InterpretedBenchmark::GetQuery() {
 	return run_query;
 }
 
-void InterpretedBenchmark::Run(BenchmarkState *state_) {
-	auto &state = (InterpretedBenchmarkState &)*state_;
+void InterpretedBenchmark::Run(BenchmarkState *state_p) {
+	auto &state = (InterpretedBenchmarkState &)*state_p;
 	state.result = state.con.Query(run_query);
 }
 
-void InterpretedBenchmark::Cleanup(BenchmarkState *state_) {
-	auto &state = (InterpretedBenchmarkState &)*state_;
+void InterpretedBenchmark::Cleanup(BenchmarkState *state_p) {
+	auto &state = (InterpretedBenchmarkState &)*state_p;
 	if (queries.find("cleanup") != queries.end()) {
 		unique_ptr<QueryResult> result;
 		string cleanup_query = queries["cleanup"];
@@ -318,8 +326,8 @@ void InterpretedBenchmark::Cleanup(BenchmarkState *state_) {
 	}
 }
 
-string InterpretedBenchmark::Verify(BenchmarkState *state_) {
-	auto &state = (InterpretedBenchmarkState &)*state_;
+string InterpretedBenchmark::Verify(BenchmarkState *state_p) {
+	auto &state = (InterpretedBenchmarkState &)*state_p;
 	if (!state.result->success) {
 		return state.result->error;
 	}
@@ -328,7 +336,7 @@ string InterpretedBenchmark::Verify(BenchmarkState *state_) {
 		return string();
 	}
 	// compare the column count
-	if ((int64_t)state.result->ColumnCount() != result_column_count) {
+	if (result_column_count >= 0 && (int64_t)state.result->ColumnCount() != result_column_count) {
 		return StringUtil::Format("Error in result: expected %lld columns but got %lld\nObtained result: %s",
 		                          (int64_t)result_column_count, (int64_t)state.result->ColumnCount(),
 		                          state.result->ToString());
@@ -336,15 +344,28 @@ string InterpretedBenchmark::Verify(BenchmarkState *state_) {
 	// compare row count
 	if (state.result->collection.Count() != result_values.size()) {
 		return StringUtil::Format("Error in result: expected %lld rows but got %lld\nObtained result: %s",
-		                          (int64_t)state.result->collection.Count(), (int64_t)result_values.size(),
+		                          (int64_t)result_values.size(), (int64_t)state.result->collection.Count(),
 		                          state.result->ToString());
 	}
 	// compare values
 	for (int64_t r = 0; r < (int64_t)result_values.size(); r++) {
 		for (int64_t c = 0; c < result_column_count; c++) {
 			auto value = state.result->collection.GetValue(c, r);
+			if (result_values[r][c] == "NULL" && value.is_null) {
+				continue;
+			}
+
 			Value verify_val(result_values[r][c]);
-			verify_val = verify_val.CastAs(state.result->types[c]);
+			try {
+				if (result_values[r][c] == value.ToString()) {
+					continue;
+				}
+				verify_val = verify_val.CastAs(state.result->types[c]);
+				if (result_values[r][c] == "(empty)" && (verify_val.ToString() == "" || value.is_null)) {
+					continue;
+				}
+			} catch (...) {
+			}
 			if (!Value::ValuesAreEqual(value, verify_val)) {
 				return StringUtil::Format(
 				    "Error in result on row %lld column %lld: expected value \"%s\" but got value \"%s\"", r + 1, c + 1,
@@ -355,8 +376,8 @@ string InterpretedBenchmark::Verify(BenchmarkState *state_) {
 	return string();
 }
 
-void InterpretedBenchmark::Interrupt(BenchmarkState *state_) {
-	auto &state = (InterpretedBenchmarkState &)*state_;
+void InterpretedBenchmark::Interrupt(BenchmarkState *state_p) {
+	auto &state = (InterpretedBenchmarkState &)*state_p;
 	state.con.Interrupt();
 }
 
@@ -364,9 +385,9 @@ string InterpretedBenchmark::BenchmarkInfo() {
 	return string();
 }
 
-string InterpretedBenchmark::GetLogOutput(BenchmarkState *state_) {
-	auto &state = (InterpretedBenchmarkState &)*state_;
-	return state.con.context->profiler.ToJSON();
+string InterpretedBenchmark::GetLogOutput(BenchmarkState *state_p) {
+	auto &state = (InterpretedBenchmarkState &)*state_p;
+	return state.con.context->profiler->ToJSON();
 }
 
 string InterpretedBenchmark::DisplayName() {

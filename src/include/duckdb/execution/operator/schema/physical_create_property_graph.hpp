@@ -16,14 +16,19 @@ namespace duckdb {
 //! PhysicalCreatePropertyGraph represents a CREATE PROPERTY_GRAPH command
 class PhysicalCreatePropertyGraph : public PhysicalOperator {
 public:
-	PhysicalCreatePropertyGraph(unique_ptr<CreatePropertyGraphInfo> info)
-	    : PhysicalOperator(PhysicalOperatorType::CREATE_PROPERTY_GRAPH, {LogicalType::BIGINT}), info(move(info)) {
+	explicit PhysicalCreatePropertyGraph(unique_ptr<CreatePropertyGraphInfo> info, idx_t estimated_cardinality)
+	    : PhysicalOperator(PhysicalOperatorType::CREATE_PROPERTY_GRAPH, {LogicalType::BIGINT}, estimated_cardinality),
+	      info(move(info)) {
 	}
 
 	unique_ptr<CreatePropertyGraphInfo> info;
 
 public:
-	void GetChunkInternal(ExecutionContext &context, DataChunk &chunk, PhysicalOperatorState *state) override;
+	// Source interface
+	unique_ptr<GlobalSourceState> GetGlobalSourceState(ClientContext &context) const override;
+	void GetData(ExecutionContext &context, DataChunk &chunk, GlobalSourceState &gstate,
+	             LocalSourceState &lstate) const override;
 };
 
 } // namespace duckdb
+

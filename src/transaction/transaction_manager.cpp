@@ -14,7 +14,7 @@
 namespace duckdb {
 
 struct CheckpointLock {
-	CheckpointLock(TransactionManager &manager) : manager(manager), is_locked(false) {
+	explicit CheckpointLock(TransactionManager &manager) : manager(manager), is_locked(false) {
 	}
 	~CheckpointLock() {
 		Unlock();
@@ -48,6 +48,8 @@ TransactionManager::TransactionManager(DatabaseInstance &db) : db(db), thread_is
 	current_transaction_id = TRANSACTION_ID_START;
 	// the current active query id
 	current_query_number = 1;
+	lowest_active_id = TRANSACTION_ID_START;
+	lowest_active_start = MAX_TRANSACTION_ID;
 }
 
 TransactionManager::~TransactionManager() {
@@ -56,15 +58,19 @@ TransactionManager::~TransactionManager() {
 Transaction *TransactionManager::StartTransaction(ClientContext &context) {
 	// obtain the transaction lock during this function
 	lock_guard<mutex> lock(transaction_lock);
-	if (current_start_timestamp >= TRANSACTION_ID_START) {
-		throw Exception("Cannot start more transactions, ran out of "
-		                "transaction identifiers!");
-	}
+	if (current_start_timestamp >= TRANSACTION_ID_START) { // LCOV_EXCL_START
+		throw InternalException("Cannot start more transactions, ran out of "
+		                        "transaction identifiers!");
+	} // LCOV_EXCL_STOP
 
 	// obtain the start time and transaction ID of this transaction
 	transaction_t start_time = current_start_timestamp++;
 	transaction_t transaction_id = current_transaction_id++;
 	timestamp_t start_timestamp = Timestamp::GetCurrentTimestamp();
+	if (active_transactions.empty()) {
+		lowest_active_start = start_time;
+		lowest_active_id = transaction_id;
+	}
 
 	// create the actual transaction
 	auto &catalog = Catalog::GetCatalog(db);
@@ -240,15 +246,21 @@ void TransactionManager::RemoveTransaction(Transaction *transaction) noexcept {
 	idx_t t_index = active_transactions.size();
 	// check for the lowest and highest start time in the list of transactions
 	transaction_t lowest_start_time = TRANSACTION_ID_START;
+	transaction_t lowest_transaction_id = MAX_TRANSACTION_ID;
 	transaction_t lowest_active_query = MAXIMUM_QUERY_ID;
 	for (idx_t i = 0; i < active_transactions.size(); i++) {
 		if (active_transactions[i].get() == transaction) {
 			t_index = i;
 		} else {
+			transaction_t active_query = active_transactions[i]->active_query;
 			lowest_start_time = MinValue(lowest_start_time, active_transactions[i]->start_time);
-			lowest_active_query = MinValue(lowest_active_query, active_transactions[i]->active_query);
+			lowest_active_query = MinValue(lowest_active_query, active_query);
+			lowest_transaction_id = MinValue(lowest_transaction_id, active_transactions[i]->transaction_id);
 		}
 	}
+	lowest_active_start = lowest_start_time;
+	lowest_active_id = lowest_transaction_id;
+
 	transaction_t lowest_stored_query = lowest_start_time;
 	D_ASSERT(t_index != active_transactions.size());
 	auto current_transaction = move(active_transactions[t_index]);
@@ -300,7 +312,7 @@ void TransactionManager::RemoveTransaction(Transaction *transaction) noexcept {
 		                                      recently_committed_transactions.begin() + i);
 	}
 	// check if we can free the memory of any old transactions
-	i = active_transactions.size() == 0 ? old_transactions.size() : 0;
+	i = active_transactions.empty() ? old_transactions.size() : 0;
 	for (; i < old_transactions.size(); i++) {
 		D_ASSERT(old_transactions[i]);
 		D_ASSERT(old_transactions[i]->highest_active_query > 0);
@@ -326,21 +338,6 @@ void TransactionManager::RemoveTransaction(Transaction *transaction) noexcept {
 	if (i > 0) {
 		// we garbage collected catalog sets: remove them from the list
 		old_catalog_sets.erase(old_catalog_sets.begin(), old_catalog_sets.begin() + i);
-	}
-}
-
-void TransactionManager::AddCatalogSet(ClientContext &context, unique_ptr<CatalogSet> catalog_set) {
-	// remove the dependencies from all entries of the CatalogSet
-	Catalog::GetCatalog(context).dependency_manager->ClearDependencies(*catalog_set);
-
-	lock_guard<mutex> lock(transaction_lock);
-	if (active_transactions.size() > 0) {
-		// if there are active transactions we wait with deleting the objects
-		StoredCatalogSet set;
-		set.stored_set = move(catalog_set);
-		set.highest_active_query = current_start_timestamp;
-
-		old_catalog_sets.push_back(move(set));
 	}
 }
 

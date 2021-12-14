@@ -14,6 +14,7 @@
 #include "duckdb.hpp"
 #include "duckdb/main/client_context.hpp"
 #include "test_helpers.hpp"
+#include "duckdb/main/query_profiler.hpp"
 
 namespace duckdb {
 
@@ -25,6 +26,9 @@ struct DuckDBBenchmarkState : public BenchmarkState {
 
 	DuckDBBenchmarkState(string path) : db(path.empty() ? nullptr : path.c_str()), conn(db) {
 		conn.EnableProfiling();
+		auto &instance = BenchmarkRunner::GetInstance();
+		auto res = conn.Query("PRAGMA threads=" + to_string(instance.threads));
+		D_ASSERT(res->success);
 	}
 	virtual ~DuckDBBenchmarkState() {
 	}
@@ -73,8 +77,8 @@ public:
 		return move(state);
 	}
 
-	void Run(BenchmarkState *state_) override {
-		auto state = (DuckDBBenchmarkState *)state_;
+	void Run(BenchmarkState *state_p) override {
+		auto state = (DuckDBBenchmarkState *)state_p;
 		string query = GetQuery();
 		if (query.empty()) {
 			RunBenchmark(state);
@@ -83,24 +87,24 @@ public:
 		}
 	}
 
-	void Cleanup(BenchmarkState *state_) override {
-		auto state = (DuckDBBenchmarkState *)state_;
+	void Cleanup(BenchmarkState *state_p) override {
+		auto state = (DuckDBBenchmarkState *)state_p;
 		Cleanup(state);
 	}
 
-	string Verify(BenchmarkState *state_) override {
-		auto state = (DuckDBBenchmarkState *)state_;
+	string Verify(BenchmarkState *state_p) override {
+		auto state = (DuckDBBenchmarkState *)state_p;
 		return VerifyResult(state->result.get());
 	}
 
-	string GetLogOutput(BenchmarkState *state_) override {
-		auto state = (DuckDBBenchmarkState *)state_;
-		return state->conn.context->profiler.ToJSON();
+	string GetLogOutput(BenchmarkState *state_p) override {
+		auto state = (DuckDBBenchmarkState *)state_p;
+		return state->conn.context->profiler->ToJSON();
 	}
 
 	//! Interrupt the benchmark because of a timeout
-	void Interrupt(BenchmarkState *state_) override {
-		auto state = (DuckDBBenchmarkState *)state_;
+	void Interrupt(BenchmarkState *state_p) override {
+		auto state = (DuckDBBenchmarkState *)state_p;
 		state->conn.Interrupt();
 	}
 };

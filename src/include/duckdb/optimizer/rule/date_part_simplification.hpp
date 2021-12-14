@@ -12,13 +12,14 @@
 
 namespace duckdb {
 
-// The DatePart Simplification rule rewrites date_part with a constant specifier into a specialized funciton (e.g.
+// The DatePart Simplification rule rewrites date_part with a constant specifier into a specialized function (e.g.
 // date_part('year', x) => year(x))
 class DatePartSimplificationRule : public Rule {
 public:
-	DatePartSimplificationRule(ExpressionRewriter &rewriter);
+	explicit DatePartSimplificationRule(ExpressionRewriter &rewriter);
 
-	unique_ptr<Expression> Apply(LogicalOperator &op, vector<Expression *> &bindings, bool &changes_made) override;
+	unique_ptr<Expression> Apply(LogicalOperator &op, vector<Expression *> &bindings, bool &changes_made,
+	                             bool is_root) override;
 };
 
 } // namespace duckdb

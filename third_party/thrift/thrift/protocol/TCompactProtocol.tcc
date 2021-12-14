@@ -37,13 +37,15 @@
 # error "TCompactProtocol currently only works if a signed right shift is arithmetic"
 #endif
 
+#ifndef UNLIKELY
 #ifdef __GNUC__
 #define UNLIKELY(val) (__builtin_expect((val), 0))
 #else
 #define UNLIKELY(val) (val)
 #endif
+#endif
 
-namespace apache { namespace thrift { namespace protocol {
+namespace duckdb_apache { namespace thrift { namespace protocol {
 
 namespace detail { namespace compact {
 
@@ -821,6 +823,6 @@ TType TCompactProtocolT<Transport_>::getTType(int8_t type) {
   }
 }
 
-}}} // apache::thrift::protocol
+}}} // duckdb_apache::thrift::protocol
 
 #endif // _THRIFT_PROTOCOL_TCOMPACTPROTOCOL_TCC_

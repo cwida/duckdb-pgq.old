@@ -54,7 +54,7 @@ unique_ptr<Expression> DistributivityRule::ExtractExpression(BoundConjunctionExp
 }
 
 unique_ptr<Expression> DistributivityRule::Apply(LogicalOperator &op, vector<Expression *> &bindings,
-                                                 bool &changes_made) {
+                                                 bool &changes_made, bool is_root) {
 	auto initial_or = (BoundConjunctionExpression *)bindings[0];
 
 	// we want to find expressions that occur in each of the children of the OR
@@ -77,7 +77,7 @@ unique_ptr<Expression> DistributivityRule::Apply(LogicalOperator &op, vector<Exp
 		}
 		candidate_set = intersect_result;
 	}
-	if (candidate_set.size() == 0) {
+	if (candidate_set.empty()) {
 		// nothing found: abort
 		return nullptr;
 	}
@@ -95,11 +95,21 @@ unique_ptr<Expression> DistributivityRule::Apply(LogicalOperator &op, vector<Exp
 		}
 		// now we add the expression to the new root
 		new_root->children.push_back(move(result));
-		// remove any expressions that were set to nullptr
-		for (idx_t i = 0; i < initial_or->children.size(); i++) {
-			if (!initial_or->children[i]) {
-				initial_or->children.erase(initial_or->children.begin() + i);
-				i--;
+	}
+
+	// check if we completely erased one of the children of the OR
+	// this happens if we have an OR in the form of "X OR (X AND A)"
+	// the left child will be completely empty, as it only contains common expressions
+	// in this case, any other children are not useful:
+	// X OR (X AND A) is the same as "X"
+	// since (1) only tuples that do not qualify "X" will not pass this predicate
+	//   and (2) all tuples that qualify "X" will pass this predicate
+	for (idx_t i = 0; i < initial_or->children.size(); i++) {
+		if (!initial_or->children[i]) {
+			if (new_root->children.size() <= 1) {
+				return move(new_root->children[0]);
+			} else {
+				return move(new_root);
 			}
 		}
 	}

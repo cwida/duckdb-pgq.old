@@ -14,10 +14,30 @@ SELECT FIRST(b) FROM tbl WHERE a=2
 ----
 thisisalongstring
 
+# Check if arbitraty alias works like FIRST
+query T
+SELECT ARBITRARY(b) FROM tbl WHERE a=2
+----
+thisisalongstring
+
 query T
 SELECT FIRST(b) FROM tbl WHERE a=1
 ----
 NULL
+
+query T
+SELECT FIRST(b) FROM tbl WHERE a=1 GROUP BY a
+----
+NULL
+
+query T
+SELECT FIRST(b) FROM tbl WHERE a=0
+----
+NULL
+
+query T
+SELECT FIRST(b) FROM tbl WHERE a=0 GROUP BY b
+----
 
 # grouped aggregate
 query IT
@@ -30,3 +50,7 @@ thisisalongstring
 3
 thisisalsoalongstring
 
+query I
+SELECT FIRST(i) FROM (VALUES (NULL::INT32)) tbl(i)
+----
+NULL

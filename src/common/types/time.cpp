@@ -12,11 +12,13 @@
 
 namespace duckdb {
 
+static_assert(sizeof(dtime_t) == sizeof(int64_t), "dtime_t was padded");
+
 // string format is hh:mm:ss.microsecondsZ
 // microseconds and Z are optional
 // ISO 8601
 
-bool Time::TryConvertTime(const char *buf, idx_t len, idx_t &pos, dtime_t &result, bool strict) {
+bool Time::TryConvertInternal(const char *buf, idx_t len, idx_t &pos, dtime_t &result, bool strict) {
 	int32_t hour = -1, min = -1, sec = -1, micros = -1;
 	pos = 0;
 
@@ -75,12 +77,13 @@ bool Time::TryConvertTime(const char *buf, idx_t len, idx_t &pos, dtime_t &resul
 	if (!Date::ParseDoubleDigit(buf, len, pos, sec)) {
 		return false;
 	}
-	if (sec < 0 || sec > 60) {
+	if (sec < 0 || sec >= 60) {
 		return false;
 	}
 
 	micros = 0;
-	if (pos < len && buf[pos++] == '.') {
+	if (pos < len && buf[pos] == '.') {
+		pos++;
 		// we expect some microseconds
 		int32_t mult = 100000;
 		for (; pos < len && StringUtil::CharacterIsDigit(buf[pos]); pos++, mult /= 10) {
@@ -106,22 +109,41 @@ bool Time::TryConvertTime(const char *buf, idx_t len, idx_t &pos, dtime_t &resul
 	return true;
 }
 
+bool Time::TryConvertTime(const char *buf, idx_t len, idx_t &pos, dtime_t &result, bool strict) {
+	if (!Time::TryConvertInternal(buf, len, pos, result, strict)) {
+		if (!strict) {
+			// last chance, check if we can parse as timestamp
+			timestamp_t timestamp;
+			if (Timestamp::TryConvertTimestamp(buf, len, timestamp)) {
+				result = Timestamp::GetTime(timestamp);
+				return true;
+			}
+		}
+		return false;
+	}
+	return true;
+}
+
+string Time::ConversionError(const string &str) {
+	return StringUtil::Format("time field value out of range: \"%s\", "
+	                          "expected format is ([YYY-MM-DD ]HH:MM:SS[.MS])",
+	                          str);
+}
+
+string Time::ConversionError(string_t str) {
+	return Time::ConversionError(str.GetString());
+}
+
 dtime_t Time::FromCString(const char *buf, idx_t len, bool strict) {
 	dtime_t result;
 	idx_t pos;
-	if (!TryConvertTime(buf, len, pos, result, strict)) {
-		// last chance, check if we can parse as timestamp
-		if (!strict) {
-			return Timestamp::GetTime(Timestamp::FromCString(buf, len));
-		}
-		throw ConversionException("time field value out of range: \"%s\", "
-		                          "expected format is ([YYY-MM-DD ]HH:MM:SS[.MS])",
-		                          string(buf, len));
+	if (!Time::TryConvertTime(buf, len, pos, result, strict)) {
+		throw ConversionException(ConversionError(string(buf, len)));
 	}
 	return result;
 }
 
-dtime_t Time::FromString(string str, bool strict) {
+dtime_t Time::FromString(const string &str, bool strict) {
 	return Time::FromCString(str.c_str(), str.size(), strict);
 }
 
@@ -136,20 +158,18 @@ string Time::ToString(dtime_t time) {
 	return string(buffer.get(), length);
 }
 
-string Time::Format(int32_t hour, int32_t minute, int32_t second, int32_t microseconds) {
-	return ToString(Time::FromTime(hour, minute, second, microseconds));
-}
-
 dtime_t Time::FromTime(int32_t hour, int32_t minute, int32_t second, int32_t microseconds) {
-	dtime_t result;
+	int64_t result;
 	result = hour;                                             // hours
 	result = result * Interval::MINS_PER_HOUR + minute;        // hours -> minutes
 	result = result * Interval::SECS_PER_MINUTE + second;      // minutes -> seconds
 	result = result * Interval::MICROS_PER_SEC + microseconds; // seconds -> microseconds
-	return result;
+	return dtime_t(result);
 }
 
-bool Time::IsValidTime(int32_t hour, int32_t minute, int32_t second, int32_t microseconds) {
+// LCOV_EXCL_START
+#ifdef DEBUG
+static bool AssertValidTime(int32_t hour, int32_t minute, int32_t second, int32_t microseconds) {
 	if (hour < 0 || hour >= 24) {
 		return false;
 	}
@@ -164,16 +184,21 @@ bool Time::IsValidTime(int32_t hour, int32_t minute, int32_t second, int32_t mic
 	}
 	return true;
 }
+#endif
+// LCOV_EXCL_STOP
 
-void Time::Convert(dtime_t time, int32_t &hour, int32_t &min, int32_t &sec, int32_t &micros) {
+void Time::Convert(dtime_t dtime, int32_t &hour, int32_t &min, int32_t &sec, int32_t &micros) {
+	int64_t time = dtime.micros;
 	hour = int32_t(time / Interval::MICROS_PER_HOUR);
-	time -= dtime_t(hour) * Interval::MICROS_PER_HOUR;
+	time -= int64_t(hour) * Interval::MICROS_PER_HOUR;
 	min = int32_t(time / Interval::MICROS_PER_MINUTE);
-	time -= dtime_t(min) * Interval::MICROS_PER_MINUTE;
+	time -= int64_t(min) * Interval::MICROS_PER_MINUTE;
 	sec = int32_t(time / Interval::MICROS_PER_SEC);
-	time -= dtime_t(sec) * Interval::MICROS_PER_SEC;
+	time -= int64_t(sec) * Interval::MICROS_PER_SEC;
 	micros = int32_t(time);
-	D_ASSERT(IsValidTime(hour, min, sec, micros));
+#ifdef DEBUG
+	D_ASSERT(AssertValidTime(hour, min, sec, micros));
+#endif
 }
 
 } // namespace duckdb

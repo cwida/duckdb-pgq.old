@@ -10,7 +10,7 @@
 namespace duckdb {
 
 template <class OP>
-static Value binary_value_operation(const Value &left, const Value &right) {
+static Value BinaryValueOperation(const Value &left, const Value &right) {
 	auto left_type = left.type();
 	auto right_type = right.type();
 	LogicalType result_type = left_type;
@@ -18,7 +18,7 @@ static Value binary_value_operation(const Value &left, const Value &right) {
 		result_type = LogicalType::MaxLogicalType(left.type(), right.type());
 		Value left_cast = left.CastAs(result_type);
 		Value right_cast = right.CastAs(result_type);
-		return binary_value_operation<OP>(left_cast, right_cast);
+		return BinaryValueOperation<OP>(left_cast, right_cast);
 	}
 	if (left.is_null || right.is_null) {
 		return Value().CastAs(result_type);
@@ -42,6 +42,22 @@ static Value binary_value_operation(const Value &left, const Value &right) {
 		case PhysicalType::INT64:
 			left_hugeint = Hugeint::Convert(left.value_.bigint);
 			right_hugeint = Hugeint::Convert(right.value_.bigint);
+			break;
+		case PhysicalType::UINT8:
+			left_hugeint = Hugeint::Convert(left.value_.utinyint);
+			right_hugeint = Hugeint::Convert(right.value_.utinyint);
+			break;
+		case PhysicalType::UINT16:
+			left_hugeint = Hugeint::Convert(left.value_.usmallint);
+			right_hugeint = Hugeint::Convert(right.value_.usmallint);
+			break;
+		case PhysicalType::UINT32:
+			left_hugeint = Hugeint::Convert(left.value_.uinteger);
+			right_hugeint = Hugeint::Convert(right.value_.uinteger);
+			break;
+		case PhysicalType::UINT64:
+			left_hugeint = Hugeint::Convert(left.value_.ubigint);
+			right_hugeint = Hugeint::Convert(right.value_.ubigint);
 			break;
 		case PhysicalType::INT128:
 			left_hugeint = left.value_.hugeint;
@@ -68,22 +84,22 @@ static Value binary_value_operation(const Value &left, const Value &right) {
 // Numeric Operations
 //===--------------------------------------------------------------------===//
 Value ValueOperations::Add(const Value &left, const Value &right) {
-	return binary_value_operation<duckdb::AddOperator>(left, right);
+	return BinaryValueOperation<duckdb::AddOperator>(left, right);
 }
 
 Value ValueOperations::Subtract(const Value &left, const Value &right) {
-	return binary_value_operation<duckdb::SubtractOperator>(left, right);
+	return BinaryValueOperation<duckdb::SubtractOperator>(left, right);
 }
 
 Value ValueOperations::Multiply(const Value &left, const Value &right) {
-	return binary_value_operation<duckdb::MultiplyOperator>(left, right);
+	return BinaryValueOperation<duckdb::MultiplyOperator>(left, right);
 }
 
 Value ValueOperations::Modulo(const Value &left, const Value &right) {
 	if (right == 0) {
 		return Value(right.type());
 	} else {
-		return binary_value_operation<duckdb::ModuloOperator>(left, right);
+		return BinaryValueOperation<duckdb::ModuloOperator>(left, right);
 	}
 }
 
@@ -91,7 +107,7 @@ Value ValueOperations::Divide(const Value &left, const Value &right) {
 	if (right == 0) {
 		return Value(right.type());
 	} else {
-		return binary_value_operation<duckdb::DivideOperator>(left, right);
+		return BinaryValueOperation<duckdb::DivideOperator>(left, right);
 	}
 }
 

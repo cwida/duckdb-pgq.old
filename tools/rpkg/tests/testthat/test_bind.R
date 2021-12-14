@@ -27,6 +27,8 @@ test_convert <- function(con, type, val) {
 
 test_that("dbBind() works as expected for all types", {
   con <- dbConnect(duckdb::duckdb())
+  on.exit(dbDisconnect(con, shutdown = TRUE))
+
   test_convert(con, "BOOLEAN", TRUE)
   test_convert(con, "BOOLEAN", FALSE)
 
@@ -44,13 +46,12 @@ test_that("dbBind() works as expected for all types", {
 
   test_convert(con, "TIMESTAMP", as.POSIXct("2019-11-26 21:11Z", "UTC"))
 
-  test_convert(con, "STRING", as.factor("Hello, World"))
-
-  dbDisconnect(con, shutdown = T)
+  expect_warning(test_convert(con, "STRING", as.factor("Hello, World")))
 })
 
 test_that("dbBind() is called from dbGetQuery and dbExecute", {
   con <- dbConnect(duckdb::duckdb())
+  on.exit(dbDisconnect(con, shutdown = TRUE))
 
   res <- dbGetQuery(con, "SELECT CAST (? AS INTEGER), CAST(? AS STRING)", params = list(42, "Hello"))
 
@@ -80,25 +81,20 @@ test_that("dbBind() is called from dbGetQuery and dbExecute", {
   expect_equal(res[[1]][1], 43L)
   expect_equal(res[[2]][1], "Holla")
 
-
   dbClearResult(q)
-
-  dbDisconnect(con, shutdown = T)
 })
 
 test_that("test blobs", {
   con <- dbConnect(duckdb::duckdb())
+  on.exit(dbDisconnect(con, shutdown = TRUE))
 
   res <- dbGetQuery(con, "SELECT BLOB 'hello'")
-
   expect_equal(res[[1]][[1]], charToRaw("hello"))
-
-  dbDisconnect(con, shutdown = T)
 })
 
 test_that("various error cases for dbBind()", {
-  # testthat::skip("eek")
   con <- dbConnect(duckdb::duckdb())
+  on.exit(dbDisconnect(con, shutdown = TRUE))
 
   q <- dbSendQuery(con, "SELECT CAST (? AS INTEGER)")
 
@@ -106,18 +102,15 @@ test_that("various error cases for dbBind()", {
 
   expect_error(dbBind(q, list()))
   expect_error(dbBind(q, list(1, 2)))
+  expect_error(dbBind(q, list("asdf")))
   expect_error(dbBind(q, list("asdf", "asdf")))
 
   expect_error(dbBind(q))
 
-  expect_error(dbBind(q, 1))
-  expect_error(dbBind(q, 1, 2))
   expect_error(dbBind(q, "asdf"))
-  expect_error(dbBind(q, "asdf", "asdf"))
 
   dbClearResult(q)
 
-  expect_error(dbGetQuery(con, "SELECT CAST (? AS INTEGER)", 1, 2))
   expect_error(dbGetQuery(con, "SELECT CAST (? AS INTEGER)", "asdf"))
   expect_error(dbGetQuery(con, "SELECT CAST (? AS INTEGER)", "asdf", "asdf"))
   expect_error(dbGetQuery(con, "SELECT CAST (? AS INTEGER)"))
@@ -149,7 +142,4 @@ test_that("various error cases for dbBind()", {
   expect_error(dbGetQuery(con, "SELECT CAST (42 AS INTEGER)", list(1, 2)))
   expect_error(dbGetQuery(con, "SELECT CAST (42 AS INTEGER)", list("asdf")))
   expect_error(dbGetQuery(con, "SELECT CAST (42 AS INTEGER)", list("asdf", "asdf")))
-
-
-  dbDisconnect(con, shutdown = T)
 })

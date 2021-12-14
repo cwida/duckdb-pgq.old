@@ -27,9 +27,15 @@
 #include "duckdb/parser/expression/constant_expression.hpp"
 #include "duckdb/parser/expression/cast_expression.hpp"
 // #include "duckdb/planner/expression_binder.hpp"
-#include "duckdb/parser/parsed_expression.hpp"
+// #include "duckdb/parser/expression_map.hpp"
+// #include "duckdb/parser/parsed_expression.hpp"
+// #include "duckdb/parser/transform/helpers/transform_groupby.hpp"
 
 namespace duckdb {
+
+// struct GroupingExpressionMap {
+// 	expression_map_t<idx_t> map;
+// };
 
 static unique_ptr<BaseTableRef> TransformFromTable(string alias, string table_name) {
 	auto result = make_unique<BaseTableRef>();
@@ -120,7 +126,7 @@ static unique_ptr<SelectStatement> GetCountTable(string name) {
 	auto colref = make_unique<ColumnRefExpression>("cid", "customer");
 	vector<unique_ptr<ParsedExpression>> children;
 	children.push_back(move(colref));
-	auto count_function = make_unique<FunctionExpression>("count", children);
+	auto count_function = make_unique<FunctionExpression>("count", move(children));
 
 	// vector<unique_ptr<ParsedExpression>> vcount_target;
 	select_inner->select_list.push_back(move(count_function));
@@ -248,11 +254,11 @@ unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
 					csr_vertex_children.push_back(move(count_subquery_expr));
 					csr_vertex_children.push_back(move(sub_dense_colref));
 					csr_vertex_children.push_back(move(sub_cnt_colref));
-					auto create_vertex_function = make_unique<FunctionExpression>("create_csr_vertex", csr_vertex_children);
+					auto create_vertex_function = make_unique<FunctionExpression>("create_csr_vertex", move(csr_vertex_children));
 
 					vector<unique_ptr<ParsedExpression>> sum_children;
 					sum_children.push_back(move(create_vertex_function));
-					auto sum_function = make_unique<FunctionExpression>("sum", sum_children);
+					auto sum_function = make_unique<FunctionExpression>("sum", move(sum_children));
 					// auto inner_from_subquery = make_unique<SubqueryExpression>();
 					
 					auto inner_select_statment = make_unique<SelectStatement>();
@@ -264,13 +270,20 @@ unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
 					auto t_fromid_colref = make_unique<ColumnRefExpression>("from_id", "transfers"); //t label
 					vector<unique_ptr<ParsedExpression>> inner_count_children;
 					inner_count_children.push_back(move(t_fromid_colref));
-					auto inner_count_function = make_unique<FunctionExpression>("count", inner_count_children);
+					auto inner_count_function = make_unique<FunctionExpression>("count", move(inner_count_children));
 					inner_count_function->alias = "cnt";
 					inner_select_node->select_list.push_back(move(c_rowid_colref));
 					inner_select_node->select_list.push_back(move(inner_count_function));
 					// vector<unique_ptr<ParsedExpression>> inner_group_by;
 					auto c_rowid_colref_1 = make_unique<ColumnRefExpression>("rowid", "customer"); //c label
-					inner_select_node->groups.push_back(move(c_rowid_colref_1));
+					// GroupByNode gnode;
+					// vector<idx_t> indexes;
+
+					// inner_select_node->groups.push_back(move(c_rowid_colref_1));
+					// GroupingExpressionMap map;
+
+					// AddGroupByExpression(move(c_rowid_colref_1), &map, inner_select_node->groups, indexes);
+					// inner_select_node->groups.grouping_sets.push_back(VectorToGroupingSet(indexes))
 					//  = inner_select_list;
 					auto inner_join_ref = make_unique<JoinRef>();
 					inner_join_ref->type = JoinType::LEFT;
@@ -317,7 +330,7 @@ unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
 
 					auto outer_select_node = make_unique<SelectNode>();
 					
-					auto create_csr_edge_function = make_unique<FunctionExpression>("create_csr_edge", csr_edge_children);
+					auto create_csr_edge_function = make_unique<FunctionExpression>("create_csr_edge", move(csr_edge_children));
 					create_csr_edge_function->alias = "temp";
 					auto outer_src_rowid = make_unique<ColumnRefExpression>("rowid", "src" );
 					outer_src_rowid->alias = "src_row";
@@ -396,7 +409,7 @@ unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
 					reachability_children.push_back(move(cte_where_dst_row));
 
 					auto reachability_constant = make_unique<ConstantExpression>(Value::INTEGER((int32_t)1));
-					auto reachability_function = make_unique<FunctionExpression>("reachability", reachability_children);
+					auto reachability_function = make_unique<FunctionExpression>("reachability", move(reachability_children));
 					cte_conditions.push_back(
 		    			make_unique<ComparisonExpression>(ExpressionType::COMPARE_EQUAL, move(reachability_function), move(reachability_constant)));
 					

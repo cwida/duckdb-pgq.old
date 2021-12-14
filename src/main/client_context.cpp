@@ -1,6 +1,10 @@
 #include "duckdb/main/client_context.hpp"
 
+#include "duckdb/main/client_context_file_opener.hpp"
+#include "duckdb/main/query_profiler.hpp"
 #include "duckdb/catalog/catalog_entry/table_catalog_entry.hpp"
+#include "duckdb/catalog/catalog_entry/scalar_function_catalog_entry.hpp"
+#include "duckdb/catalog/catalog_search_path.hpp"
 #include "duckdb/common/serializer/buffered_deserializer.hpp"
 #include "duckdb/common/serializer/buffered_serializer.hpp"
 #include "duckdb/execution/physical_plan_generator.hpp"
@@ -11,6 +15,7 @@
 #include "duckdb/optimizer/optimizer.hpp"
 #include "duckdb/parser/parser.hpp"
 #include "duckdb/parser/expression/constant_expression.hpp"
+#include "duckdb/parser/parsed_data/create_function_info.hpp"
 #include "duckdb/parser/statement/drop_statement.hpp"
 #include "duckdb/parser/statement/execute_statement.hpp"
 #include "duckdb/parser/statement/explain_statement.hpp"
@@ -28,13 +33,16 @@
 #include "duckdb/common/serializer/buffered_file_writer.hpp"
 #include "duckdb/planner/pragma_handler.hpp"
 #include "duckdb/common/to_string.hpp"
+#include "duckdb/common/file_system.hpp"
+#include "duckdb/execution/column_binding_resolver.hpp"
 
 namespace duckdb {
 
 class ClientContextLock {
 public:
-	ClientContextLock(mutex &context_lock) : client_guard(context_lock) {
+	explicit ClientContextLock(mutex &context_lock) : client_guard(context_lock) {
 	}
+
 	~ClientContextLock() {
 	}
 
@@ -43,13 +51,23 @@ private:
 };
 
 ClientContext::ClientContext(shared_ptr<DatabaseInstance> database)
-    : db(database), transaction(db->GetTransactionManager(), *this), interrupted(false), executor(*this),
-      temporary_objects(make_unique<SchemaCatalogEntry>(&db->GetCatalog(), TEMP_SCHEMA, true)), open_result(nullptr) {
+    : profiler(make_unique<QueryProfiler>()), query_profiler_history(make_unique<QueryProfilerHistory>()),
+      db(move(database)), transaction(db->GetTransactionManager(), *this), interrupted(false), executor(*this),
+      temporary_objects(make_unique<SchemaCatalogEntry>(&db->GetCatalog(), TEMP_SCHEMA, true)),
+      catalog_search_path(make_unique<CatalogSearchPath>(*this)),
+      file_opener(make_unique<ClientContextFileOpener>(*this)), open_result(nullptr) {
 	std::random_device rd;
 	random_engine.seed(rd());
+
+	progress_bar = make_unique<ProgressBar>(&executor, wait_time);
 }
 
 ClientContext::~ClientContext() {
+	if (std::uncaught_exception()) {
+		return;
+	}
+	// destroy the client context and rollback if there is an active transaction
+	// but only if we are not destroying this client context as part of an exception stack unwind
 	Destroy();
 }
 
@@ -76,31 +94,39 @@ void ClientContext::Cleanup() {
 unique_ptr<DataChunk> ClientContext::Fetch() {
 	auto lock = LockContext();
 	if (!open_result) {
-		// no result to fetch from
-		throw Exception("Fetch was called, but there is no open result (or the result was previously closed)");
+		throw InternalException("Fetch was called, but there is no open result (or the result was previously closed)");
 	}
 	try {
 		// fetch the chunk and return it
 		auto chunk = FetchInternal(*lock);
 		return chunk;
-	} catch (Exception &ex) {
+	} catch (std::exception &ex) {
 		open_result->error = ex.what();
-	} catch (...) {
+	} catch (...) { // LCOV_EXCL_START
 		open_result->error = "Unhandled exception in Fetch";
-	}
+	} // LCOV_EXCL_STOP
 	open_result->success = false;
 	CleanupInternal(*lock);
 	return nullptr;
 }
 
 string ClientContext::FinalizeQuery(ClientContextLock &lock, bool success) {
-	profiler.EndQuery();
-
+	profiler->EndQuery();
 	executor.Reset();
 
 	string error;
 	if (transaction.HasActiveTransaction()) {
 		ActiveTransaction().active_query = MAXIMUM_QUERY_ID;
+		// Move the query profiler into the history
+		auto &prev_profilers = query_profiler_history->GetPrevProfilers();
+		prev_profilers.emplace_back(transaction.ActiveTransaction().active_query, move(profiler));
+		// Reinitialize the query profiler
+		profiler = make_unique<QueryProfiler>();
+		// Propagate settings of the saved query into the new profiler.
+		profiler->Propagate(*prev_profilers.back().second);
+		if (prev_profilers.size() >= query_profiler_history->GetPrevProfilersSize()) {
+			prev_profilers.pop_front();
+		}
 		try {
 			if (transaction.IsAutoCommit()) {
 				if (success) {
@@ -111,11 +137,11 @@ string ClientContext::FinalizeQuery(ClientContextLock &lock, bool success) {
 					transaction.Rollback();
 				}
 			}
-		} catch (Exception &ex) {
+		} catch (std::exception &ex) {
 			error = ex.what();
-		} catch (...) {
+		} catch (...) { // LCOV_EXCL_START
 			error = "Unhandled exception!";
-		}
+		} // LCOV_EXCL_STOP
 	}
 	return error;
 }
@@ -148,13 +174,16 @@ shared_ptr<PreparedStatementData> ClientContext::CreatePreparedStatement(ClientC
 	StatementType statement_type = statement->type;
 	auto result = make_shared<PreparedStatementData>(statement_type);
 
-	profiler.StartPhase("planner");
+	profiler->StartPhase("planner");
 	Planner planner(*this);
 	planner.CreatePlan(move(statement));
 	D_ASSERT(planner.plan);
-	profiler.EndPhase();
+	profiler->EndPhase();
 
 	auto plan = move(planner.plan);
+#ifdef DEBUG
+	plan->Verify();
+#endif
 	// extract the result column names from the plan
 	result->read_only = planner.read_only;
 	result->requires_valid_transaction = planner.requires_valid_transaction;
@@ -165,21 +194,33 @@ shared_ptr<PreparedStatementData> ClientContext::CreatePreparedStatement(ClientC
 	result->catalog_version = Transaction::GetTransaction(*this).catalog_version;
 
 	if (enable_optimizer) {
-		profiler.StartPhase("optimizer");
-		Optimizer optimizer(planner.binder, *this);
+		profiler->StartPhase("optimizer");
+		Optimizer optimizer(*planner.binder, *this);
 		plan = optimizer.Optimize(move(plan));
 		D_ASSERT(plan);
-		profiler.EndPhase();
+		profiler->EndPhase();
+
+#ifdef DEBUG
+		plan->Verify();
+#endif
 	}
 
-	profiler.StartPhase("physical_planner");
+	profiler->StartPhase("physical_planner");
 	// now convert logical query plan into a physical query plan
 	PhysicalPlanGenerator physical_planner(*this);
 	auto physical_plan = physical_planner.CreatePlan(move(plan));
-	profiler.EndPhase();
+	profiler->EndPhase();
 
+#ifdef DEBUG
+	D_ASSERT(!physical_plan->ToString().empty());
+#endif
 	result->plan = move(physical_plan);
 	return result;
+}
+
+int ClientContext::GetProgress() {
+	D_ASSERT(progress_bar);
+	return progress_bar->GetCurrentPercentage();
 }
 
 unique_ptr<QueryResult> ClientContext::ExecutePreparedStatement(ClientContextLock &lock, const string &query,
@@ -199,7 +240,10 @@ unique_ptr<QueryResult> ClientContext::ExecutePreparedStatement(ClientContextLoc
 	statement.Bind(move(bound_values));
 
 	bool create_stream_result = statement.allow_stream_result && allow_stream_result;
-
+	if (enable_progress_bar) {
+		progress_bar->Initialize(wait_time);
+		progress_bar->Start();
+	}
 	// store the physical plan in the context for calls to Fetch()
 	executor.Initialize(statement.plan.get());
 
@@ -208,6 +252,9 @@ unique_ptr<QueryResult> ClientContext::ExecutePreparedStatement(ClientContextLoc
 	D_ASSERT(types == statement.types);
 
 	if (create_stream_result) {
+		if (enable_progress_bar) {
+			progress_bar->Stop();
+		}
 		// successfully compiled SELECT clause and it is the last statement
 		// return a StreamQueryResult so the client can call Fetch() on it and stream the result
 		return make_unique<StreamQueryResult>(statement.statement_type, shared_from_this(), statement.types,
@@ -228,6 +275,9 @@ unique_ptr<QueryResult> ClientContext::ExecutePreparedStatement(ClientContextLoc
 		}
 #endif
 		result->collection.Append(*chunk);
+	}
+	if (enable_progress_bar) {
+		progress_bar->Stop();
 	}
 	return move(result);
 }
@@ -258,6 +308,35 @@ void ClientContext::HandlePragmaStatements(vector<unique_ptr<SQLStatement>> &sta
 
 	PragmaHandler handler(*this);
 	handler.HandlePragmaStatements(*lock, statements);
+}
+
+unique_ptr<LogicalOperator> ClientContext::ExtractPlan(const string &query) {
+	auto lock = LockContext();
+
+	auto statements = ParseStatementsInternal(*lock, query);
+	if (statements.size() != 1) {
+		throw Exception("ExtractPlan can only prepare a single statement");
+	}
+
+	unique_ptr<LogicalOperator> plan;
+	RunFunctionInTransactionInternal(*lock, [&]() {
+		Planner planner(*this);
+		planner.CreatePlan(move(statements[0]));
+		D_ASSERT(planner.plan);
+
+		plan = move(planner.plan);
+
+		if (enable_optimizer) {
+			Optimizer optimizer(*planner.binder, *this);
+			plan = optimizer.Optimize(move(plan));
+		}
+
+		ColumnBindingResolver resolver;
+		resolver.VisitOperator(*plan);
+
+		plan->ResolveOperatorTypes();
+	});
+	return plan;
 }
 
 unique_ptr<PreparedStatement> ClientContext::PrepareInternal(ClientContextLock &lock,
@@ -291,7 +370,7 @@ unique_ptr<PreparedStatement> ClientContext::Prepare(const string &query) {
 
 		// first parse the query
 		auto statements = ParseStatementsInternal(*lock, query);
-		if (statements.size() == 0) {
+		if (statements.empty()) {
 			throw Exception("No statement to prepare!");
 		}
 		if (statements.size() > 1) {
@@ -311,6 +390,7 @@ unique_ptr<QueryResult> ClientContext::Execute(const string &query, shared_ptr<P
 	} catch (std::exception &ex) {
 		return make_unique<MaterializedQueryResult>(ex.what());
 	}
+	LogQueryInternal(*lock, query);
 	return RunStatementOrPreparedStatement(*lock, query, nullptr, prepared, &values, allow_stream_result);
 }
 
@@ -356,7 +436,7 @@ unique_ptr<QueryResult> ClientContext::RunStatementOrPreparedStatement(ClientCon
 		statement = move(copied_statement);
 	}
 	// start the profiler
-	profiler.StartQuery(query);
+	profiler->StartQuery(query);
 	try {
 		if (statement) {
 			result = RunStatementInternal(lock, query, move(statement), allow_stream_result);
@@ -437,21 +517,30 @@ unique_ptr<QueryResult> ClientContext::RunStatements(ClientContextLock &lock, co
 	return result;
 }
 
-void ClientContext::LogQueryInternal(ClientContextLock &, string query) {
+void ClientContext::LogQueryInternal(ClientContextLock &, const string &query) {
 	if (!log_query_writer) {
+#ifdef DUCKDB_FORCE_QUERY_LOG
+		try {
+			string log_path(DUCKDB_FORCE_QUERY_LOG);
+			log_query_writer = make_unique<BufferedFileWriter>(
+			    FileSystem::GetFileSystem(*this), log_path, BufferedFileWriter::DEFAULT_OPEN_FLAGS, file_opener.get());
+		} catch (...) {
+			return;
+		}
+#else
 		return;
+#endif
 	}
 	// log query path is set: log the query
 	log_query_writer->WriteData((const_data_ptr_t)query.c_str(), query.size());
 	log_query_writer->WriteData((const_data_ptr_t) "\n", 1);
 	log_query_writer->Flush();
+	log_query_writer->Sync();
 }
 
 unique_ptr<QueryResult> ClientContext::Query(unique_ptr<SQLStatement> statement, bool allow_stream_result) {
 	auto lock = LockContext();
-	if (log_query_writer) {
-		LogQueryInternal(*lock, statement->query.substr(statement->stmt_location, statement->stmt_length));
-	}
+	LogQueryInternal(*lock, statement->query.substr(statement->stmt_location, statement->stmt_length));
 
 	vector<unique_ptr<SQLStatement>> statements;
 	statements.push_back(move(statement));
@@ -472,7 +561,7 @@ unique_ptr<QueryResult> ClientContext::Query(const string &query, bool allow_str
 		return make_unique<MaterializedQueryResult>(ex.what());
 	}
 
-	if (statements.size() == 0) {
+	if (statements.empty()) {
 		// no statements, return empty successful result
 		return make_unique<MaterializedQueryResult>(StatementType::INVALID_STATEMENT);
 	}
@@ -486,15 +575,15 @@ void ClientContext::Interrupt() {
 
 void ClientContext::EnableProfiling() {
 	auto lock = LockContext();
-	profiler.Enable();
+	profiler->Enable();
 }
 
 void ClientContext::DisableProfiling() {
 	auto lock = LockContext();
-	profiler.Disable();
+	profiler->Disable();
 }
 
-string ClientContext::VerifyQuery(ClientContextLock &lock, string query, unique_ptr<SQLStatement> statement) {
+string ClientContext::VerifyQuery(ClientContextLock &lock, const string &query, unique_ptr<SQLStatement> statement) {
 	D_ASSERT(statement->type == StatementType::SELECT_STATEMENT);
 	// aggressive query verification
 
@@ -536,6 +625,8 @@ string ClientContext::VerifyQuery(ClientContextLock &lock, string query, unique_
 		// check that the hashes are equivalent too
 		D_ASSERT(orig_expr_list[i]->Hash() == de_expr_list[i]->Hash());
 		D_ASSERT(orig_expr_list[i]->Hash() == cp_expr_list[i]->Hash());
+
+		D_ASSERT(!orig_expr_list[i]->Equals(nullptr));
 	}
 	// now perform additional checking within the expressions
 	for (idx_t outer_idx = 0; outer_idx < orig_expr_list.size(); outer_idx++) {
@@ -551,9 +642,9 @@ string ClientContext::VerifyQuery(ClientContextLock &lock, string query, unique_
 #endif
 
 	// disable profiling if it is enabled
-	bool profiling_is_enabled = profiler.IsEnabled();
+	bool profiling_is_enabled = profiler->IsEnabled();
 	if (profiling_is_enabled) {
-		profiler.Disable();
+		profiler->Disable();
 	}
 
 	// see below
@@ -584,9 +675,9 @@ string ClientContext::VerifyQuery(ClientContextLock &lock, string query, unique_
 		auto explain_stmt = make_unique<ExplainStatement>(move(statement_copy_for_explain));
 		try {
 			RunStatementInternal(lock, explain_q, move(explain_stmt), false);
-		} catch (std::exception &ex) {
+		} catch (std::exception &ex) { // LCOV_EXCL_START
 			return "EXPLAIN failed but query did not (" + string(ex.what()) + ")";
-		}
+		} // LCOV_EXCL_STOP
 	}
 
 	// now execute the copied statement
@@ -620,7 +711,7 @@ string ClientContext::VerifyQuery(ClientContextLock &lock, string query, unique_
 	enable_optimizer = true;
 
 	if (profiling_is_enabled) {
-		profiler.Enable();
+		profiler->Enable();
 	}
 
 	// now compare the results
@@ -631,61 +722,94 @@ string ClientContext::VerifyQuery(ClientContextLock &lock, string query, unique_
 	results.push_back(move(unoptimized_result));
 	vector<string> names = {"Copied Result", "Deserialized Result", "Unoptimized Result"};
 	for (idx_t i = 0; i < results.size(); i++) {
-		if (original_result->success != results[i]->success) {
+		if (original_result->success != results[i]->success) { // LCOV_EXCL_START
 			string result = names[i] + " differs from original result!\n";
 			result += "Original Result:\n" + original_result->ToString();
 			result += names[i] + ":\n" + results[i]->ToString();
 			return result;
-		}
-		if (!original_result->collection.Equals(results[i]->collection)) {
+		}                                                                  // LCOV_EXCL_STOP
+		if (!original_result->collection.Equals(results[i]->collection)) { // LCOV_EXCL_START
 			string result = names[i] + " differs from original result!\n";
 			result += "Original Result:\n" + original_result->ToString();
 			result += names[i] + ":\n" + results[i]->ToString();
 			return result;
-		}
+		} // LCOV_EXCL_STOP
 	}
 
 	return "";
 }
 
+bool ClientContext::UpdateFunctionInfoFromEntry(ScalarFunctionCatalogEntry *existing_function,
+                                                CreateScalarFunctionInfo *new_info) {
+	if (new_info->functions.empty()) {
+		throw InternalException("Registering function without scalar function definitions!");
+	}
+	bool need_rewrite_entry = false;
+	idx_t size_new_func = new_info->functions.size();
+	for (idx_t exist_idx = 0; exist_idx < existing_function->functions.size(); ++exist_idx) {
+		bool can_add = true;
+		for (idx_t new_idx = 0; new_idx < size_new_func; ++new_idx) {
+			if (new_info->functions[new_idx].Equal(existing_function->functions[exist_idx])) {
+				can_add = false;
+				break;
+			}
+		}
+		if (can_add) {
+			new_info->functions.push_back(existing_function->functions[exist_idx]);
+			need_rewrite_entry = true;
+		}
+	}
+	return need_rewrite_entry;
+}
+
 void ClientContext::RegisterFunction(CreateFunctionInfo *info) {
 	RunFunctionInTransaction([&]() {
 		auto &catalog = Catalog::GetCatalog(*this);
-		catalog.CreateFunction(*this, temporary_objects.get(), info);
+		ScalarFunctionCatalogEntry *existing_function = (ScalarFunctionCatalogEntry *)catalog.GetEntry(
+		    *this, CatalogType::SCALAR_FUNCTION_ENTRY, info->schema, info->name, true);
+		if (existing_function) {
+			if (UpdateFunctionInfoFromEntry(existing_function, (CreateScalarFunctionInfo *)info)) {
+				// function info was updated from catalog entry, rewrite is needed
+				info->on_conflict = OnCreateConflict::REPLACE_ON_CONFLICT;
+			}
+		}
+		// create function
+		catalog.CreateFunction(*this, info);
 	});
 }
 
-void ClientContext::RunFunctionInTransactionInternal(ClientContextLock &lock, std::function<void(void)> fun,
+void ClientContext::RunFunctionInTransactionInternal(ClientContextLock &lock, const std::function<void(void)> &fun,
                                                      bool requires_valid_transaction) {
 	if (requires_valid_transaction && transaction.HasActiveTransaction() &&
 	    transaction.ActiveTransaction().IsInvalidated()) {
 		throw Exception("Failed: transaction has been invalidated!");
 	}
 	// check if we are on AutoCommit. In this case we should start a transaction
-	if (transaction.IsAutoCommit()) {
+	bool require_new_transaction = transaction.IsAutoCommit() && !transaction.HasActiveTransaction();
+	if (require_new_transaction) {
 		transaction.BeginTransaction();
 	}
 	try {
 		fun();
 	} catch (StandardException &ex) {
-		if (transaction.IsAutoCommit()) {
+		if (require_new_transaction) {
 			transaction.Rollback();
 		}
 		throw;
 	} catch (std::exception &ex) {
-		if (transaction.IsAutoCommit()) {
+		if (require_new_transaction) {
 			transaction.Rollback();
 		} else {
 			ActiveTransaction().Invalidate();
 		}
 		throw;
 	}
-	if (transaction.IsAutoCommit()) {
+	if (require_new_transaction) {
 		transaction.Commit();
 	}
 }
 
-void ClientContext::RunFunctionInTransaction(std::function<void(void)> fun, bool requires_valid_transaction) {
+void ClientContext::RunFunctionInTransaction(const std::function<void(void)> &fun, bool requires_valid_transaction) {
 	auto lock = LockContext();
 	RunFunctionInTransactionInternal(*lock, fun, requires_valid_transaction);
 }
@@ -704,13 +828,13 @@ unique_ptr<TableDescription> ClientContext::TableInfo(const string &schema_name,
 		result->schema = schema_name;
 		result->table = table_name;
 		for (auto &column : table->columns) {
-			result->columns.push_back(ColumnDefinition(column.name, column.type));
+			result->columns.emplace_back(column.name, column.type);
 		}
 	});
 	return result;
 }
 
-void ClientContext::Append(TableDescription &description, DataChunk &chunk) {
+void ClientContext::Append(TableDescription &description, ChunkCollection &collection) {
 	RunFunctionInTransaction([&]() {
 		auto &catalog = Catalog::GetCatalog(*this);
 		auto table_entry = catalog.GetEntry<TableCatalogEntry>(*this, description.schema, description.table);
@@ -723,28 +847,37 @@ void ClientContext::Append(TableDescription &description, DataChunk &chunk) {
 				throw Exception("Failed to append: table entry has different number of columns!");
 			}
 		}
-		table_entry->storage->Append(*table_entry, *this, chunk);
-	});
-}
-
-void ClientContext::TryBindRelation(Relation &relation, vector<ColumnDefinition> &result_columns) {
-	RunFunctionInTransaction([&]() {
-		// bind the expressions
-		Binder binder(*this);
-		auto result = relation.Bind(binder);
-		D_ASSERT(result.names.size() == result.types.size());
-		for (idx_t i = 0; i < result.names.size(); i++) {
-			result_columns.push_back(ColumnDefinition(result.names[i], result.types[i]));
+		for (auto &chunk : collection.Chunks()) {
+			table_entry->storage->Append(*table_entry, *this, *chunk);
 		}
 	});
 }
 
-unique_ptr<QueryResult> ClientContext::Execute(shared_ptr<Relation> relation) {
+void ClientContext::TryBindRelation(Relation &relation, vector<ColumnDefinition> &result_columns) {
+#ifdef DEBUG
+	D_ASSERT(!relation.GetAlias().empty());
+	D_ASSERT(!relation.ToString().empty());
+#endif
+	RunFunctionInTransaction([&]() {
+		// bind the expressions
+		auto binder = Binder::CreateBinder(*this);
+		auto result = relation.Bind(*binder);
+		D_ASSERT(result.names.size() == result.types.size());
+		for (idx_t i = 0; i < result.names.size(); i++) {
+			result_columns.emplace_back(result.names[i], result.types[i]);
+		}
+	});
+}
+
+unique_ptr<QueryResult> ClientContext::Execute(const shared_ptr<Relation> &relation) {
 	auto lock = LockContext();
+	InitialCleanup(*lock);
+
 	string query;
 	if (query_verification_enabled) {
 		// run the ToString method of any relation we run, mostly to ensure it doesn't crash
 		relation->ToString();
+		relation->GetAlias();
 		if (relation->IsReadOnly()) {
 			// verify read only statements by running a select statement
 			auto select = make_unique<SelectStatement>();
@@ -773,9 +906,11 @@ unique_ptr<QueryResult> ClientContext::Execute(shared_ptr<Relation> relation) {
 		}
 	}
 	// result mismatch
-	string err_str = "Result mismatch in query!\nExpected the following columns: ";
+	string err_str = "Result mismatch in query!\nExpected the following columns: [";
 	for (idx_t i = 0; i < expected_columns.size(); i++) {
-		err_str += i == 0 ? "[" : ", ";
+		if (i > 0) {
+			err_str += ", ";
+		}
 		err_str += expected_columns[i].name + " " + expected_columns[i].type.ToString();
 	}
 	err_str += "]\nBut result contained the following: ";
@@ -785,6 +920,22 @@ unique_ptr<QueryResult> ClientContext::Execute(shared_ptr<Relation> relation) {
 	}
 	err_str += "]";
 	return make_unique<MaterializedQueryResult>(err_str);
+}
+
+bool ClientContext::TryGetCurrentSetting(const std::string &key, Value &result) {
+	const auto &session_config_map = set_variables;
+	const auto &global_config_map = db->config.set_variables;
+
+	auto session_value = session_config_map.find(key);
+	bool found_session_value = session_value != session_config_map.end();
+	auto global_value = global_config_map.find(key);
+	bool found_global_value = global_value != global_config_map.end();
+	if (!found_session_value && !found_global_value) {
+		return false;
+	}
+
+	result = found_session_value ? session_value->second : global_value->second;
+	return true;
 }
 
 } // namespace duckdb

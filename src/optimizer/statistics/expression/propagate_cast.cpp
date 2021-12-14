@@ -4,9 +4,9 @@
 
 namespace duckdb {
 
-static unique_ptr<BaseStatistics> StatisticsOperationsNumericNumericCast(const BaseStatistics *input_,
-                                                                         LogicalType target) {
-	auto &input = (NumericStatistics &)*input_;
+static unique_ptr<BaseStatistics> StatisticsOperationsNumericNumericCast(const BaseStatistics *input_p,
+                                                                         const LogicalType &target) {
+	auto &input = (NumericStatistics &)*input_p;
 
 	Value min = input.min, max = input.max;
 	if (!min.TryCastAs(target) || !max.TryCastAs(target)) {
@@ -14,11 +14,13 @@ static unique_ptr<BaseStatistics> StatisticsOperationsNumericNumericCast(const B
 		return nullptr;
 	}
 	auto stats = make_unique<NumericStatistics>(target, move(min), move(max));
-	stats->has_null = input.has_null;
+	if (input.validity_stats) {
+		stats->validity_stats = input.validity_stats->Copy();
+	}
 	return move(stats);
 }
 
-static unique_ptr<BaseStatistics> StatisticsNumericCastSwitch(const BaseStatistics *input, LogicalType target) {
+static unique_ptr<BaseStatistics> StatisticsNumericCastSwitch(const BaseStatistics *input, const LogicalType &target) {
 	switch (target.InternalType()) {
 	case PhysicalType::INT8:
 	case PhysicalType::INT16:
@@ -39,6 +41,7 @@ unique_ptr<BaseStatistics> StatisticsPropagator::PropagateExpression(BoundCastEx
 	if (!child_stats) {
 		return nullptr;
 	}
+	unique_ptr<BaseStatistics> result_stats;
 	switch (cast.child->return_type.InternalType()) {
 	case PhysicalType::INT8:
 	case PhysicalType::INT16:
@@ -47,10 +50,15 @@ unique_ptr<BaseStatistics> StatisticsPropagator::PropagateExpression(BoundCastEx
 	case PhysicalType::INT128:
 	case PhysicalType::FLOAT:
 	case PhysicalType::DOUBLE:
-		return StatisticsNumericCastSwitch(child_stats.get(), cast.return_type);
+		result_stats = StatisticsNumericCastSwitch(child_stats.get(), cast.return_type);
+		break;
 	default:
 		return nullptr;
 	}
+	if (cast.try_cast && result_stats) {
+		result_stats->validity_stats = make_unique<ValidityStatistics>(true, true);
+	}
+	return result_stats;
 }
 
 } // namespace duckdb

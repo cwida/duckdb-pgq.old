@@ -1,12 +1,17 @@
 add_subdirectory(blob)
 add_subdirectory(date)
 add_subdirectory(generic)
+add_subdirectory(list)
+add_subdirectory(map)
 add_subdirectory(math)
 add_subdirectory(operators)
 add_subdirectory(sequence)
 add_subdirectory(string)
-add_subdirectory(nested)
+add_subdirectory(struct)
+add_subdirectory(system)
+add_subdirectory(uuid)
 add_subdirectory(sql-pgq)
+
 
 add_library_unity(
   duckdb_func_scalar

@@ -97,7 +97,7 @@ unique_ptr<TableRef> Transformer::TransformMatch(PGMatchPattern *root) {
 		}
 	}
 
-	TransformExpressionList(root->columns, result->columns);
+	TransformExpressionList(*root->columns, result->columns);
 
 	return move(result);
 }

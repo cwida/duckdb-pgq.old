@@ -11,9 +11,10 @@
 #include "duckdb/storage/checkpoint_manager.hpp"
 
 namespace duckdb {
+class CheckpointManager;
 class ColumnData;
-class UncompressedSegment;
-class MorselInfo;
+class ColumnSegment;
+class RowGroup;
 class BaseStatistics;
 class SegmentStatistics;
 
@@ -22,33 +23,26 @@ class TableDataWriter {
 	friend class ColumnData;
 
 public:
-	TableDataWriter(DatabaseInstance &db, TableCatalogEntry &table, MetaBlockWriter &meta_writer);
+	TableDataWriter(DatabaseInstance &db, CheckpointManager &checkpoint_manager, TableCatalogEntry &table,
+	                MetaBlockWriter &meta_writer);
 	~TableDataWriter();
 
-	void WriteTableData();
+	BlockPointer WriteTableData();
 
-	void CheckpointColumn(ColumnData &col_data, idx_t col_idx);
-	void CheckpointDeletes(MorselInfo *info);
+	MetaBlockWriter &GetMetaWriter() {
+		return meta_writer;
+	}
 
-private:
-	void AppendData(SegmentTree &new_tree, idx_t col_idx, Vector &data, idx_t count);
+	CheckpointManager &GetCheckpointManager() {
+		return checkpoint_manager;
+	}
 
-	void CreateSegment(idx_t col_idx);
-	void FlushSegment(SegmentTree &new_tree, idx_t col_idx);
-
-	void WriteDataPointers();
-	void VerifyDataPointers();
+	CompressionType GetColumnCompressionType(idx_t i);
 
 private:
-	DatabaseInstance &db;
+	CheckpointManager &checkpoint_manager;
 	TableCatalogEntry &table;
 	MetaBlockWriter &meta_writer;
-
-	vector<unique_ptr<UncompressedSegment>> segments;
-	vector<unique_ptr<SegmentStatistics>> stats;
-	vector<unique_ptr<BaseStatistics>> column_stats;
-
-	vector<vector<DataPointer>> data_pointers;
 };
 
 } // namespace duckdb

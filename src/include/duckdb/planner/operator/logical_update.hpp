@@ -14,13 +14,14 @@ namespace duckdb {
 
 class LogicalUpdate : public LogicalOperator {
 public:
-	LogicalUpdate(TableCatalogEntry *table) : LogicalOperator(LogicalOperatorType::LOGICAL_UPDATE), table(table) {
+	explicit LogicalUpdate(TableCatalogEntry *table)
+	    : LogicalOperator(LogicalOperatorType::LOGICAL_UPDATE), table(table) {
 	}
 
 	TableCatalogEntry *table;
 	vector<column_t> columns;
 	vector<unique_ptr<Expression>> bound_defaults;
-	bool is_index_update;
+	bool update_is_del_and_insert;
 
 protected:
 	void ResolveTypes() override {

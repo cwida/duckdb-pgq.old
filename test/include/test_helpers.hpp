@@ -18,6 +18,9 @@
 
 namespace duckdb {
 
+bool TestForceStorage();
+void RegisterSqllogictests();
+
 void DeleteDatabase(string path);
 void TestDeleteDirectory(string path);
 void TestCreateDirectory(string path);
@@ -26,6 +29,7 @@ void TestChangeDirectory(string path);
 string TestDirectoryPath();
 string TestCreatePath(string suffix);
 unique_ptr<DBConfig> GetTestConfig();
+bool TestIsInternalError(const string &error);
 
 string GetCSVPath();
 void WriteCSV(string path, const char *csv);

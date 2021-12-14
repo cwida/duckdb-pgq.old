@@ -1,7 +1,4 @@
-var path = require('path');
 var duckdb = require('./duckdb-binding.js');
-// TODO do we need the emitter?
-//var EventEmitter = require('events').EventEmitter;
 module.exports = exports = duckdb;
 
 
@@ -66,9 +63,9 @@ Database.prototype.exec = function() {
 }
 
 Database.prototype.get = function() {
-    throw 'get() is not implemented because its evil';
+    throw "get() is not implemented because it's evil";
 }
 
 Statement.prototype.get = function() {
-    throw 'get() is not implemented because its evil';
+    throw "get() is not implemented because it's evil";
 }

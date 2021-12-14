@@ -6,7 +6,7 @@ CallStmt
 CheckPointStmt
 CopyStmt
 CreateAsStmt
-CreatePropertyGraphStmt
+CreateEnumStmt
 CreateFunctionStmt
 CreateSchemaStmt
 CreateSeqStmt
@@ -32,4 +32,5 @@ VariableResetStmt
 VariableSetStmt
 VariableShowStmt
 ViewStmt
+CreatePropertyGraphStmt
 GraphTableStmt

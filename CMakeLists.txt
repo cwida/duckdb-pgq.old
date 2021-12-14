@@ -1,12 +1,24 @@
 cmake_minimum_required(VERSION 2.8.12)
-cmake_policy(SET CMP0026 NEW)
-cmake_policy(SET CMP0051 NEW)
+
+if(POLICY CMP0026)
+  cmake_policy(SET CMP0026 NEW)
+endif()
+
+if(POLICY CMP0051)
+  cmake_policy(SET CMP0051 NEW)
+endif()
 
 project(DuckDB)
 
 find_package(Threads REQUIRED)
 
-set(CMAKE_CXX_STANDARD 11)
+if (CMAKE_VERSION VERSION_LESS "3.1")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+else ()
+  set (CMAKE_CXX_STANDARD 11)
+endif ()
+
+
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -47,10 +59,7 @@ foreach(p LIB BIN INCLUDE CMAKE)
   endif()
 endforeach()
 
-set(M32_FLAG "")
-if(FORCE_32_BIT)
-  set(M32_FLAG " -m32 ")
-endif()
+
 
 option(DISABLE_UNITY "Disable unity builds." FALSE)
 
@@ -64,13 +73,24 @@ if(${FORCE_COLORED_OUTPUT})
   endif()
 endif()
 
+option( "Enable address sanitizer." TRUE)
+
+set(M32_FLAG "")
+if(FORCE_32_BIT)
+  set(M32_FLAG " -m32 ")
+endif()
+
+option(FORCE_WARN_UNUSED "Unused code objects lead to compiler warnings." FALSE)
+
 option(ENABLE_SANITIZER "Enable address sanitizer." TRUE)
+option(ENABLE_THREAD_SANITIZER "Enable thread sanitizer." FALSE)
 option(ENABLE_UBSAN "Enable undefined behavior sanitizer." TRUE)
+option(DISABLE_VPTR_SANITIZER "Disable vptr sanitizer; work-around for sanitizer false positive on Macbook M1" FALSE)
 option(
   FORCE_SANITIZER
   "Forces building with sanitizers even if the Python and R modules are enabled."
   FALSE)
-if((BUILD_PYTHON OR BUILD_R)
+if((BUILD_PYTHON OR BUILD_R OR CONFIGURE_R)
    AND (ENABLE_SANITIZER OR ENABLE_UBSAN)
    AND ("${CMAKE_BUILD_TYPE}" STREQUAL "Debug"))
   if(FORCE_SANITIZER)
@@ -82,18 +102,47 @@ if((BUILD_PYTHON OR BUILD_R)
   else()
     message(
       WARNING
-        "Sanitizers are not enabled but will not be built because the Python/R builds are enabled. Use FORCE_SANITIZER to force building of the sanitizers even when building these packages."
+        "Sanitizers are enabled but will not be built because the Python/R builds are enabled. Use FORCE_SANITIZER to force building of the sanitizers even when building these packages."
     )
     set(ENABLE_SANITIZER FALSE)
     set(ENABLE_UBSAN FALSE)
   endif()
 endif()
-if(${ENABLE_SANITIZER})
-  set(CXX_EXTRA_DEBUG "${CXX_EXTRA_DEBUG} -fsanitize=address")
+if(${ENABLE_THREAD_SANITIZER})
+  if(${ENABLE_SANITIZER})
+    message(
+      WARNING
+        "Both thread and address sanitizers are enabled. This is not supported. The address sanitizer will be disabled, and we will run with only the thread sanitizer."
+    )
+  endif()
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=thread")
+elseif(${ENABLE_SANITIZER})
+  if(FORCE_ASSERT)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address")
+  else()
+    set(CXX_EXTRA_DEBUG "${CXX_EXTRA_DEBUG} -fsanitize=address")
+  endif()
 endif()
 
 if(${ENABLE_UBSAN})
-  set(CXX_EXTRA_DEBUG "${CXX_EXTRA_DEBUG} -fsanitize=undefined")
+  if(${ENABLE_THREAD_SANITIZER})
+    message(
+      WARNING
+        "Both thread and undefined sanitizers are enabled. This is not supported. The undefined sanitizer will be disabled, and we will run with only the thread sanitizer."
+    )
+  else()
+    if(FORCE_ASSERT)
+      set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=undefined -fno-sanitize-recover=all")
+      if (${DISABLE_VPTR_SANITIZER})
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-sanitize=vptr")
+      endif()
+    else()
+      set(CXX_EXTRA_DEBUG "${CXX_EXTRA_DEBUG} -fsanitize=undefined -fno-sanitize-recover=all")
+      if (${DISABLE_VPTR_SANITIZER})
+        set(CXX_EXTRA_DEBUG "${CXX_EXTRA_DEBUG} -fno-sanitize=vptr")
+      endif()
+    endif()
+  endif()
 endif()
 
 option(EXPLICIT_EXCEPTIONS "Explicitly enable C++ exceptions." FALSE)
@@ -109,33 +158,42 @@ if(${CMAKE_SYSTEM_NAME} STREQUAL "SunOS")
 endif()
 
 execute_process(
-  COMMAND git log -1 --format=%h
-  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-  OUTPUT_VARIABLE GIT_COMMIT_HASH
-  OUTPUT_STRIP_TRAILING_WHITESPACE)
+        COMMAND git log -1 --format=%h
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        RESULT_VARIABLE GIT_RESULT
+        OUTPUT_VARIABLE GIT_COMMIT_HASH
+        OUTPUT_STRIP_TRAILING_WHITESPACE)
 execute_process(
-  COMMAND git describe --tags --abbrev=0
-  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-  OUTPUT_VARIABLE GIT_LAST_TAG
-  OUTPUT_STRIP_TRAILING_WHITESPACE)
+        COMMAND git describe --tags --abbrev=0
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        OUTPUT_VARIABLE GIT_LAST_TAG
+        OUTPUT_STRIP_TRAILING_WHITESPACE)
 execute_process(
-  COMMAND git describe --tags --long
-  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-  OUTPUT_VARIABLE GIT_ITERATION
-  OUTPUT_STRIP_TRAILING_WHITESPACE)
+        COMMAND git describe --tags --long
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        OUTPUT_VARIABLE GIT_ITERATION
+        OUTPUT_STRIP_TRAILING_WHITESPACE)
 
-string(REGEX REPLACE "v([0-9]+).[0-9]+.[0-9]+" "\\1" DUCKDB_MAJOR_VERSION "${GIT_LAST_TAG}")
-string(REGEX REPLACE "v[0-9]+.([0-9]+).[0-9]+" "\\1" DUCKDB_MINOR_VERSION "${GIT_LAST_TAG}")
-string(REGEX REPLACE "v[0-9]+.[0-9]+.([0-9]+)" "\\1" DUCKDB_PATCH_VERSION "${GIT_LAST_TAG}")
-string(REGEX REPLACE ".*-([0-9]+)-.*" "\\1" DUCKDB_DEV_ITERATION "${GIT_ITERATION}")
+if(GIT_RESULT EQUAL "0")
+  string(REGEX REPLACE "v([0-9]+).[0-9]+.[0-9]+" "\\1" DUCKDB_MAJOR_VERSION "${GIT_LAST_TAG}")
+  string(REGEX REPLACE "v[0-9]+.([0-9]+).[0-9]+" "\\1" DUCKDB_MINOR_VERSION "${GIT_LAST_TAG}")
+  string(REGEX REPLACE "v[0-9]+.[0-9]+.([0-9]+)" "\\1" DUCKDB_PATCH_VERSION "${GIT_LAST_TAG}")
+  string(REGEX REPLACE ".*-([0-9]+)-.*" "\\1" DUCKDB_DEV_ITERATION "${GIT_ITERATION}")
 
-if(${DUCKDB_DEV_ITERATION} EQUAL 0)
-  # on a tag; directly use the version
-  set(DUCKDB_VERSION "${GIT_LAST_TAG}")
+  if(DUCKDB_DEV_ITERATION EQUAL 0)
+    # on a tag; directly use the version
+    set(DUCKDB_VERSION "${GIT_LAST_TAG}")
+  else()
+    # not on a tag, increment the patch version by one and add a -devX suffix
+    math(EXPR DUCKDB_PATCH_VERSION "${DUCKDB_PATCH_VERSION}+1")
+    set(DUCKDB_VERSION "v${DUCKDB_MAJOR_VERSION}.${DUCKDB_MINOR_VERSION}.${DUCKDB_PATCH_VERSION}-dev${DUCKDB_DEV_ITERATION}")
+  endif()
 else()
-  # not on a tag, increment the patch version by one and add a -devX suffix
-  math(EXPR DUCKDB_PATCH_VERSION "${DUCKDB_PATCH_VERSION}+1")
-
+  # fallback for when building from tarball
+  set(DUCKDB_MAJOR_VERSION 0)
+  set(DUCKDB_MINOR_VERSION 0)
+  set(DUCKDB_PATCH_VERSION 1)
+  set(DUCKDB_DEV_ITERATION 0)
   set(DUCKDB_VERSION "v${DUCKDB_MAJOR_VERSION}.${DUCKDB_MINOR_VERSION}.${DUCKDB_PATCH_VERSION}-dev${DUCKDB_DEV_ITERATION}")
 endif()
 
@@ -146,15 +204,24 @@ option(AMALGAMATION_BUILD
 option(BUILD_ICU_EXTENSION "Build the ICU extension." FALSE)
 option(BUILD_PARQUET_EXTENSION "Build the Parquet extension." FALSE)
 option(BUILD_TPCH_EXTENSION "Build the TPC-H extension." FALSE)
+option(BUILD_TPCDS_EXTENSION "Build the TPC-DS extension." FALSE)
 option(BUILD_FTS_EXTENSION "Build the FTS extension." FALSE)
+option(BUILD_HTTPFS_EXTENSION "Build the HTTP File System extension." FALSE)
+option(BUILD_VISUALIZER_EXTENSION "Build the profiler-output visualizer extension." FALSE)
 option(BUILD_BENCHMARKS "Enable building of the benchmark suite." FALSE)
 option(BUILD_SQLSMITH "Enable building of SQLSmith." FALSE)
 option(BUILD_TPCE "Enable building of the TPC-E tool." FALSE)
 option(JDBC_DRIVER "Build the DuckDB JDBC driver" FALSE)
+option(BUILD_ODBC_DRIVER "Build the DuckDB ODBC driver" FALSE)
 option(BUILD_PYTHON "Build the DuckDB Python extension" FALSE)
+option(USER_SPACE "Build the DuckDB Python in the user space" FALSE)
+option(FORCE_QUERY_LOG "If enabled, all queries will be logged to the specified path" OFF)
+
 option(BUILD_REST "Build the DuckDB REST server" FALSE)
 option(BUILD_SHELL "Build the DuckDB Shell and SQLite API Wrappers" TRUE)
 option(DISABLE_THREADS "Disable support for multi-threading" FALSE)
+option(CLANG_TIDY "Enable build for clang-tidy, this disables all source files excluding the core database. This does not produce a working build." FALSE)
+option(BUILD_UNITTESTS "Build the C++ Unit Tests." TRUE)
 option(
   ASSERT_EXCEPTION
   "Throw an exception on an assert failing, instead of triggering a sigabort"
@@ -163,13 +230,26 @@ option(FORCE_ASSERT "Enable checking of assertions, even in release mode" FALSE)
 
 option(TREAT_WARNINGS_AS_ERRORS "Treat warnings as errors" FALSE)
 option(EXPORT_DLL_SYMBOLS "Export dll symbols on Windows, else import" TRUE)
+option(BUILD_RDTSC "Enable the rdtsc instruction." FALSE)
+option(BUILD_ARROW_ABI_TEST "Enable the Arrow ABI Test." FALSE)
 
+if(${BUILD_RDTSC})
+  add_compile_definitions(RDTSC)
+endif()
 
 if(BUILD_PYTHON
    OR BUILD_R
+   OR CONFIGURE_R
    OR JDBC_DRIVER)
   set(BUILD_ICU_EXTENSION TRUE)
+  set(BUILD_VISUALIZER_EXTENSION TRUE)
   set(BUILD_PARQUET_EXTENSION TRUE)
+endif()
+
+if(BUILD_PYTHON)
+  set(BUILD_TPCH_EXTENSION TRUE)
+  set(BUILD_TPCDS_EXTENSION TRUE)
+  set(BUILD_FTS_EXTENSION TRUE)
 endif()
 
 if(BUILD_SQLSMITH)
@@ -190,6 +270,12 @@ if(FORCE_ASSERT)
 endif()
 
 if(NOT MSVC)
+  if(${FORCE_WARN_UNUSED})
+    set(CXX_EXTRA "${CXX_EXTRA} -Wunused")
+  endif()
+  if(TREAT_WARNINGS_AS_ERRORS)
+    set(CXX_EXTRA "${CXX_EXTRA} -Werror")
+  endif()
   set(CMAKE_CXX_FLAGS_DEBUG
       "${CMAKE_CXX_FLAGS_DEBUG} -g -O0 -DDEBUG -Wall ${M32_FLAG} ${CXX_EXTRA}")
   set(CMAKE_CXX_FLAGS_RELEASE
@@ -197,11 +283,8 @@ if(NOT MSVC)
   set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELEASE} -g")
 
   set(CXX_EXTRA_DEBUG
-      "${CXX_EXTRA_DEBUG} -Wunused-variable -Wunused-const-variable -Werror=vla -Wnarrowing"
+      "${CXX_EXTRA_DEBUG} -Wunused -Werror=vla -Wnarrowing -pedantic"
   )
-  if(TREAT_WARNINGS_AS_ERRORS)
-    set(CXX_EXTRA_DEBUG "${CXX_EXTRA_DEBUG} -Werror")
-  endif()
 
   if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION
                                                    VERSION_GREATER 8.0)
@@ -249,6 +332,7 @@ include_directories(third_party/utf8proc/include)
 include_directories(third_party/miniparquet)
 include_directories(third_party/concurrentqueue)
 include_directories(third_party/pcg)
+include_directories(third_party/tdigest)
 
 # todo only regenerate ub file if one of the input files changed hack alert
 function(enable_unity_build UB_SUFFIX SOURCE_VARIABLE_NAME)
@@ -273,7 +357,7 @@ function(enable_unity_build UB_SUFFIX SOURCE_VARIABLE_NAME)
   foreach(source_file ${files})
     file(
       APPEND ${temp_unit_build_file}
-      "#line 0 \"${source_file}\"\n#include <${CMAKE_CURRENT_SOURCE_DIR}/${source_file}>\n"
+      "#include <${CMAKE_CURRENT_SOURCE_DIR}/${source_file}>\n"
     )
   endforeach(source_file)
 
@@ -298,7 +382,7 @@ function(enable_unity_build UB_SUFFIX SOURCE_VARIABLE_NAME)
     foreach(source_file ${files})
       file(
         APPEND ${unit_build_file}
-        "#line 0 \"${source_file}\"\n#include <${CMAKE_CURRENT_SOURCE_DIR}/${source_file}>\n"
+        "#include <${CMAKE_CURRENT_SOURCE_DIR}/${source_file}>\n"
       )
     endforeach(source_file)
   endif()
@@ -344,9 +428,25 @@ function(add_extension_definitions)
     add_definitions(-DBUILD_TPCH_EXTENSION=${BUILD_TPCH_EXTENSION})
   endif()
 
+  if(${BUILD_TPCDS_EXTENSION})
+    include_directories(${PROJECT_SOURCE_DIR}/extension/tpcds/include)
+    add_definitions(-DBUILD_TPCDS_EXTENSION=${BUILD_TPCDS_EXTENSION})
+  endif()
+
   if(${BUILD_FTS_EXTENSION})
     include_directories(${CMAKE_SOURCE_DIR}/extension/fts/include)
     add_definitions(-DBUILD_FTS_EXTENSION=${BUILD_FTS_EXTENSION})
+  endif()
+
+  if(${BUILD_HTTPFS_EXTENSION})
+    find_package(OpenSSL REQUIRED)
+    include_directories(${CMAKE_SOURCE_DIR}/extension/httpfs/include ${OPENSSL_INCLUDE_DIR})
+    add_definitions(-DBUILD_HTTPFS_EXTENSION=${BUILD_HTTPFS_EXTENSION})
+  endif()
+
+  if(${BUILD_VISUALIZER_EXTENSION})
+    include_directories(${PROJECT_SOURCE_DIR}/extension/visualizer/include)
+    add_definitions(-DBUILD_VISUALIZER_EXTENSION=${BUILD_VISUALIZER_EXTENSION})
   endif()
 endfunction()
 
@@ -363,8 +463,20 @@ function(add_extension_dependencies LIBRARY)
     add_dependencies(${LIBRARY} tpch_extension)
   endif()
 
+  if(${BUILD_TPCDS_EXTENSION})
+    add_dependencies(${LIBRARY} tpcds_extension)
+  endif()
+
   if(${BUILD_FTS_EXTENSION})
     add_dependencies(${LIBRARY} fts_extension)
+  endif()
+
+  if(${BUILD_HTTPFS_EXTENSION})
+    add_dependencies(${LIBRARY} httpfs_extension)
+  endif()
+
+  if(${BUILD_VISUALIZER_EXTENSION})
+    add_dependencies(${LIBRARY} visualizer_extension)
   endif()
 endfunction()
 
@@ -381,13 +493,31 @@ function(link_extension_libraries LIBRARY)
     target_link_libraries(${LIBRARY} tpch_extension)
   endif()
 
+  if(${BUILD_TPCDS_EXTENSION})
+    target_link_libraries(${LIBRARY} tpcds_extension)
+  endif()
+
   if(${BUILD_FTS_EXTENSION})
     target_link_libraries(${LIBRARY} fts_extension)
+  endif()
+
+  if(${BUILD_HTTPFS_EXTENSION})
+    find_package(OpenSSL REQUIRED)
+    target_link_libraries(${LIBRARY} httpfs_extension ${OPENSSL_LIBRARIES})
+  endif()
+
+  if(${BUILD_VISUALIZER_EXTENSION})
+    target_link_libraries(${LIBRARY} visualizer_extension)
   endif()
 endfunction()
 
 function(link_threads LIBRARY)
-  target_link_libraries(${LIBRARY} Threads::Threads)
+  if (CMAKE_VERSION VERSION_LESS "3.1")
+    target_link_libraries(${LIBRARY} pthread)
+
+  else()
+    target_link_libraries(${LIBRARY} Threads::Threads)
+  endif()
 endfunction()
 
 if(${EXPORT_DLL_SYMBOLS})
@@ -395,22 +525,25 @@ if(${EXPORT_DLL_SYMBOLS})
   add_definitions(-DDUCKDB_BUILD_LIBRARY)
 endif()
 
-add_subdirectory(extension)
 add_subdirectory(src)
 
-option(BUILD_UNITTESTS "Build the C++ Unit Tests." TRUE)
-if(${BUILD_UNITTESTS})
-  add_subdirectory(test)
-  if(NOT WIN32
-     AND NOT SUN
-     AND ${BUILD_BENCHMARKS})
-    add_subdirectory(benchmark)
-  endif()
-endif()
-
-add_subdirectory(third_party)
 add_subdirectory(tools)
 
+add_subdirectory(extension)
+
+if(NOT CLANG_TIDY)
+  if(${BUILD_UNITTESTS})
+    add_subdirectory(test)
+    if(NOT WIN32
+      AND NOT SUN
+      AND ${BUILD_BENCHMARKS})
+      add_subdirectory(benchmark)
+    endif()
+  endif()
+  add_subdirectory(third_party)
+endif()
+
+if (CMAKE_VERSION VERSION_GREATER "3.0") # this does not work with 2.8
 # Write the export set for build and install tree
 install(EXPORT "${DUCKDB_EXPORT_SET}" DESTINATION "${INSTALL_CMAKE_DIR}")
 export(EXPORT "${DUCKDB_EXPORT_SET}"
@@ -444,4 +577,6 @@ if(EXISTS ${CMAKE_CONFIG_TEMPLATE} AND EXISTS ${CMAKE_CONFIG_VERSION_TEMPLATE})
     FILES "${PROJECT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/DuckDBConfig.cmake"
           "${PROJECT_BINARY_DIR}/DuckDBConfigVersion.cmake"
     DESTINATION "${INSTALL_CMAKE_DIR}")
+endif()
+
 endif()

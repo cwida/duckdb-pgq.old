@@ -19,7 +19,7 @@ class Serializer;
 //! Represents a generic expression that returns a table.
 class TableRef {
 public:
-	TableRef(TableReferenceType type) : type(type) {
+	explicit TableRef(TableReferenceType type) : type(type) {
 	}
 	virtual ~TableRef() {
 	}
@@ -33,9 +33,7 @@ public:
 
 public:
 	//! Convert the object to a string
-	virtual string ToString() const {
-		return string();
-	}
+	virtual string ToString() const;
 	void Print();
 
 	virtual bool Equals(const TableRef *other) const;
@@ -48,6 +46,6 @@ public:
 	static unique_ptr<TableRef> Deserialize(Deserializer &source);
 
 	//! Copy the properties of this table ref to the target
-	void CopyProperties(TableRef &target);
+	void CopyProperties(TableRef &target) const;
 };
 } // namespace duckdb

@@ -25,7 +25,7 @@ enum QueryNodeType : uint8_t {
 
 class QueryNode {
 public:
-	QueryNode(QueryNodeType type) : type(type) {
+	explicit QueryNode(QueryNodeType type) : type(type) {
 	}
 	virtual ~QueryNode() {
 	}
@@ -51,7 +51,9 @@ public:
 	static unique_ptr<QueryNode> Deserialize(Deserializer &source);
 
 protected:
-	void CopyProperties(QueryNode &other);
+	//! Copy base QueryNode properties from another expression to this one,
+	//! used in Copy method
+	void CopyProperties(QueryNode &other) const;
 };
 
 } // namespace duckdb

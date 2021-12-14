@@ -27,14 +27,17 @@ MoveConstantsRule::MoveConstantsRule(ExpressionRewriter &rewriter) : Rule(rewrit
 	root = move(op);
 }
 
-unique_ptr<Expression> MoveConstantsRule::Apply(LogicalOperator &op, vector<Expression *> &bindings,
-                                                bool &changes_made) {
+unique_ptr<Expression> MoveConstantsRule::Apply(LogicalOperator &op, vector<Expression *> &bindings, bool &changes_made,
+                                                bool is_root) {
 	auto comparison = (BoundComparisonExpression *)bindings[0];
 	auto outer_constant = (BoundConstantExpression *)bindings[1];
 	auto arithmetic = (BoundFunctionExpression *)bindings[2];
 	auto inner_constant = (BoundConstantExpression *)bindings[3];
 	if (!arithmetic->return_type.IsNumeric()) {
 		return nullptr;
+	}
+	if (inner_constant->value.is_null || outer_constant->value.is_null) {
+		return make_unique<BoundConstantExpression>(Value(comparison->return_type));
 	}
 
 	int arithmetic_child_index = arithmetic->children[0].get() == inner_constant ? 1 : 0;

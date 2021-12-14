@@ -25,6 +25,7 @@ typedef std::function<void(DataChunk &, ExpressionState &, Vector &)> scalar_fun
 //! Binds the scalar function and creates the function data
 typedef unique_ptr<FunctionData> (*bind_scalar_function_t)(ClientContext &context, ScalarFunction &bound_function,
                                                            vector<unique_ptr<Expression>> &arguments);
+typedef unique_ptr<FunctionData> (*init_local_state_t)(const BoundFunctionExpression &expr, FunctionData *bind_data);
 typedef unique_ptr<BaseStatistics> (*function_statistics_t)(ClientContext &context, BoundFunctionExpression &expr,
                                                             FunctionData *bind_data,
                                                             vector<unique_ptr<BaseStatistics>> &child_stats);
@@ -36,29 +37,34 @@ public:
 	ScalarFunction(string name, vector<LogicalType> arguments, LogicalType return_type, scalar_function_t function,
 	               bool has_side_effects = false, bind_scalar_function_t bind = nullptr,
 	               dependency_function_t dependency = nullptr, function_statistics_t statistics = nullptr,
-	               LogicalType varargs = LogicalType::INVALID)
+	               init_local_state_t init_local_state = nullptr,
+	               LogicalType varargs = LogicalType(LogicalTypeId::INVALID))
 	    : BaseScalarFunction(name, arguments, return_type, has_side_effects, varargs), function(function), bind(bind),
-	      dependency(dependency), statistics(statistics) {
+	      init_local_state(init_local_state), dependency(dependency), statistics(statistics) {
 	}
 
 	ScalarFunction(vector<LogicalType> arguments, LogicalType return_type, scalar_function_t function,
 	               bool has_side_effects = false, bind_scalar_function_t bind = nullptr,
 	               dependency_function_t dependency = nullptr, function_statistics_t statistics = nullptr,
-	               LogicalType varargs = LogicalType::INVALID)
+	               init_local_state_t init_local_state = nullptr,
+	               LogicalType varargs = LogicalType(LogicalTypeId::INVALID))
 	    : ScalarFunction(string(), arguments, return_type, function, has_side_effects, bind, dependency, statistics,
-	                     varargs) {
+	                     init_local_state, varargs) {
 	}
 
 	//! The main scalar function to execute
 	scalar_function_t function;
 	//! The bind function (if any)
 	bind_scalar_function_t bind;
+	//! Init thread local state for the function (if any)
+	init_local_state_t init_local_state;
 	// The dependency function (if any)
 	dependency_function_t dependency;
 	//! The statistics propagation function (if any)
 	function_statistics_t statistics;
 
-	static unique_ptr<BoundFunctionExpression> BindScalarFunction(ClientContext &context, string schema, string name,
+	static unique_ptr<BoundFunctionExpression> BindScalarFunction(ClientContext &context, const string &schema,
+	                                                              const string &name,
 	                                                              vector<unique_ptr<Expression>> children,
 	                                                              string &error, bool is_operator = false);
 	static unique_ptr<BoundFunctionExpression> BindScalarFunction(ClientContext &context,
@@ -78,14 +84,40 @@ public:
 		return !(*this == rhs);
 	}
 
+	bool Equal(const ScalarFunction &rhs) const {
+		// number of types
+		if (this->arguments.size() != rhs.arguments.size()) {
+			return false;
+		}
+		// argument types
+		for (idx_t i = 0; i < this->arguments.size(); ++i) {
+			if (this->arguments[i] != rhs.arguments[i]) {
+				return false;
+			}
+		}
+		// return type
+		if (this->return_type != rhs.return_type) {
+			return false;
+		}
+		// varargs
+		if (this->varargs != rhs.varargs) {
+			return false;
+		}
+
+		return true; // they are equal
+	}
+
 private:
 	bool CompareScalarFunctionT(const scalar_function_t other) const {
-		typedef void(funcTypeT)(DataChunk &, ExpressionState &, Vector &);
+		typedef void(scalar_function_ptr_t)(DataChunk &, ExpressionState &, Vector &);
 
-		funcTypeT **func_ptr = (funcTypeT **)function.template target<funcTypeT *>();
-		funcTypeT **other_ptr = (funcTypeT **)other.template target<funcTypeT *>();
+		auto func_ptr = (scalar_function_ptr_t **)function.template target<scalar_function_ptr_t *>();
+		auto other_ptr = (scalar_function_ptr_t **)other.template target<scalar_function_ptr_t *>();
 
 		// Case the functions were created from lambdas the target will return a nullptr
+		if (!func_ptr && !other_ptr) {
+			return true;
+		}
 		if (func_ptr == nullptr || other_ptr == nullptr) {
 			// scalar_function_t (std::functions) from lambdas cannot be compared
 			return false;
@@ -99,17 +131,16 @@ public:
 		result.Reference(input.data[0]);
 	}
 
-	template <class TA, class TR, class OP, bool SKIP_NULLS = false>
+	template <class TA, class TR, class OP>
 	static void UnaryFunction(DataChunk &input, ExpressionState &state, Vector &result) {
 		D_ASSERT(input.ColumnCount() >= 1);
-		UnaryExecutor::Execute<TA, TR, OP, SKIP_NULLS>(input.data[0], result, input.size());
+		UnaryExecutor::Execute<TA, TR, OP>(input.data[0], result, input.size());
 	}
 
-	template <class TA, class TB, class TR, class OP, bool IGNORE_NULL = false>
+	template <class TA, class TB, class TR, class OP>
 	static void BinaryFunction(DataChunk &input, ExpressionState &state, Vector &result) {
 		D_ASSERT(input.ColumnCount() == 2);
-		BinaryExecutor::ExecuteStandard<TA, TB, TR, OP, IGNORE_NULL>(input.data[0], input.data[1], result,
-		                                                             input.size());
+		BinaryExecutor::ExecuteStandard<TA, TB, TR, OP>(input.data[0], input.data[1], result, input.size());
 	}
 
 public:
@@ -151,7 +182,7 @@ public:
 			function = &ScalarFunction::UnaryFunction<double, double, OP>;
 			break;
 		default:
-			throw NotImplementedException("Unimplemented type for GetScalarUnaryFunction");
+			throw InternalException("Unimplemented type for GetScalarUnaryFunction");
 		}
 		return function;
 	}
@@ -194,7 +225,7 @@ public:
 			function = &ScalarFunction::UnaryFunction<double, TR, OP>;
 			break;
 		default:
-			throw NotImplementedException("Unimplemented type for GetScalarUnaryFunctionFixedReturn");
+			throw InternalException("Unimplemented type for GetScalarUnaryFunctionFixedReturn");
 		}
 		return function;
 	}

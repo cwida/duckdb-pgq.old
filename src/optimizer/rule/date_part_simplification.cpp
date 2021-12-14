@@ -20,7 +20,7 @@ DatePartSimplificationRule::DatePartSimplificationRule(ExpressionRewriter &rewri
 }
 
 unique_ptr<Expression> DatePartSimplificationRule::Apply(LogicalOperator &op, vector<Expression *> &bindings,
-                                                         bool &changes_made) {
+                                                         bool &changes_made, bool is_root) {
 	auto &date_part = (BoundFunctionExpression &)*bindings[0];
 	auto &constant_expr = (BoundConstantExpression &)*bindings[1];
 	auto &constant = constant_expr.value;
@@ -56,6 +56,9 @@ unique_ptr<Expression> DatePartSimplificationRule::Apply(LogicalOperator &op, ve
 		break;
 	case DatePartSpecifier::WEEK:
 		new_function_name = "week";
+		break;
+	case DatePartSpecifier::YEARWEEK:
+		new_function_name = "yearweek";
 		break;
 	case DatePartSpecifier::DOW:
 		new_function_name = "dayofweek";

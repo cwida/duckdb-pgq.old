@@ -1,690 +1,759 @@
 #include "duckdb/common/operator/cast_operators.hpp"
 #include "duckdb/common/types/cast_helpers.hpp"
 #include "duckdb/common/types/chunk_collection.hpp"
-#include "duckdb/common/types/decimal.hpp"
+#include "duckdb/common/operator/string_cast.hpp"
 #include "duckdb/common/vector_operations/unary_executor.hpp"
 #include "duckdb/common/vector_operations/vector_operations.hpp"
-
+#include "duckdb/common/types/null_value.hpp"
+#include "duckdb/common/string_util.hpp"
+#include "duckdb/common/vector_operations/decimal_cast.hpp"
+#include "duckdb/common/operator/numeric_cast.hpp"
+#include "duckdb/common/likely.hpp"
+#include "duckdb/common/limits.hpp"
 namespace duckdb {
 
+template <class OP>
+struct VectorStringCastOperator {
+	template <class INPUT_TYPE, class RESULT_TYPE>
+	static RESULT_TYPE Operation(INPUT_TYPE input, ValidityMask &mask, idx_t idx, void *dataptr) {
+		auto result = (Vector *)dataptr;
+		return OP::template Operation<INPUT_TYPE>(input, *result);
+	}
+};
+
+struct VectorTryCastData {
+	VectorTryCastData(Vector &result_p, string *error_message_p, bool strict_p)
+	    : result(result_p), error_message(error_message_p), strict(strict_p) {
+	}
+
+	Vector &result;
+	string *error_message;
+	bool strict;
+	bool all_converted = true;
+};
+
+template <class OP>
+struct VectorTryCastOperator {
+	template <class INPUT_TYPE, class RESULT_TYPE>
+	static RESULT_TYPE Operation(INPUT_TYPE input, ValidityMask &mask, idx_t idx, void *dataptr) {
+		RESULT_TYPE output;
+		if (DUCKDB_LIKELY(OP::template Operation<INPUT_TYPE, RESULT_TYPE>(input, output))) {
+			return output;
+		}
+		auto data = (VectorTryCastData *)dataptr;
+		return HandleVectorCastError::Operation<RESULT_TYPE>(CastExceptionText<INPUT_TYPE, RESULT_TYPE>(input), mask,
+		                                                     idx, data->error_message, data->all_converted);
+	}
+};
+
+template <class OP>
+struct VectorTryCastStrictOperator {
+	template <class INPUT_TYPE, class RESULT_TYPE>
+	static RESULT_TYPE Operation(INPUT_TYPE input, ValidityMask &mask, idx_t idx, void *dataptr) {
+		auto data = (VectorTryCastData *)dataptr;
+		RESULT_TYPE output;
+		if (DUCKDB_LIKELY(OP::template Operation<INPUT_TYPE, RESULT_TYPE>(input, output, data->strict))) {
+			return output;
+		}
+		return HandleVectorCastError::Operation<RESULT_TYPE>(CastExceptionText<INPUT_TYPE, RESULT_TYPE>(input), mask,
+		                                                     idx, data->error_message, data->all_converted);
+	}
+};
+
+template <class OP>
+struct VectorTryCastErrorOperator {
+	template <class INPUT_TYPE, class RESULT_TYPE>
+	static RESULT_TYPE Operation(INPUT_TYPE input, ValidityMask &mask, idx_t idx, void *dataptr) {
+		auto data = (VectorTryCastData *)dataptr;
+		RESULT_TYPE output;
+		if (DUCKDB_LIKELY(
+		        OP::template Operation<INPUT_TYPE, RESULT_TYPE>(input, output, data->error_message, data->strict))) {
+			return output;
+		}
+		bool has_error = data->error_message && !data->error_message->empty();
+		return HandleVectorCastError::Operation<RESULT_TYPE>(
+		    has_error ? *data->error_message : CastExceptionText<INPUT_TYPE, RESULT_TYPE>(input), mask, idx,
+		    data->error_message, data->all_converted);
+	}
+};
+
+template <class OP>
+struct VectorTryCastStringOperator {
+	template <class INPUT_TYPE, class RESULT_TYPE>
+	static RESULT_TYPE Operation(INPUT_TYPE input, ValidityMask &mask, idx_t idx, void *dataptr) {
+		auto data = (VectorTryCastData *)dataptr;
+		RESULT_TYPE output;
+		if (DUCKDB_LIKELY(OP::template Operation<INPUT_TYPE, RESULT_TYPE>(input, output, data->result,
+		                                                                  data->error_message, data->strict))) {
+			return output;
+		}
+		return HandleVectorCastError::Operation<RESULT_TYPE>(CastExceptionText<INPUT_TYPE, RESULT_TYPE>(input), mask,
+		                                                     idx, data->error_message, data->all_converted);
+	}
+};
+
+template <class SRC, class DST, class OP>
+static bool TemplatedVectorTryCastLoop(Vector &source, Vector &result, idx_t count, bool strict,
+                                       string *error_message) {
+	VectorTryCastData input(result, error_message, strict);
+	UnaryExecutor::GenericExecute<SRC, DST, OP>(source, result, count, &input, error_message);
+	return input.all_converted;
+}
+
+template <class SRC, class DST, class OP>
+static bool VectorTryCastLoop(Vector &source, Vector &result, idx_t count, string *error_message) {
+	return TemplatedVectorTryCastLoop<SRC, DST, VectorTryCastOperator<OP>>(source, result, count, false, error_message);
+}
+
+template <class SRC, class DST, class OP>
+static bool VectorTryCastStrictLoop(Vector &source, Vector &result, idx_t count, bool strict, string *error_message) {
+	return TemplatedVectorTryCastLoop<SRC, DST, VectorTryCastStrictOperator<OP>>(source, result, count, strict,
+	                                                                             error_message);
+}
+
+template <class SRC, class DST, class OP>
+static bool VectorTryCastErrorLoop(Vector &source, Vector &result, idx_t count, bool strict, string *error_message) {
+	return TemplatedVectorTryCastLoop<SRC, DST, VectorTryCastErrorOperator<OP>>(source, result, count, strict,
+	                                                                            error_message);
+}
+
+template <class SRC, class DST, class OP>
+static bool VectorTryCastStringLoop(Vector &source, Vector &result, idx_t count, bool strict, string *error_message) {
+	return TemplatedVectorTryCastLoop<SRC, DST, VectorTryCastStringOperator<OP>>(source, result, count, strict,
+	                                                                             error_message);
+}
+
 template <class SRC, class OP>
-static void string_cast(Vector &source, Vector &result, idx_t count) {
-	D_ASSERT(result.type.InternalType() == PhysicalType::VARCHAR);
-	UnaryExecutor::Execute<SRC, string_t, true>(source, result, count,
-	                                            [&](SRC input) { return OP::template Operation<SRC>(input, result); });
-}
-
-static NotImplementedException UnimplementedCast(LogicalType source_type, LogicalType target_type) {
-	return NotImplementedException("Unimplemented type for cast (%s -> %s)", source_type.ToString(),
-	                               target_type.ToString());
-}
-
-// NULL cast only works if all values in source are NULL, otherwise an unimplemented cast exception is thrown
-static void null_cast(Vector &source, Vector &result, idx_t count) {
-	if (VectorOperations::HasNotNull(source, count)) {
-		throw UnimplementedCast(source.type, result.type);
-	}
-	if (source.vector_type == VectorType::CONSTANT_VECTOR) {
-		result.vector_type = VectorType::CONSTANT_VECTOR;
-		ConstantVector::SetNull(result, true);
-	} else {
-		result.vector_type = VectorType::FLAT_VECTOR;
-		FlatVector::Nullmask(result).set();
-	}
-}
-
-template <class T>
-static void to_decimal_cast(Vector &source, Vector &result, idx_t count) {
-	switch (result.type.InternalType()) {
-	case PhysicalType::INT16:
-		UnaryExecutor::Execute<T, int16_t, true>(source, result, count, [&](T input) {
-			return CastToDecimal::Operation<T, int16_t>(input, result.type.width(), result.type.scale());
-		});
-		break;
-	case PhysicalType::INT32:
-		UnaryExecutor::Execute<T, int32_t, true>(source, result, count, [&](T input) {
-			return CastToDecimal::Operation<T, int32_t>(input, result.type.width(), result.type.scale());
-		});
-		break;
-	case PhysicalType::INT64:
-		UnaryExecutor::Execute<T, int64_t, true>(source, result, count, [&](T input) {
-			return CastToDecimal::Operation<T, int64_t>(input, result.type.width(), result.type.scale());
-		});
-		break;
-	case PhysicalType::INT128:
-		UnaryExecutor::Execute<T, hugeint_t, true>(source, result, count, [&](T input) {
-			return CastToDecimal::Operation<T, hugeint_t>(input, result.type.width(), result.type.scale());
-		});
-		break;
-	default:
-		throw NotImplementedException("Unimplemented internal type for decimal");
-	}
-}
-
-template <class T>
-static void from_decimal_cast(Vector &source, Vector &result, idx_t count) {
-	switch (source.type.InternalType()) {
-	case PhysicalType::INT16:
-		UnaryExecutor::Execute<int16_t, T, true>(source, result, count, [&](int16_t input) {
-			return CastFromDecimal::Operation<int16_t, T>(input, source.type.width(), source.type.scale());
-		});
-		break;
-	case PhysicalType::INT32:
-		UnaryExecutor::Execute<int32_t, T, true>(source, result, count, [&](int32_t input) {
-			return CastFromDecimal::Operation<int32_t, T>(input, source.type.width(), source.type.scale());
-		});
-		break;
-	case PhysicalType::INT64:
-		UnaryExecutor::Execute<int64_t, T, true>(source, result, count, [&](int64_t input) {
-			return CastFromDecimal::Operation<int64_t, T>(input, source.type.width(), source.type.scale());
-		});
-		break;
-	case PhysicalType::INT128:
-		UnaryExecutor::Execute<hugeint_t, T, true>(source, result, count, [&](hugeint_t input) {
-			return CastFromDecimal::Operation<hugeint_t, T>(input, source.type.width(), source.type.scale());
-		});
-		break;
-	default:
-		throw NotImplementedException("Unimplemented internal type for decimal");
-	}
-}
-
-template <class SOURCE, class DEST, class POWERS_SOURCE, class POWERS_DEST>
-void decimal_scale_up_loop(Vector &source, Vector &result, idx_t count) {
-	D_ASSERT(result.type.scale() >= source.type.scale());
-	idx_t scale_difference = result.type.scale() - source.type.scale();
-	auto multiply_factor = POWERS_DEST::PowersOfTen[scale_difference];
-	idx_t target_width = result.type.width() - scale_difference;
-	if (source.type.width() < target_width) {
-		// type will always fit: no need to check limit
-		UnaryExecutor::Execute<SOURCE, DEST, true>(source, result, count, [&](SOURCE input) {
-			return Cast::Operation<SOURCE, DEST>(input) * multiply_factor;
-		});
-	} else {
-		// type might not fit: check limit
-		auto limit = POWERS_SOURCE::PowersOfTen[target_width];
-		UnaryExecutor::Execute<SOURCE, DEST, true>(source, result, count, [&](SOURCE input) {
-			if (input >= limit || input <= -limit) {
-				throw OutOfRangeException("Casting value \"%s\" to type %s failed: value is out of range!",
-				                          Decimal::ToString(input, source.type.scale()), result.type.ToString());
-			}
-			return Cast::Operation<SOURCE, DEST>(input) * multiply_factor;
-		});
-	}
-}
-
-template <class SOURCE, class DEST, class POWERS_SOURCE>
-void decimal_scale_down_loop(Vector &source, Vector &result, idx_t count) {
-	D_ASSERT(result.type.scale() < source.type.scale());
-	idx_t scale_difference = source.type.scale() - result.type.scale();
-	idx_t target_width = result.type.width() + scale_difference;
-	auto divide_factor = POWERS_SOURCE::PowersOfTen[scale_difference];
-	if (source.type.width() < target_width) {
-		// type will always fit: no need to check limit
-		UnaryExecutor::Execute<SOURCE, DEST, true>(
-		    source, result, count, [&](SOURCE input) { return Cast::Operation<SOURCE, DEST>(input / divide_factor); });
-	} else {
-		// type might not fit: check limit
-		auto limit = POWERS_SOURCE::PowersOfTen[target_width];
-		UnaryExecutor::Execute<SOURCE, DEST, true>(source, result, count, [&](SOURCE input) {
-			if (input >= limit || input <= -limit) {
-				throw OutOfRangeException("Casting value \"%s\" to type %s failed: value is out of range!",
-				                          Decimal::ToString(input, source.type.scale()), result.type.ToString());
-			}
-			return Cast::Operation<SOURCE, DEST>(input / divide_factor);
-		});
-	}
-}
-
-template <class SOURCE, class POWERS_SOURCE>
-static void decimal_decimal_cast_switch(Vector &source, Vector &result, idx_t count) {
-	source.type.Verify();
-	result.type.Verify();
-
-	// we need to either multiply or divide by the difference in scales
-	if (result.type.scale() >= source.type.scale()) {
-		// multiply
-		switch (result.type.InternalType()) {
-		case PhysicalType::INT16:
-			decimal_scale_up_loop<SOURCE, int16_t, POWERS_SOURCE, NumericHelper>(source, result, count);
-			break;
-		case PhysicalType::INT32:
-			decimal_scale_up_loop<SOURCE, int32_t, POWERS_SOURCE, NumericHelper>(source, result, count);
-			break;
-		case PhysicalType::INT64:
-			decimal_scale_up_loop<SOURCE, int64_t, POWERS_SOURCE, NumericHelper>(source, result, count);
-			break;
-		case PhysicalType::INT128:
-			decimal_scale_up_loop<SOURCE, hugeint_t, POWERS_SOURCE, Hugeint>(source, result, count);
-			break;
-		default:
-			throw NotImplementedException("Unimplemented internal type for decimal");
-		}
-	} else {
-		// divide
-		switch (result.type.InternalType()) {
-		case PhysicalType::INT16:
-			decimal_scale_down_loop<SOURCE, int16_t, POWERS_SOURCE>(source, result, count);
-			break;
-		case PhysicalType::INT32:
-			decimal_scale_down_loop<SOURCE, int32_t, POWERS_SOURCE>(source, result, count);
-			break;
-		case PhysicalType::INT64:
-			decimal_scale_down_loop<SOURCE, int64_t, POWERS_SOURCE>(source, result, count);
-			break;
-		case PhysicalType::INT128:
-			decimal_scale_down_loop<SOURCE, hugeint_t, POWERS_SOURCE>(source, result, count);
-			break;
-		default:
-			throw NotImplementedException("Unimplemented internal type for decimal");
-		}
-	}
-}
-
-static void decimal_cast_switch(Vector &source, Vector &result, idx_t count) {
-	// now switch on the result type
-	switch (result.type.id()) {
-	case LogicalTypeId::BOOLEAN:
-		from_decimal_cast<bool>(source, result, count);
-		break;
-	case LogicalTypeId::TINYINT:
-		from_decimal_cast<int8_t>(source, result, count);
-		break;
-	case LogicalTypeId::SMALLINT:
-		from_decimal_cast<int16_t>(source, result, count);
-		break;
-	case LogicalTypeId::INTEGER:
-		from_decimal_cast<int32_t>(source, result, count);
-		break;
-	case LogicalTypeId::BIGINT:
-		from_decimal_cast<int64_t>(source, result, count);
-		break;
-	case LogicalTypeId::UTINYINT:
-		from_decimal_cast<uint8_t>(source, result, count);
-		break;
-	case LogicalTypeId::USMALLINT:
-		from_decimal_cast<uint16_t>(source, result, count);
-		break;
-	case LogicalTypeId::UINTEGER:
-		from_decimal_cast<uint32_t>(source, result, count);
-		break;
-	case LogicalTypeId::UBIGINT:
-		from_decimal_cast<uint64_t>(source, result, count);
-		break;
-	case LogicalTypeId::HUGEINT:
-		from_decimal_cast<hugeint_t>(source, result, count);
-		break;
-	case LogicalTypeId::DECIMAL: {
-		// decimal to decimal cast
-		// first we need to figure out the source and target internal types
-		switch (source.type.InternalType()) {
-		case PhysicalType::INT16:
-			decimal_decimal_cast_switch<int16_t, NumericHelper>(source, result, count);
-			break;
-		case PhysicalType::INT32:
-			decimal_decimal_cast_switch<int32_t, NumericHelper>(source, result, count);
-			break;
-		case PhysicalType::INT64:
-			decimal_decimal_cast_switch<int64_t, NumericHelper>(source, result, count);
-			break;
-		case PhysicalType::INT128:
-			decimal_decimal_cast_switch<hugeint_t, Hugeint>(source, result, count);
-			break;
-		default:
-			throw NotImplementedException("Unimplemented internal type for decimal in decimal_decimal cast");
-		}
-		break;
-	}
-	case LogicalTypeId::FLOAT:
-		from_decimal_cast<float>(source, result, count);
-		break;
-	case LogicalTypeId::DOUBLE:
-		from_decimal_cast<double>(source, result, count);
-		break;
-	case LogicalTypeId::VARCHAR: {
-		switch (source.type.InternalType()) {
-		case PhysicalType::INT16:
-			UnaryExecutor::Execute<int16_t, string_t, true>(source, result, count, [&](int16_t input) {
-				return StringCastFromDecimal::Operation<int16_t>(input, source.type.width(), source.type.scale(),
-				                                                 result);
-			});
-			break;
-		case PhysicalType::INT32:
-			UnaryExecutor::Execute<int32_t, string_t, true>(source, result, count, [&](int32_t input) {
-				return StringCastFromDecimal::Operation<int32_t>(input, source.type.width(), source.type.scale(),
-				                                                 result);
-			});
-			break;
-		case PhysicalType::INT64:
-			UnaryExecutor::Execute<int64_t, string_t, true>(source, result, count, [&](int64_t input) {
-				return StringCastFromDecimal::Operation<int64_t>(input, source.type.width(), source.type.scale(),
-				                                                 result);
-			});
-			break;
-		case PhysicalType::INT128:
-			UnaryExecutor::Execute<hugeint_t, string_t, true>(source, result, count, [&](hugeint_t input) {
-				return StringCastFromDecimal::Operation<hugeint_t>(input, source.type.width(), source.type.scale(),
-				                                                   result);
-			});
-			break;
-		default:
-			throw NotImplementedException("Unimplemented internal decimal type");
-		}
-		break;
-	}
-	default:
-		null_cast(source, result, count);
-		break;
-	}
+static void VectorStringCast(Vector &source, Vector &result, idx_t count) {
+	D_ASSERT(result.GetType().InternalType() == PhysicalType::VARCHAR);
+	UnaryExecutor::GenericExecute<SRC, string_t, VectorStringCastOperator<OP>>(source, result, count, (void *)&result);
 }
 
 template <class SRC>
-static void numeric_cast_switch(Vector &source, Vector &result, idx_t count) {
+static bool NumericCastSwitch(Vector &source, Vector &result, idx_t count, string *error_message) {
 	// now switch on the result type
-	switch (result.type.id()) {
+	switch (result.GetType().id()) {
 	case LogicalTypeId::BOOLEAN:
-		UnaryExecutor::Execute<SRC, bool, duckdb::Cast, true>(source, result, count);
-		break;
+		return VectorTryCastLoop<SRC, bool, duckdb::NumericTryCast>(source, result, count, error_message);
 	case LogicalTypeId::TINYINT:
-		UnaryExecutor::Execute<SRC, int8_t, duckdb::Cast, true>(source, result, count);
-		break;
+		return VectorTryCastLoop<SRC, int8_t, duckdb::NumericTryCast>(source, result, count, error_message);
 	case LogicalTypeId::SMALLINT:
-		UnaryExecutor::Execute<SRC, int16_t, duckdb::Cast, true>(source, result, count);
-		break;
+		return VectorTryCastLoop<SRC, int16_t, duckdb::NumericTryCast>(source, result, count, error_message);
 	case LogicalTypeId::INTEGER:
-		UnaryExecutor::Execute<SRC, int32_t, duckdb::Cast, true>(source, result, count);
-		break;
+		return VectorTryCastLoop<SRC, int32_t, duckdb::NumericTryCast>(source, result, count, error_message);
 	case LogicalTypeId::BIGINT:
-		UnaryExecutor::Execute<SRC, int64_t, duckdb::Cast, true>(source, result, count);
-		break;
+		return VectorTryCastLoop<SRC, int64_t, duckdb::NumericTryCast>(source, result, count, error_message);
 	case LogicalTypeId::UTINYINT:
-		UnaryExecutor::Execute<SRC, uint8_t, duckdb::Cast, true>(source, result, count);
-		break;
+		return VectorTryCastLoop<SRC, uint8_t, duckdb::NumericTryCast>(source, result, count, error_message);
 	case LogicalTypeId::USMALLINT:
-		UnaryExecutor::Execute<SRC, uint16_t, duckdb::Cast, true>(source, result, count);
-		break;
+		return VectorTryCastLoop<SRC, uint16_t, duckdb::NumericTryCast>(source, result, count, error_message);
 	case LogicalTypeId::UINTEGER:
-		UnaryExecutor::Execute<SRC, uint32_t, duckdb::Cast, true>(source, result, count);
-		break;
+		return VectorTryCastLoop<SRC, uint32_t, duckdb::NumericTryCast>(source, result, count, error_message);
 	case LogicalTypeId::UBIGINT:
-		UnaryExecutor::Execute<SRC, uint64_t, duckdb::Cast, true>(source, result, count);
-		break;
+		return VectorTryCastLoop<SRC, uint64_t, duckdb::NumericTryCast>(source, result, count, error_message);
 	case LogicalTypeId::HUGEINT:
-		UnaryExecutor::Execute<SRC, hugeint_t, duckdb::Cast, true>(source, result, count);
-		break;
+		return VectorTryCastLoop<SRC, hugeint_t, duckdb::NumericTryCast>(source, result, count, error_message);
 	case LogicalTypeId::FLOAT:
-		UnaryExecutor::Execute<SRC, float, duckdb::Cast, true>(source, result, count);
-		break;
+		return VectorTryCastLoop<SRC, float, duckdb::NumericTryCast>(source, result, count, error_message);
 	case LogicalTypeId::DOUBLE:
-		UnaryExecutor::Execute<SRC, double, duckdb::Cast, true>(source, result, count);
-		break;
+		return VectorTryCastLoop<SRC, double, duckdb::NumericTryCast>(source, result, count, error_message);
 	case LogicalTypeId::DECIMAL:
-		to_decimal_cast<SRC>(source, result, count);
-		break;
+		return ToDecimalCast<SRC>(source, result, count, error_message);
 	case LogicalTypeId::VARCHAR: {
-		string_cast<SRC, duckdb::StringCast>(source, result, count);
-		break;
-	}
-	case LogicalTypeId::LIST: {
-		auto list_child = make_unique<ChunkCollection>();
-		ListVector::SetEntry(result, move(list_child));
-		null_cast(source, result, count);
-		break;
+		VectorStringCast<SRC, duckdb::StringCast>(source, result, count);
+		return true;
 	}
 	default:
-		null_cast(source, result, count);
-		break;
+		return TryVectorNullCast(source, result, count, error_message);
 	}
 }
 
-template <class OP>
-static void string_cast_numeric_switch(Vector &source, Vector &result, idx_t count) {
+template <class T>
+bool FillEnum(string_t *source_data, ValidityMask &source_mask, const LogicalType &source_type, T *result_data,
+              ValidityMask &result_mask, const LogicalType &result_type, idx_t count, string *error_message,
+              const SelectionVector *sel) {
+	bool all_converted = true;
+	for (idx_t i = 0; i < count; i++) {
+		idx_t source_idx = i;
+		if (sel) {
+			source_idx = sel->get_index(i);
+		}
+		if (source_mask.RowIsValid(source_idx)) {
+			auto string_value = source_data[source_idx].GetString();
+			auto pos = EnumType::GetPos(result_type, string_value);
+			if (pos == -1) {
+				result_data[i] =
+				    HandleVectorCastError::Operation<T>(CastExceptionText<string_t, T>(source_data[source_idx]),
+				                                        result_mask, i, error_message, all_converted);
+			} else {
+				result_data[i] = pos;
+			}
+		} else {
+			result_mask.SetInvalid(i);
+		}
+	}
+	return all_converted;
+}
+
+template <class T>
+bool TransformEnum(Vector &source, Vector &result, idx_t count, string *error_message) {
+	D_ASSERT(source.GetType().id() == LogicalTypeId::VARCHAR);
+	auto enum_name = EnumType::GetTypeName(result.GetType());
+	switch (source.GetVectorType()) {
+	case VectorType::CONSTANT_VECTOR: {
+		result.SetVectorType(VectorType::CONSTANT_VECTOR);
+
+		auto source_data = ConstantVector::GetData<string_t>(source);
+		auto source_mask = ConstantVector::Validity(source);
+		auto result_data = ConstantVector::GetData<T>(result);
+		auto &result_mask = ConstantVector::Validity(result);
+
+		return FillEnum(source_data, source_mask, source.GetType(), result_data, result_mask, result.GetType(), 1,
+		                error_message, nullptr);
+	}
+	default: {
+		VectorData vdata;
+		source.Orrify(count, vdata);
+
+		result.SetVectorType(VectorType::FLAT_VECTOR);
+
+		auto source_data = (string_t *)vdata.data;
+		auto source_sel = vdata.sel;
+		auto source_mask = vdata.validity;
+		auto result_data = FlatVector::GetData<T>(result);
+		auto &result_mask = FlatVector::Validity(result);
+
+		return FillEnum(source_data, source_mask, source.GetType(), result_data, result_mask, result.GetType(), count,
+		                error_message, source_sel);
+	}
+	}
+}
+static bool VectorStringCastNumericSwitch(Vector &source, Vector &result, idx_t count, bool strict,
+                                          string *error_message) {
 	// now switch on the result type
-	switch (result.type.id()) {
+	switch (result.GetType().id()) {
+	case LogicalTypeId::ENUM: {
+		switch (result.GetType().InternalType()) {
+		case PhysicalType::UINT8:
+			return TransformEnum<uint8_t>(source, result, count, error_message);
+		case PhysicalType::UINT16:
+			return TransformEnum<uint16_t>(source, result, count, error_message);
+		case PhysicalType::UINT32:
+			return TransformEnum<uint32_t>(source, result, count, error_message);
+		default:
+			throw InternalException("ENUM can only have unsigned integers (except UINT64) as physical types");
+		}
+	}
 	case LogicalTypeId::BOOLEAN:
-		UnaryExecutor::Execute<string_t, bool, OP, true>(source, result, count);
-		break;
+		return VectorTryCastStrictLoop<string_t, bool, duckdb::TryCast>(source, result, count, strict, error_message);
 	case LogicalTypeId::TINYINT:
-		UnaryExecutor::Execute<string_t, int8_t, OP, true>(source, result, count);
-		break;
+		return VectorTryCastStrictLoop<string_t, int8_t, duckdb::TryCast>(source, result, count, strict, error_message);
 	case LogicalTypeId::SMALLINT:
-		UnaryExecutor::Execute<string_t, int16_t, OP, true>(source, result, count);
-		break;
+		return VectorTryCastStrictLoop<string_t, int16_t, duckdb::TryCast>(source, result, count, strict,
+		                                                                   error_message);
 	case LogicalTypeId::INTEGER:
-		UnaryExecutor::Execute<string_t, int32_t, OP, true>(source, result, count);
-		break;
+		return VectorTryCastStrictLoop<string_t, int32_t, duckdb::TryCast>(source, result, count, strict,
+		                                                                   error_message);
 	case LogicalTypeId::BIGINT:
-		UnaryExecutor::Execute<string_t, int64_t, OP, true>(source, result, count);
-		break;
+		return VectorTryCastStrictLoop<string_t, int64_t, duckdb::TryCast>(source, result, count, strict,
+		                                                                   error_message);
 	case LogicalTypeId::UTINYINT:
-		UnaryExecutor::Execute<string_t, uint8_t, OP, true>(source, result, count);
-		break;
+		return VectorTryCastStrictLoop<string_t, uint8_t, duckdb::TryCast>(source, result, count, strict,
+		                                                                   error_message);
 	case LogicalTypeId::USMALLINT:
-		UnaryExecutor::Execute<string_t, uint16_t, OP, true>(source, result, count);
-		break;
+		return VectorTryCastStrictLoop<string_t, uint16_t, duckdb::TryCast>(source, result, count, strict,
+		                                                                    error_message);
 	case LogicalTypeId::UINTEGER:
-		UnaryExecutor::Execute<string_t, uint32_t, OP, true>(source, result, count);
-		break;
+		return VectorTryCastStrictLoop<string_t, uint32_t, duckdb::TryCast>(source, result, count, strict,
+		                                                                    error_message);
 	case LogicalTypeId::UBIGINT:
-		UnaryExecutor::Execute<string_t, uint64_t, OP, true>(source, result, count);
-		break;
+		return VectorTryCastStrictLoop<string_t, uint64_t, duckdb::TryCast>(source, result, count, strict,
+		                                                                    error_message);
 	case LogicalTypeId::HUGEINT:
-		UnaryExecutor::Execute<string_t, hugeint_t, OP, true>(source, result, count);
-		break;
+		return VectorTryCastStrictLoop<string_t, hugeint_t, duckdb::TryCast>(source, result, count, strict,
+		                                                                     error_message);
 	case LogicalTypeId::FLOAT:
-		UnaryExecutor::Execute<string_t, float, OP, true>(source, result, count);
-		break;
+		return VectorTryCastStrictLoop<string_t, float, duckdb::TryCast>(source, result, count, strict, error_message);
 	case LogicalTypeId::DOUBLE:
-		UnaryExecutor::Execute<string_t, double, OP, true>(source, result, count);
-		break;
+		return VectorTryCastStrictLoop<string_t, double, duckdb::TryCast>(source, result, count, strict, error_message);
 	case LogicalTypeId::INTERVAL:
-		UnaryExecutor::Execute<string_t, interval_t, OP, true>(source, result, count);
-		break;
+		return VectorTryCastErrorLoop<string_t, interval_t, duckdb::TryCastErrorMessage>(source, result, count, strict,
+		                                                                                 error_message);
 	case LogicalTypeId::DECIMAL:
-		to_decimal_cast<string_t>(source, result, count);
-		break;
+		return ToDecimalCast<string_t>(source, result, count, error_message);
 	default:
-		null_cast(source, result, count);
-		break;
+		return TryVectorNullCast(source, result, count, error_message);
 	}
 }
 
-static void string_cast_switch(Vector &source, Vector &result, idx_t count, bool strict = false) {
+static bool StringCastSwitch(Vector &source, Vector &result, idx_t count, bool strict, string *error_message) {
 	// now switch on the result type
-	switch (result.type.id()) {
+	switch (result.GetType().id()) {
 	case LogicalTypeId::DATE:
-		if (strict) {
-			UnaryExecutor::Execute<string_t, date_t, duckdb::StrictCastToDate, true>(source, result, count);
-		} else {
-			UnaryExecutor::Execute<string_t, date_t, duckdb::CastToDate, true>(source, result, count);
-		}
-		break;
+		return VectorTryCastErrorLoop<string_t, date_t, duckdb::TryCastErrorMessage>(source, result, count, strict,
+		                                                                             error_message);
 	case LogicalTypeId::TIME:
-		if (strict) {
-			UnaryExecutor::Execute<string_t, dtime_t, duckdb::StrictCastToTime, true>(source, result, count);
-		} else {
-			UnaryExecutor::Execute<string_t, dtime_t, duckdb::CastToTime, true>(source, result, count);
-		}
-		break;
+		return VectorTryCastErrorLoop<string_t, dtime_t, duckdb::TryCastErrorMessage>(source, result, count, strict,
+		                                                                              error_message);
 	case LogicalTypeId::TIMESTAMP:
-		UnaryExecutor::Execute<string_t, timestamp_t, duckdb::CastToTimestamp, true>(source, result, count);
-		break;
+		return VectorTryCastErrorLoop<string_t, timestamp_t, duckdb::TryCastErrorMessage>(source, result, count, strict,
+		                                                                                  error_message);
+	case LogicalTypeId::TIMESTAMP_NS:
+		return VectorTryCastStrictLoop<string_t, timestamp_t, duckdb::TryCastToTimestampNS>(source, result, count,
+		                                                                                    strict, error_message);
+	case LogicalTypeId::TIMESTAMP_SEC:
+		return VectorTryCastStrictLoop<string_t, timestamp_t, duckdb::TryCastToTimestampSec>(source, result, count,
+		                                                                                     strict, error_message);
+	case LogicalTypeId::TIMESTAMP_MS:
+		return VectorTryCastStrictLoop<string_t, timestamp_t, duckdb::TryCastToTimestampMS>(source, result, count,
+		                                                                                    strict, error_message);
 	case LogicalTypeId::BLOB:
-		string_cast<string_t, duckdb::CastToBlob>(source, result, count);
-		break;
+		return VectorTryCastStringLoop<string_t, string_t, duckdb::TryCastToBlob>(source, result, count, strict,
+		                                                                          error_message);
+	case LogicalTypeId::UUID:
+		return VectorTryCastStringLoop<string_t, hugeint_t, duckdb::TryCastToUUID>(source, result, count, strict,
+		                                                                           error_message);
+	case LogicalTypeId::SQLNULL:
+		return TryVectorNullCast(source, result, count, error_message);
 	default:
-		if (strict) {
-			string_cast_numeric_switch<duckdb::StrictCast>(source, result, count);
-		} else {
-			string_cast_numeric_switch<duckdb::Cast>(source, result, count);
-		}
-		break;
+		return VectorStringCastNumericSwitch(source, result, count, strict, error_message);
 	}
 }
 
-static void date_cast_switch(Vector &source, Vector &result, idx_t count) {
+static bool DateCastSwitch(Vector &source, Vector &result, idx_t count, string *error_message) {
 	// now switch on the result type
-	switch (result.type.id()) {
+	switch (result.GetType().id()) {
 	case LogicalTypeId::VARCHAR:
 		// date to varchar
-		string_cast<date_t, duckdb::CastFromDate>(source, result, count);
-		break;
+		VectorStringCast<date_t, duckdb::StringCast>(source, result, count);
+		return true;
 	case LogicalTypeId::TIMESTAMP:
 		// date to timestamp
-		UnaryExecutor::Execute<date_t, timestamp_t, duckdb::CastDateToTimestamp, true>(source, result, count);
-		break;
+		return VectorTryCastLoop<date_t, timestamp_t, duckdb::TryCast>(source, result, count, error_message);
 	default:
-		null_cast(source, result, count);
-		break;
+		return TryVectorNullCast(source, result, count, error_message);
 	}
 }
 
-static void time_cast_switch(Vector &source, Vector &result, idx_t count) {
+static bool TimeCastSwitch(Vector &source, Vector &result, idx_t count, string *error_message) {
 	// now switch on the result type
-	switch (result.type.id()) {
+	switch (result.GetType().id()) {
 	case LogicalTypeId::VARCHAR:
 		// time to varchar
-		string_cast<dtime_t, duckdb::CastFromTime>(source, result, count);
-		break;
+		VectorStringCast<dtime_t, duckdb::StringCast>(source, result, count);
+		return true;
 	default:
-		null_cast(source, result, count);
-		break;
+		return TryVectorNullCast(source, result, count, error_message);
 	}
 }
 
-static void timestamp_cast_switch(Vector &source, Vector &result, idx_t count) {
+static bool TimestampCastSwitch(Vector &source, Vector &result, idx_t count, string *error_message) {
 	// now switch on the result type
-	switch (result.type.id()) {
+	switch (result.GetType().id()) {
 	case LogicalTypeId::VARCHAR:
 		// timestamp to varchar
-		string_cast<timestamp_t, duckdb::CastFromTimestamp>(source, result, count);
+		VectorStringCast<timestamp_t, duckdb::StringCast>(source, result, count);
 		break;
 	case LogicalTypeId::DATE:
 		// timestamp to date
-		UnaryExecutor::Execute<timestamp_t, date_t, duckdb::CastTimestampToDate, true>(source, result, count);
+		UnaryExecutor::Execute<timestamp_t, date_t, duckdb::Cast>(source, result, count);
 		break;
 	case LogicalTypeId::TIME:
 		// timestamp to time
-		UnaryExecutor::Execute<timestamp_t, dtime_t, duckdb::CastTimestampToTime, true>(source, result, count);
+		UnaryExecutor::Execute<timestamp_t, dtime_t, duckdb::Cast>(source, result, count);
+		break;
+	case LogicalTypeId::TIMESTAMP_NS:
+		// timestamp (us) to timestamp (ns)
+		UnaryExecutor::Execute<timestamp_t, timestamp_t, duckdb::CastTimestampUsToNs>(source, result, count);
+		break;
+	case LogicalTypeId::TIMESTAMP_MS:
+		// timestamp (us) to timestamp (ms)
+		UnaryExecutor::Execute<timestamp_t, timestamp_t, duckdb::CastTimestampUsToMs>(source, result, count);
+		break;
+	case LogicalTypeId::TIMESTAMP_SEC:
+		// timestamp (us) to timestamp (s)
+		UnaryExecutor::Execute<timestamp_t, timestamp_t, duckdb::CastTimestampUsToSec>(source, result, count);
 		break;
 	default:
-		null_cast(source, result, count);
-		break;
+		return TryVectorNullCast(source, result, count, error_message);
 	}
+	return true;
 }
 
-static void interval_cast_switch(Vector &source, Vector &result, idx_t count) {
+static bool TimestampNsCastSwitch(Vector &source, Vector &result, idx_t count, string *error_message) {
 	// now switch on the result type
-	switch (result.type.id()) {
+	switch (result.GetType().id()) {
+	case LogicalTypeId::VARCHAR:
+		// timestamp (ns) to varchar
+		VectorStringCast<timestamp_t, duckdb::CastFromTimestampNS>(source, result, count);
+		break;
+	case LogicalTypeId::TIMESTAMP:
+		// timestamp (ns) to timestamp (us)
+		UnaryExecutor::Execute<timestamp_t, timestamp_t, duckdb::CastTimestampNsToUs>(source, result, count);
+		break;
+	default:
+		return TryVectorNullCast(source, result, count, error_message);
+	}
+	return true;
+}
+
+static bool TimestampMsCastSwitch(Vector &source, Vector &result, idx_t count, string *error_message) {
+	// now switch on the result type
+	switch (result.GetType().id()) {
+	case LogicalTypeId::VARCHAR:
+		// timestamp (ms) to varchar
+		VectorStringCast<timestamp_t, duckdb::CastFromTimestampMS>(source, result, count);
+		break;
+	case LogicalTypeId::TIMESTAMP:
+		// timestamp (ms) to timestamp (us)
+		UnaryExecutor::Execute<timestamp_t, timestamp_t, duckdb::CastTimestampMsToUs>(source, result, count);
+		break;
+	default:
+		return TryVectorNullCast(source, result, count, error_message);
+	}
+	return true;
+}
+
+static bool TimestampSecCastSwitch(Vector &source, Vector &result, idx_t count, string *error_message) {
+	// now switch on the result type
+	switch (result.GetType().id()) {
+	case LogicalTypeId::VARCHAR:
+		// timestamp (sec) to varchar
+		VectorStringCast<timestamp_t, duckdb::CastFromTimestampSec>(source, result, count);
+		break;
+	case LogicalTypeId::TIMESTAMP:
+		// timestamp (s) to timestamp (us)
+		UnaryExecutor::Execute<timestamp_t, timestamp_t, duckdb::CastTimestampSecToUs>(source, result, count);
+		break;
+	default:
+		return TryVectorNullCast(source, result, count, error_message);
+	}
+	return true;
+}
+
+static bool IntervalCastSwitch(Vector &source, Vector &result, idx_t count, string *error_message) {
+	// now switch on the result type
+	switch (result.GetType().id()) {
 	case LogicalTypeId::VARCHAR:
 		// time to varchar
-		string_cast<interval_t, duckdb::StringCast>(source, result, count);
+		VectorStringCast<interval_t, duckdb::StringCast>(source, result, count);
 		break;
 	default:
-		null_cast(source, result, count);
-		break;
+		return TryVectorNullCast(source, result, count, error_message);
 	}
+	return true;
 }
 
-static void blob_cast_switch(Vector &source, Vector &result, idx_t count) {
+static bool UUIDCastSwitch(Vector &source, Vector &result, idx_t count, string *error_message) {
 	// now switch on the result type
-	switch (result.type.id()) {
+	switch (result.GetType().id()) {
+	case LogicalTypeId::VARCHAR:
+		// uuid to varchar
+		VectorStringCast<hugeint_t, duckdb::CastFromUUID>(source, result, count);
+		break;
+	default:
+		return TryVectorNullCast(source, result, count, error_message);
+	}
+	return true;
+}
+
+static bool BlobCastSwitch(Vector &source, Vector &result, idx_t count, string *error_message) {
+	// now switch on the result type
+	switch (result.GetType().id()) {
 	case LogicalTypeId::VARCHAR:
 		// blob to varchar
-		string_cast<string_t, duckdb::CastFromBlob>(source, result, count);
+		VectorStringCast<string_t, duckdb::CastFromBlob>(source, result, count);
 		break;
 	default:
-		null_cast(source, result, count);
-		break;
+		return TryVectorNullCast(source, result, count, error_message);
 	}
+	return true;
 }
 
-static void value_string_cast_switch(Vector &source, Vector &result, idx_t count) {
-	switch (result.type.id()) {
+static bool ValueStringCastSwitch(Vector &source, Vector &result, idx_t count, string *error_message) {
+	switch (result.GetType().id()) {
 	case LogicalTypeId::VARCHAR:
-		if (source.vector_type == VectorType::CONSTANT_VECTOR) {
-			result.vector_type = source.vector_type;
+		if (source.GetVectorType() == VectorType::CONSTANT_VECTOR) {
+			result.SetVectorType(source.GetVectorType());
 		} else {
-			result.vector_type = VectorType::FLAT_VECTOR;
+			result.SetVectorType(VectorType::FLAT_VECTOR);
 		}
 		for (idx_t i = 0; i < count; i++) {
 			auto src_val = source.GetValue(i);
 			auto str_val = src_val.ToString();
 			result.SetValue(i, Value(str_val));
 		}
-		break;
+		return true;
 	default:
-		null_cast(source, result, count);
-		break;
+		return TryVectorNullCast(source, result, count, error_message);
 	}
 }
 
-static void list_cast_switch(Vector &source, Vector &result, idx_t count) {
-	switch (result.type.id()) {
+static bool ListCastSwitch(Vector &source, Vector &result, idx_t count, string *error_message) {
+	switch (result.GetType().id()) {
 	case LogicalTypeId::LIST: {
 		// only handle constant and flat vectors here for now
-		if (source.vector_type == VectorType::CONSTANT_VECTOR) {
-			result.vector_type = source.vector_type;
+		if (source.GetVectorType() == VectorType::CONSTANT_VECTOR) {
+			result.SetVectorType(source.GetVectorType());
 			ConstantVector::SetNull(result, ConstantVector::IsNull(source));
+
+			auto ldata = ConstantVector::GetData<list_entry_t>(source);
+			auto tdata = ConstantVector::GetData<list_entry_t>(result);
+			*tdata = *ldata;
 		} else {
 			source.Normalify(count);
-			result.vector_type = VectorType::FLAT_VECTOR;
-			FlatVector::SetNullmask(result, FlatVector::Nullmask(source));
-		}
-		auto list_child = make_unique<ChunkCollection>();
-		if (ListVector::HasEntry(source)) {
-			auto &source_cc = ListVector::GetEntry(source);
-			auto &target_cc = *list_child;
-			// convert the entire chunk collection
-			vector<LogicalType> result_types;
-			result_types.push_back(result.type.child_types()[0].second);
-			DataChunk append_chunk;
-			append_chunk.Initialize(result_types);
-			for (auto &chunk : source_cc.Chunks()) {
-				VectorOperations::Cast(chunk->data[0], append_chunk.data[0], chunk->size());
-				append_chunk.SetCardinality(chunk->size());
-				target_cc.Append(append_chunk);
+			result.SetVectorType(VectorType::FLAT_VECTOR);
+			FlatVector::SetValidity(result, FlatVector::Validity(source));
+
+			auto ldata = FlatVector::GetData<list_entry_t>(source);
+			auto tdata = FlatVector::GetData<list_entry_t>(result);
+			for (idx_t i = 0; i < count; i++) {
+				tdata[i] = ldata[i];
 			}
 		}
-		ListVector::SetEntry(result, move(list_child));
-		auto ldata = FlatVector::GetData<list_entry_t>(source);
-		auto tdata = FlatVector::GetData<list_entry_t>(result);
+		auto &source_cc = ListVector::GetEntry(source);
+		auto source_size = ListVector::GetListSize(source);
+
+		ListVector::Reserve(result, source_size);
+		auto &append_vector = ListVector::GetEntry(result);
+
+		VectorOperations::Cast(source_cc, append_vector, source_size);
+		ListVector::SetListSize(result, source_size);
+		D_ASSERT(ListVector::GetListSize(result) == source_size);
+		return true;
+	}
+	default:
+		return ValueStringCastSwitch(source, result, count, error_message);
+	}
+}
+
+template <class SRC_TYPE, class RES_TYPE>
+void FillEnum(Vector &source, Vector &result, idx_t count) {
+
+	result.SetVectorType(VectorType::FLAT_VECTOR);
+
+	auto str_vec = EnumType::GetValuesInsertOrder(source.GetType());
+	auto res_enum_type = result.GetType();
+
+	VectorData vdata;
+	source.Orrify(count, vdata);
+
+	auto source_data = (SRC_TYPE *)vdata.data;
+	auto source_sel = vdata.sel;
+	auto source_mask = vdata.validity;
+
+	auto result_data = FlatVector::GetData<RES_TYPE>(result);
+	auto &result_mask = FlatVector::Validity(result);
+
+	for (idx_t i = 0; i < count; i++) {
+		auto src_idx = source_sel->get_index(i);
+		if (!source_mask.RowIsValid(src_idx)) {
+			result_mask.SetInvalid(i);
+			continue;
+		}
+		auto str = str_vec[source_data[src_idx]];
+		auto key = EnumType::GetPos(res_enum_type, str);
+		if (key == -1) {
+			// key doesn't exist on result enum
+			result_mask.SetInvalid(i);
+			continue;
+		}
+		result_data[i] = key;
+	}
+}
+
+template <class SRC_TYPE>
+void FillEnumResultTemplate(Vector &source, Vector &result, idx_t count) {
+	switch (source.GetType().InternalType()) {
+	case PhysicalType::UINT8:
+		FillEnum<SRC_TYPE, uint8_t>(source, result, count);
+		break;
+	case PhysicalType::UINT16:
+		FillEnum<SRC_TYPE, uint16_t>(source, result, count);
+		break;
+	case PhysicalType::UINT32:
+		FillEnum<SRC_TYPE, uint32_t>(source, result, count);
+		break;
+	default:
+		throw InternalException("ENUM can only have unsigned integers (except UINT64) as physical types");
+	}
+}
+
+static bool EnumCastSwitch(Vector &source, Vector &result, idx_t count, string *error_message) {
+	auto enum_physical_type = source.GetType().InternalType();
+	switch (result.GetType().id()) {
+	case LogicalTypeId::ENUM: {
+		// This means they are both ENUMs, but of different types.
+		switch (enum_physical_type) {
+		case PhysicalType::UINT8:
+			FillEnumResultTemplate<uint8_t>(source, result, count);
+			break;
+		case PhysicalType::UINT16:
+			FillEnumResultTemplate<uint16_t>(source, result, count);
+			break;
+		case PhysicalType::UINT32:
+			FillEnumResultTemplate<uint32_t>(source, result, count);
+			break;
+		default:
+			throw InternalException("ENUM can only have unsigned integers (except UINT64) as physical types");
+		}
+		break;
+	}
+	case LogicalTypeId::VARCHAR: {
+		if (source.GetVectorType() == VectorType::CONSTANT_VECTOR) {
+			result.SetVectorType(source.GetVectorType());
+		} else {
+			result.SetVectorType(VectorType::FLAT_VECTOR);
+		}
 		for (idx_t i = 0; i < count; i++) {
-			tdata[i] = ldata[i];
+			auto src_val = source.GetValue(i);
+			if (src_val.is_null) {
+				result.SetValue(i, Value());
+				continue;
+			}
+			auto str_vec = EnumType::GetValuesInsertOrder(source.GetType());
+			uint64_t enum_idx;
+			switch (enum_physical_type) {
+			case PhysicalType::UINT8:
+				enum_idx = src_val.value_.utinyint;
+				break;
+			case PhysicalType::UINT16:
+				enum_idx = src_val.value_.usmallint;
+				break;
+			case PhysicalType::UINT32:
+				enum_idx = src_val.value_.uinteger;
+				break;
+			default:
+				throw InternalException("ENUM can only have unsigned integers (except UINT64) as physical types");
+			}
+			result.SetValue(i, Value(str_vec[enum_idx]));
 		}
 		break;
 	}
 	default:
-		value_string_cast_switch(source, result, count);
-		break;
+		throw InternalException("Cast from Enum is not allowed");
 	}
+	return true;
 }
 
-static void struct_cast_switch(Vector &source, Vector &result, idx_t count) {
-	switch (result.type.id()) {
-	case LogicalTypeId::STRUCT: {
-		if (source.type.child_types().size() != result.type.child_types().size()) {
-			throw TypeMismatchException(source.type, result.type, "Cannot cast STRUCTs of different size");
+static bool StructCastSwitch(Vector &source, Vector &result, idx_t count, string *error_message) {
+	switch (result.GetType().id()) {
+	case LogicalTypeId::STRUCT:
+	case LogicalTypeId::MAP: {
+		auto &source_child_types = StructType::GetChildTypes(source.GetType());
+		auto &result_child_types = StructType::GetChildTypes(result.GetType());
+		if (source_child_types.size() != result_child_types.size()) {
+			throw TypeMismatchException(source.GetType(), result.GetType(), "Cannot cast STRUCTs of different size");
 		}
 		auto &source_children = StructVector::GetEntries(source);
-		D_ASSERT(source_children.size() == source.type.child_types().size());
+		D_ASSERT(source_children.size() == source_child_types.size());
 
-		bool is_constant = true;
-		for (idx_t c_idx = 0; c_idx < result.type.child_types().size(); c_idx++) {
-			auto &child_type = result.type.child_types()[c_idx];
-			auto result_child_vector = make_unique<Vector>(child_type.second);
-			auto &source_child_vector = *source_children[c_idx].second;
-			if (source_child_vector.vector_type != VectorType::CONSTANT_VECTOR) {
-				is_constant = false;
-			}
-			if (child_type.second != source_child_vector.type) {
+		auto &result_children = StructVector::GetEntries(result);
+		for (idx_t c_idx = 0; c_idx < result_child_types.size(); c_idx++) {
+			auto &result_child_vector = result_children[c_idx];
+			auto &source_child_vector = *source_children[c_idx];
+			if (result_child_vector->GetType() != source_child_vector.GetType()) {
 				VectorOperations::Cast(source_child_vector, *result_child_vector, count, false);
 			} else {
 				result_child_vector->Reference(source_child_vector);
 			}
-			StructVector::AddEntry(result, child_type.first, move(result_child_vector));
 		}
-		if (is_constant) {
-			result.vector_type = VectorType::CONSTANT_VECTOR;
+		if (source.GetVectorType() == VectorType::CONSTANT_VECTOR) {
+			result.SetVectorType(VectorType::CONSTANT_VECTOR);
+			ConstantVector::SetNull(result, ConstantVector::IsNull(source));
+		} else {
+			source.Normalify(count);
+			FlatVector::Validity(result) = FlatVector::Validity(source);
 		}
-
-		break;
+		return true;
 	}
 	case LogicalTypeId::VARCHAR:
-		if (source.vector_type == VectorType::CONSTANT_VECTOR) {
-			result.vector_type = source.vector_type;
+		if (source.GetVectorType() == VectorType::CONSTANT_VECTOR) {
+			result.SetVectorType(source.GetVectorType());
 		} else {
-			result.vector_type = VectorType::FLAT_VECTOR;
+			result.SetVectorType(VectorType::FLAT_VECTOR);
 		}
 		for (idx_t i = 0; i < count; i++) {
 			auto src_val = source.GetValue(i);
 			auto str_val = src_val.ToString();
 			result.SetValue(i, Value(str_val));
 		}
-		break;
-
+		return true;
 	default:
-		null_cast(source, result, count);
-		break;
+		return TryVectorNullCast(source, result, count, error_message);
+	}
+}
+
+bool VectorOperations::TryCast(Vector &source, Vector &result, idx_t count, string *error_message, bool strict) {
+	D_ASSERT(source.GetType() != result.GetType());
+	// first switch on source type
+	switch (source.GetType().id()) {
+	case LogicalTypeId::BOOLEAN:
+		return NumericCastSwitch<bool>(source, result, count, error_message);
+	case LogicalTypeId::TINYINT:
+		return NumericCastSwitch<int8_t>(source, result, count, error_message);
+	case LogicalTypeId::SMALLINT:
+		return NumericCastSwitch<int16_t>(source, result, count, error_message);
+	case LogicalTypeId::INTEGER:
+		return NumericCastSwitch<int32_t>(source, result, count, error_message);
+	case LogicalTypeId::BIGINT:
+		return NumericCastSwitch<int64_t>(source, result, count, error_message);
+	case LogicalTypeId::UTINYINT:
+		return NumericCastSwitch<uint8_t>(source, result, count, error_message);
+	case LogicalTypeId::USMALLINT:
+		return NumericCastSwitch<uint16_t>(source, result, count, error_message);
+	case LogicalTypeId::UINTEGER:
+		return NumericCastSwitch<uint32_t>(source, result, count, error_message);
+	case LogicalTypeId::UBIGINT:
+		return NumericCastSwitch<uint64_t>(source, result, count, error_message);
+	case LogicalTypeId::HUGEINT:
+		return NumericCastSwitch<hugeint_t>(source, result, count, error_message);
+	case LogicalTypeId::UUID:
+		return UUIDCastSwitch(source, result, count, error_message);
+	case LogicalTypeId::DECIMAL:
+		return DecimalCastSwitch(source, result, count, error_message);
+	case LogicalTypeId::FLOAT:
+		return NumericCastSwitch<float>(source, result, count, error_message);
+	case LogicalTypeId::DOUBLE:
+		return NumericCastSwitch<double>(source, result, count, error_message);
+	case LogicalTypeId::DATE:
+		return DateCastSwitch(source, result, count, error_message);
+	case LogicalTypeId::TIME:
+		return TimeCastSwitch(source, result, count, error_message);
+	case LogicalTypeId::TIMESTAMP:
+		return TimestampCastSwitch(source, result, count, error_message);
+	case LogicalTypeId::TIMESTAMP_NS:
+		return TimestampNsCastSwitch(source, result, count, error_message);
+	case LogicalTypeId::TIMESTAMP_MS:
+		return TimestampMsCastSwitch(source, result, count, error_message);
+	case LogicalTypeId::TIMESTAMP_SEC:
+		return TimestampSecCastSwitch(source, result, count, error_message);
+	case LogicalTypeId::INTERVAL:
+		return IntervalCastSwitch(source, result, count, error_message);
+	case LogicalTypeId::VARCHAR:
+		return StringCastSwitch(source, result, count, strict, error_message);
+	case LogicalTypeId::BLOB:
+		return BlobCastSwitch(source, result, count, error_message);
+	case LogicalTypeId::SQLNULL: {
+		// cast a NULL to another type, just copy the properties and change the type
+		result.SetVectorType(VectorType::CONSTANT_VECTOR);
+		ConstantVector::SetNull(result, true);
+		return true;
+	}
+	case LogicalTypeId::MAP:
+	case LogicalTypeId::STRUCT:
+		return StructCastSwitch(source, result, count, error_message);
+	case LogicalTypeId::LIST:
+		return ListCastSwitch(source, result, count, error_message);
+	case LogicalTypeId::ENUM:
+		return EnumCastSwitch(source, result, count, error_message);
+	default:
+		return TryVectorNullCast(source, result, count, error_message);
 	}
 }
 
 void VectorOperations::Cast(Vector &source, Vector &result, idx_t count, bool strict) {
-	D_ASSERT(source.type != result.type);
-	// first switch on source type
-	switch (source.type.id()) {
-	case LogicalTypeId::BOOLEAN:
-		numeric_cast_switch<bool>(source, result, count);
-		break;
-	case LogicalTypeId::TINYINT:
-		numeric_cast_switch<int8_t>(source, result, count);
-		break;
-	case LogicalTypeId::SMALLINT:
-		numeric_cast_switch<int16_t>(source, result, count);
-		break;
-	case LogicalTypeId::INTEGER:
-		numeric_cast_switch<int32_t>(source, result, count);
-		break;
-	case LogicalTypeId::BIGINT:
-		numeric_cast_switch<int64_t>(source, result, count);
-		break;
-	case LogicalTypeId::UTINYINT:
-		numeric_cast_switch<uint8_t>(source, result, count);
-		break;
-	case LogicalTypeId::USMALLINT:
-		numeric_cast_switch<uint16_t>(source, result, count);
-		break;
-	case LogicalTypeId::UINTEGER:
-		numeric_cast_switch<uint32_t>(source, result, count);
-		break;
-	case LogicalTypeId::UBIGINT:
-		numeric_cast_switch<uint64_t>(source, result, count);
-		break;
-	case LogicalTypeId::HUGEINT:
-		numeric_cast_switch<hugeint_t>(source, result, count);
-		break;
-	case LogicalTypeId::DECIMAL:
-		decimal_cast_switch(source, result, count);
-		break;
-	case LogicalTypeId::FLOAT:
-		numeric_cast_switch<float>(source, result, count);
-		break;
-	case LogicalTypeId::DOUBLE:
-		numeric_cast_switch<double>(source, result, count);
-		break;
-	case LogicalTypeId::DATE:
-		date_cast_switch(source, result, count);
-		break;
-	case LogicalTypeId::TIME:
-		time_cast_switch(source, result, count);
-		break;
-	case LogicalTypeId::TIMESTAMP:
-		timestamp_cast_switch(source, result, count);
-		break;
-	case LogicalTypeId::INTERVAL:
-		interval_cast_switch(source, result, count);
-		break;
-	case LogicalTypeId::VARCHAR:
-		string_cast_switch(source, result, count, strict);
-		break;
-	case LogicalTypeId::BLOB:
-		blob_cast_switch(source, result, count);
-		break;
-	case LogicalTypeId::SQLNULL: {
-		// cast a NULL to another type, just copy the properties and change the type
-		result.vector_type = VectorType::CONSTANT_VECTOR;
-		ConstantVector::SetNull(result, true);
-		break;
-	}
-	case LogicalTypeId::STRUCT:
-		struct_cast_switch(source, result, count);
-		break;
-	case LogicalTypeId::LIST:
-		list_cast_switch(source, result, count);
-		break;
-	default:
-		throw UnimplementedCast(source.type, result.type);
-	}
+	VectorOperations::TryCast(source, result, count, nullptr, strict);
 }
 
 } // namespace duckdb

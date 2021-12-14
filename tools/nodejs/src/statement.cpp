@@ -78,10 +78,10 @@ Statement::~Statement() {
 
 // A Napi InstanceOf for Javascript Objects "Date" and "RegExp"
 static bool other_instance_of(Napi::Object source, const char *object_type) {
-	if (strncmp(object_type, "Date", 4) == 0) {
-		return source.InstanceOf(source.Env().Global().Get("Date").As<Napi::Function>());
-	} else if (strncmp(object_type, "RegExp", 6) == 0) {
-		return source.InstanceOf(source.Env().Global().Get("RegExp").As<Napi::Function>());
+	if (strcmp(object_type, "Date") == 0) {
+		return source.InstanceOf(source.Env().Global().Get(object_type).As<Napi::Function>());
+	} else if (strcmp(object_type, "RegExp") == 0) {
+		return source.InstanceOf(source.Env().Global().Get(object_type).As<Napi::Function>());
 	}
 
 	return false;
@@ -105,9 +105,16 @@ static duckdb::Value bind_parameter(const Napi::Value source) {
 	} else if (source.IsBuffer()) {
 		Napi::Buffer<char> buffer = source.As<Napi::Buffer<char>>();
 		return duckdb::Value::BLOB(std::string(buffer.Data(), buffer.Length()));
-	} else if (other_instance_of(source.As<Napi::Object>(), "Date")) {
-		// FIXME
-		// return new Values::Float(pos, source.ToNumber().DoubleValue());
+#if (NAPI_VERSION > 4)
+	} else if (source.IsDate()) {
+		const auto micros = int64_t(source.As<Napi::Date>().ValueOf()) * duckdb::Interval::MICROS_PER_MSEC;
+		if (micros % duckdb::Interval::MICROS_PER_DAY) {
+			return duckdb::Value::TIMESTAMP(duckdb::timestamp_t(micros));
+		} else {
+			const auto days = int32_t(micros / duckdb::Interval::MICROS_PER_DAY);
+			return duckdb::Value::DATE(duckdb::date_t(days));
+		}
+#endif
 	} else if (source.IsObject()) {
 		return duckdb::Value(source.ToString().Utf8Value());
 	}
@@ -136,7 +143,7 @@ static Napi::Value convert_chunk(Napi::Env &env, std::vector<std::string> names,
 			}
 
 			// TODO templateroo here
-			switch (chunk.data[col_idx].type.id()) {
+			switch (chunk.data[col_idx].GetType().id()) {
 			case duckdb::LogicalTypeId::INTEGER: {
 				value = Napi::Number::New(env, dval.value_.integer);
 			} break;
@@ -149,6 +156,18 @@ static Napi::Value convert_chunk(Napi::Env &env, std::vector<std::string> names,
 			case duckdb::LogicalTypeId::BIGINT: {
 				value = Napi::Number::New(env, dval.value_.bigint);
 			} break;
+			case duckdb::LogicalTypeId::HUGEINT: {
+				value = Napi::Number::New(env, dval.GetValue<double>());
+			} break;
+#if (NAPI_VERSION > 4)
+			case duckdb::LogicalTypeId::DATE: {
+				const auto scale = duckdb::Interval::SECS_PER_DAY * duckdb::Interval::MSECS_PER_SEC;
+				value = Napi::Date::New(env, double(dval.GetValue<int32_t>() * scale));
+			} break;
+			case duckdb::LogicalTypeId::TIMESTAMP: {
+				value = Napi::Date::New(env, double(dval.GetValue<int64_t>() / duckdb::Interval::MICROS_PER_MSEC));
+			} break;
+#endif
 			case duckdb::LogicalTypeId::VARCHAR: {
 				value = Napi::String::New(env, dval.str_value);
 			} break;
@@ -180,7 +199,7 @@ struct StatementParam {
 };
 
 struct RunPreparedTask : public Task {
-	RunPreparedTask(Statement &statement_, unique_ptr<StatementParam> params_, RunType run_type_)
+	RunPreparedTask(Statement &statement_, duckdb::unique_ptr<StatementParam> params_, RunType run_type_)
 	    : Task(statement_, params_->callback), params(move(params_)), run_type(run_type_) {
 	}
 
@@ -226,7 +245,7 @@ struct RunPreparedTask : public Task {
 			duckdb::idx_t count = 0;
 			while (true) {
 				auto chunk = result->Fetch();
-				if (chunk->size() == 0) {
+				if (!chunk || chunk->size() == 0) {
 					break;
 				}
 
@@ -252,7 +271,7 @@ struct RunPreparedTask : public Task {
 			duckdb::idx_t out_idx = 0;
 			while (true) {
 				auto chunk = result->Fetch();
-				if (chunk->size() == 0) {
+				if (!chunk || chunk->size() == 0) {
 					break;
 				}
 				// ToObject has to happen here otherwise the converted chunk gets garbage collected for some reason
@@ -271,11 +290,11 @@ struct RunPreparedTask : public Task {
 		}
 	}
 	std::unique_ptr<duckdb::QueryResult> result;
-	unique_ptr<StatementParam> params;
+	duckdb::unique_ptr<StatementParam> params;
 	RunType run_type;
 };
 
-unique_ptr<StatementParam> Statement::HandleArgs(const Napi::CallbackInfo &info) {
+duckdb::unique_ptr<StatementParam> Statement::HandleArgs(const Napi::CallbackInfo &info) {
 	size_t start_idx = ignore_first_param ? 1 : 0;
 	auto params = duckdb::make_unique<StatementParam>();
 

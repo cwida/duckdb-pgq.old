@@ -9,16 +9,16 @@
 namespace duckdb {
 
 void ExpressionIterator::EnumerateChildren(const Expression &expr,
-                                           std::function<void(const Expression &child)> callback) {
+                                           const std::function<void(const Expression &child)> &callback) {
 	EnumerateChildren((Expression &)expr, [&](unique_ptr<Expression> &child) { callback(*child); });
 }
 
-void ExpressionIterator::EnumerateChildren(Expression &expr, std::function<void(Expression &child)> callback) {
+void ExpressionIterator::EnumerateChildren(Expression &expr, const std::function<void(Expression &child)> &callback) {
 	EnumerateChildren(expr, [&](unique_ptr<Expression> &child) { callback(*child); });
 }
 
 void ExpressionIterator::EnumerateChildren(Expression &expr,
-                                           std::function<void(unique_ptr<Expression> &child)> callback) {
+                                           const std::function<void(unique_ptr<Expression> &child)> &callback) {
 	switch (expr.expression_class) {
 	case ExpressionClass::BOUND_AGGREGATE: {
 		auto &aggr_expr = (BoundAggregateExpression &)expr;
@@ -94,6 +94,12 @@ void ExpressionIterator::EnumerateChildren(Expression &expr,
 		for (auto &child : window_expr.children) {
 			callback(child);
 		}
+		if (window_expr.start_expr) {
+			callback(window_expr.start_expr);
+		}
+		if (window_expr.end_expr) {
+			callback(window_expr.end_expr);
+		}
 		if (window_expr.offset_expr) {
 			callback(window_expr.offset_expr);
 		}
@@ -115,14 +121,12 @@ void ExpressionIterator::EnumerateChildren(Expression &expr,
 		// these node types have no children
 		break;
 	default:
-		// called on non BoundExpression type!
-		D_ASSERT(0);
-		break;
+		throw InternalException("ExpressionIterator used on unbound expression");
 	}
 }
 
 void ExpressionIterator::EnumerateExpression(unique_ptr<Expression> &expr,
-                                             std::function<void(Expression &child)> callback) {
+                                             const std::function<void(Expression &child)> &callback) {
 	if (!expr) {
 		return;
 	}
@@ -132,7 +136,7 @@ void ExpressionIterator::EnumerateExpression(unique_ptr<Expression> &expr,
 }
 
 void ExpressionIterator::EnumerateTableRefChildren(BoundTableRef &ref,
-                                                   std::function<void(Expression &child)> callback) {
+                                                   const std::function<void(Expression &child)> &callback) {
 	switch (ref.type) {
 	case TableReferenceType::CROSS_PRODUCT: {
 		auto &bound_crossproduct = (BoundCrossProductRef &)ref;
@@ -160,7 +164,7 @@ void ExpressionIterator::EnumerateTableRefChildren(BoundTableRef &ref,
 }
 
 void ExpressionIterator::EnumerateQueryNodeChildren(BoundQueryNode &node,
-                                                    std::function<void(Expression &child)> callback) {
+                                                    const std::function<void(Expression &child)> &callback) {
 	switch (node.type) {
 	case QueryNodeType::SET_OPERATION_NODE: {
 		auto &bound_setop = (BoundSetOperationNode &)node;
@@ -175,12 +179,15 @@ void ExpressionIterator::EnumerateQueryNodeChildren(BoundQueryNode &node,
 			EnumerateExpression(bound_select.select_list[i], callback);
 		}
 		EnumerateExpression(bound_select.where_clause, callback);
-		for (idx_t i = 0; i < bound_select.groups.size(); i++) {
-			EnumerateExpression(bound_select.groups[i], callback);
+		for (idx_t i = 0; i < bound_select.groups.group_expressions.size(); i++) {
+			EnumerateExpression(bound_select.groups.group_expressions[i], callback);
 		}
 		EnumerateExpression(bound_select.having, callback);
 		for (idx_t i = 0; i < bound_select.aggregates.size(); i++) {
 			EnumerateExpression(bound_select.aggregates[i], callback);
+		}
+		for (idx_t i = 0; i < bound_select.unnests.size(); i++) {
+			EnumerateExpression(bound_select.unnests[i], callback);
 		}
 		for (idx_t i = 0; i < bound_select.windows.size(); i++) {
 			EnumerateExpression(bound_select.windows[i], callback);

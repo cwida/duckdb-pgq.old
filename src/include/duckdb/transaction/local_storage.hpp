@@ -18,7 +18,7 @@ struct TableAppendState;
 
 class LocalTableStorage {
 public:
-	LocalTableStorage(DataTable &table);
+	explicit LocalTableStorage(DataTable &table);
 	~LocalTableStorage();
 
 	DataTable &table;
@@ -31,7 +31,7 @@ public:
 	//! The number of deleted rows
 	idx_t deleted_rows;
 	//! The number of active scans
-	idx_t active_scans = 0;
+	atomic<idx_t> active_scans;
 
 public:
 	void InitializeScan(LocalScanState &state, TableFilterSet *table_filters = nullptr);
@@ -48,7 +48,7 @@ public:
 	};
 
 public:
-	LocalStorage(Transaction &transaction) : transaction(transaction) {
+	explicit LocalStorage(Transaction &transaction) : transaction(transaction) {
 	}
 
 	//! Initialize a scan of the local storage
@@ -59,9 +59,9 @@ public:
 	//! Append a chunk to the local storage
 	void Append(DataTable *table, DataChunk &chunk);
 	//! Delete a set of rows from the local storage
-	void Delete(DataTable *table, Vector &row_ids, idx_t count);
+	idx_t Delete(DataTable *table, Vector &row_ids, idx_t count);
 	//! Update a set of rows in the local storage
-	void Update(DataTable *table, Vector &row_ids, vector<column_t> &column_ids, DataChunk &data);
+	void Update(DataTable *table, Vector &row_ids, const vector<column_t> &column_ids, DataChunk &data);
 
 	//! Commits the local storage, writing it to the WAL and completing the commit
 	void Commit(LocalStorage::CommitState &commit_state, Transaction &transaction, WriteAheadLog *log,
@@ -85,8 +85,8 @@ public:
 	}
 
 	void AddColumn(DataTable *old_dt, DataTable *new_dt, ColumnDefinition &new_column, Expression *default_value);
-	void ChangeType(DataTable *old_dt, DataTable *new_dt, idx_t changed_idx, LogicalType target_type,
-	                vector<column_t> bound_columns, Expression &cast_expr);
+	void ChangeType(DataTable *old_dt, DataTable *new_dt, idx_t changed_idx, const LogicalType &target_type,
+	                const vector<column_t> &bound_columns, Expression &cast_expr);
 
 private:
 	LocalTableStorage *GetStorage(DataTable *table);

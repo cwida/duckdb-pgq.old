@@ -5,6 +5,7 @@
 #include "duckdb/planner/expression/bound_function_expression.hpp"
 #include "duckdb/planner/expression_iterator.hpp"
 #include "duckdb/planner/operator/logical_create_table.hpp"
+#include "duckdb/parser/parsed_data/create_table_info.hpp"
 
 namespace duckdb {
 
@@ -25,14 +26,18 @@ unique_ptr<PhysicalOperator> PhysicalPlanGenerator::CreatePlan(LogicalCreateTabl
 			ExtractDependencies(*default_value, op.info->dependencies);
 		}
 	}
-	if (op.children.size() > 0) {
+	auto &create_info = (CreateTableInfo &)*op.info->base;
+	auto &catalog = Catalog::GetCatalog(context);
+	auto existing_entry =
+	    catalog.GetEntry(context, CatalogType::TABLE_ENTRY, create_info.schema, create_info.table, true);
+	if (!existing_entry && !op.children.empty()) {
 		D_ASSERT(op.children.size() == 1);
-		auto create = make_unique<PhysicalCreateTableAs>(op, op.schema, move(op.info));
+		auto create = make_unique<PhysicalCreateTableAs>(op, op.schema, move(op.info), op.estimated_cardinality);
 		auto plan = CreatePlan(*op.children[0]);
 		create->children.push_back(move(plan));
 		return move(create);
 	} else {
-		return make_unique<PhysicalCreateTable>(op, op.schema, move(op.info));
+		return make_unique<PhysicalCreateTable>(op, op.schema, move(op.info), op.estimated_cardinality);
 	}
 }
 

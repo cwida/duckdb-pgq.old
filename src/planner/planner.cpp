@@ -1,5 +1,5 @@
 #include "duckdb/planner/planner.hpp"
-
+#include "duckdb/main/query_profiler.hpp"
 #include "duckdb/common/serializer.hpp"
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/main/database.hpp"
@@ -17,21 +17,21 @@
 
 namespace duckdb {
 
-Planner::Planner(ClientContext &context) : binder(context), context(context) {
+Planner::Planner(ClientContext &context) : binder(Binder::CreateBinder(context)), context(context) {
 }
 
 void Planner::CreatePlan(SQLStatement &statement) {
 	vector<BoundParameterExpression *> bound_parameters;
 
 	// first bind the tables and columns to the catalog
-	context.profiler.StartPhase("binder");
-	binder.parameters = &bound_parameters;
-	auto bound_statement = binder.Bind(statement);
-	context.profiler.EndPhase();
+	context.profiler->StartPhase("binder");
+	binder->parameters = &bound_parameters;
+	auto bound_statement = binder->Bind(statement);
+	context.profiler->EndPhase();
 
-	this->read_only = binder.read_only;
-	this->requires_valid_transaction = binder.requires_valid_transaction;
-	this->allow_stream_result = binder.allow_stream_result;
+	this->read_only = binder->read_only;
+	this->requires_valid_transaction = binder->requires_valid_transaction;
+	this->allow_stream_result = binder->allow_stream_result;
 	this->names = bound_statement.names;
 	this->types = bound_statement.types;
 	this->plan = move(bound_statement.plan);
@@ -40,7 +40,7 @@ void Planner::CreatePlan(SQLStatement &statement) {
 	for (auto &expr : bound_parameters) {
 		// check if the type of the parameter could be resolved
 		if (expr->return_type.id() == LogicalTypeId::INVALID || expr->return_type.id() == LogicalTypeId::UNKNOWN) {
-			throw BinderException("Could not determine type of parameters: try adding explicit type casts");
+			throw BinderException("Could not determine type of parameters");
 		}
 		auto value = make_unique<Value>(expr->return_type);
 		expr->value = value.get();
@@ -100,7 +100,7 @@ void Planner::PlanExecute(unique_ptr<SQLStatement> statement) {
 	// the bound prepared statement is ready: bind any supplied parameters
 	vector<Value> bind_values;
 	for (idx_t i = 0; i < stmt.values.size(); i++) {
-		ConstantBinder cbinder(binder, context, "EXECUTE statement");
+		ConstantBinder cbinder(*binder, context, "EXECUTE statement");
 		cbinder.target_type = prepared->GetType(i + 1);
 		auto bound_expr = cbinder.Bind(stmt.values[i]);
 
@@ -156,6 +156,8 @@ void Planner::CreatePlan(unique_ptr<SQLStatement> statement) {
 	case StatementType::EXPORT_STATEMENT:
 	case StatementType::PRAGMA_STATEMENT:
 	case StatementType::SHOW_STATEMENT:
+	case StatementType::SET_STATEMENT:
+	case StatementType::LOAD_STATEMENT:
 		CreatePlan(*statement);
 		break;
 	case StatementType::EXECUTE_STATEMENT:

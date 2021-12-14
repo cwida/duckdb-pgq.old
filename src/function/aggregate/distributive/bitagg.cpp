@@ -7,7 +7,7 @@
 namespace duckdb {
 
 template <class T>
-struct bit_state_t {
+struct BitState {
 	bool is_set;
 	T value;
 };
@@ -16,25 +16,25 @@ template <class OP>
 static AggregateFunction GetBitfieldUnaryAggregate(LogicalType type) {
 	switch (type.id()) {
 	case LogicalTypeId::TINYINT:
-		return AggregateFunction::UnaryAggregate<bit_state_t<uint8_t>, int8_t, int8_t, OP>(type, type);
+		return AggregateFunction::UnaryAggregate<BitState<uint8_t>, int8_t, int8_t, OP>(type, type);
 	case LogicalTypeId::SMALLINT:
-		return AggregateFunction::UnaryAggregate<bit_state_t<uint16_t>, int16_t, int16_t, OP>(type, type);
+		return AggregateFunction::UnaryAggregate<BitState<uint16_t>, int16_t, int16_t, OP>(type, type);
 	case LogicalTypeId::INTEGER:
-		return AggregateFunction::UnaryAggregate<bit_state_t<uint32_t>, int32_t, int32_t, OP>(type, type);
+		return AggregateFunction::UnaryAggregate<BitState<uint32_t>, int32_t, int32_t, OP>(type, type);
 	case LogicalTypeId::BIGINT:
-		return AggregateFunction::UnaryAggregate<bit_state_t<uint64_t>, int64_t, int64_t, OP>(type, type);
+		return AggregateFunction::UnaryAggregate<BitState<uint64_t>, int64_t, int64_t, OP>(type, type);
 	case LogicalTypeId::HUGEINT:
-		return AggregateFunction::UnaryAggregate<bit_state_t<hugeint_t>, hugeint_t, hugeint_t, OP>(type, type);
+		return AggregateFunction::UnaryAggregate<BitState<hugeint_t>, hugeint_t, hugeint_t, OP>(type, type);
 	case LogicalTypeId::UTINYINT:
-		return AggregateFunction::UnaryAggregate<bit_state_t<uint8_t>, uint8_t, uint8_t, OP>(type, type);
+		return AggregateFunction::UnaryAggregate<BitState<uint8_t>, uint8_t, uint8_t, OP>(type, type);
 	case LogicalTypeId::USMALLINT:
-		return AggregateFunction::UnaryAggregate<bit_state_t<uint16_t>, uint16_t, uint16_t, OP>(type, type);
+		return AggregateFunction::UnaryAggregate<BitState<uint16_t>, uint16_t, uint16_t, OP>(type, type);
 	case LogicalTypeId::UINTEGER:
-		return AggregateFunction::UnaryAggregate<bit_state_t<uint32_t>, uint32_t, uint32_t, OP>(type, type);
+		return AggregateFunction::UnaryAggregate<BitState<uint32_t>, uint32_t, uint32_t, OP>(type, type);
 	case LogicalTypeId::UBIGINT:
-		return AggregateFunction::UnaryAggregate<bit_state_t<uint64_t>, uint64_t, uint64_t, OP>(type, type);
+		return AggregateFunction::UnaryAggregate<BitState<uint64_t>, uint64_t, uint64_t, OP>(type, type);
 	default:
-		throw NotImplementedException("Unimplemented bitfield type for unary aggregate");
+		throw InternalException("Unimplemented bitfield type for unary aggregate");
 	}
 }
 
@@ -46,7 +46,7 @@ struct BitAndOperation {
 	}
 
 	template <class INPUT_TYPE, class STATE, class OP>
-	static void Operation(STATE *state, FunctionData *bind_data, INPUT_TYPE *input, nullmask_t &nullmask, idx_t idx) {
+	static void Operation(STATE *state, FunctionData *bind_data, INPUT_TYPE *input, ValidityMask &mask, idx_t idx) {
 		if (!state->is_set) {
 			state->is_set = true;
 			state->value = input[idx];
@@ -56,23 +56,23 @@ struct BitAndOperation {
 	}
 
 	template <class INPUT_TYPE, class STATE, class OP>
-	static void ConstantOperation(STATE *state, FunctionData *bind_data, INPUT_TYPE *input, nullmask_t &nullmask,
+	static void ConstantOperation(STATE *state, FunctionData *bind_data, INPUT_TYPE *input, ValidityMask &mask,
 	                              idx_t count) {
 		//  count is irrelevant
-		Operation<INPUT_TYPE, STATE, OP>(state, bind_data, input, nullmask, 0);
+		Operation<INPUT_TYPE, STATE, OP>(state, bind_data, input, mask, 0);
 	}
 
 	template <class T, class STATE>
-	static void Finalize(Vector &result, FunctionData *, STATE *state, T *target, nullmask_t &nullmask, idx_t idx) {
+	static void Finalize(Vector &result, FunctionData *, STATE *state, T *target, ValidityMask &mask, idx_t idx) {
 		if (!state->is_set) {
-			nullmask[idx] = true;
+			mask.SetInvalid(idx);
 		} else {
 			target[idx] = state->value;
 		}
 	}
 
 	template <class STATE, class OP>
-	static void Combine(STATE source, STATE *target) {
+	static void Combine(const STATE &source, STATE *target) {
 		if (!source.is_set) {
 			// source is NULL, nothing to do.
 			return;
@@ -92,7 +92,7 @@ struct BitAndOperation {
 
 void BitAndFun::RegisterFunction(BuiltinFunctions &set) {
 	AggregateFunctionSet bit_and("bit_and");
-	for (auto type : LogicalType::INTEGRAL) {
+	for (auto &type : LogicalType::INTEGRAL) {
 		bit_and.AddFunction(GetBitfieldUnaryAggregate<BitAndOperation>(type));
 	}
 	set.AddFunction(bit_and);
@@ -106,7 +106,7 @@ struct BitOrOperation {
 	}
 
 	template <class INPUT_TYPE, class STATE, class OP>
-	static void Operation(STATE *state, FunctionData *bind_data, INPUT_TYPE *input, nullmask_t &nullmask, idx_t idx) {
+	static void Operation(STATE *state, FunctionData *bind_data, INPUT_TYPE *input, ValidityMask &mask, idx_t idx) {
 		if (!state->is_set) {
 			state->is_set = true;
 			state->value = input[idx];
@@ -116,23 +116,23 @@ struct BitOrOperation {
 	}
 
 	template <class INPUT_TYPE, class STATE, class OP>
-	static void ConstantOperation(STATE *state, FunctionData *bind_data, INPUT_TYPE *input, nullmask_t &nullmask,
+	static void ConstantOperation(STATE *state, FunctionData *bind_data, INPUT_TYPE *input, ValidityMask &mask,
 	                              idx_t count) {
 		//  count is irrelevant
-		Operation<INPUT_TYPE, STATE, OP>(state, bind_data, input, nullmask, 0);
+		Operation<INPUT_TYPE, STATE, OP>(state, bind_data, input, mask, 0);
 	}
 
 	template <class T, class STATE>
-	static void Finalize(Vector &result, FunctionData *, STATE *state, T *target, nullmask_t &nullmask, idx_t idx) {
+	static void Finalize(Vector &result, FunctionData *, STATE *state, T *target, ValidityMask &mask, idx_t idx) {
 		if (!state->is_set) {
-			nullmask[idx] = true;
+			mask.SetInvalid(idx);
 		} else {
 			target[idx] = state->value;
 		}
 	}
 
 	template <class STATE, class OP>
-	static void Combine(STATE source, STATE *target) {
+	static void Combine(const STATE &source, STATE *target) {
 		if (!source.is_set) {
 			// source is NULL, nothing to do.
 			return;
@@ -152,7 +152,7 @@ struct BitOrOperation {
 
 void BitOrFun::RegisterFunction(BuiltinFunctions &set) {
 	AggregateFunctionSet bit_or("bit_or");
-	for (auto type : LogicalType::INTEGRAL) {
+	for (auto &type : LogicalType::INTEGRAL) {
 		bit_or.AddFunction(GetBitfieldUnaryAggregate<BitOrOperation>(type));
 	}
 	set.AddFunction(bit_or);
@@ -166,7 +166,7 @@ struct BitXorOperation {
 	}
 
 	template <class INPUT_TYPE, class STATE, class OP>
-	static void Operation(STATE *state, FunctionData *bind_data, INPUT_TYPE *input, nullmask_t &nullmask, idx_t idx) {
+	static void Operation(STATE *state, FunctionData *bind_data, INPUT_TYPE *input, ValidityMask &mask, idx_t idx) {
 		if (!state->is_set) {
 			state->is_set = true;
 			state->value = input[idx];
@@ -176,23 +176,23 @@ struct BitXorOperation {
 	}
 
 	template <class INPUT_TYPE, class STATE, class OP>
-	static void ConstantOperation(STATE *state, FunctionData *bind_data, INPUT_TYPE *input, nullmask_t &nullmask,
+	static void ConstantOperation(STATE *state, FunctionData *bind_data, INPUT_TYPE *input, ValidityMask &mask,
 	                              idx_t count) {
 		//  count is irrelevant
-		Operation<INPUT_TYPE, STATE, OP>(state, bind_data, input, nullmask, 0);
+		Operation<INPUT_TYPE, STATE, OP>(state, bind_data, input, mask, 0);
 	}
 
 	template <class T, class STATE>
-	static void Finalize(Vector &result, FunctionData *, STATE *state, T *target, nullmask_t &nullmask, idx_t idx) {
+	static void Finalize(Vector &result, FunctionData *, STATE *state, T *target, ValidityMask &mask, idx_t idx) {
 		if (!state->is_set) {
-			nullmask[idx] = true;
+			mask.SetInvalid(idx);
 		} else {
 			target[idx] = state->value;
 		}
 	}
 
 	template <class STATE, class OP>
-	static void Combine(STATE source, STATE *target) {
+	static void Combine(const STATE &source, STATE *target) {
 		if (!source.is_set) {
 			// source is NULL, nothing to do.
 			return;
@@ -212,7 +212,7 @@ struct BitXorOperation {
 
 void BitXorFun::RegisterFunction(BuiltinFunctions &set) {
 	AggregateFunctionSet bit_xor("bit_xor");
-	for (auto type : LogicalType::INTEGRAL) {
+	for (auto &type : LogicalType::INTEGRAL) {
 		bit_xor.AddFunction(GetBitfieldUnaryAggregate<BitXorOperation>(type));
 	}
 	set.AddFunction(bit_xor);

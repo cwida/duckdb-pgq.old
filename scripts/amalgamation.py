@@ -12,6 +12,8 @@ source_file = os.path.join(amal_dir, "duckdb.cpp")
 temp_header = 'duckdb.hpp.tmp'
 temp_source = 'duckdb.cpp.tmp'
 
+skip_duckdb_includes = False
+
 src_dir = 'src'
 include_dir = os.path.join('src', 'include')
 fmt_dir = os.path.join('third_party', 'fmt')
@@ -20,7 +22,8 @@ miniz_dir = os.path.join('third_party', 'miniz')
 re2_dir = os.path.join('third_party', 're2')
 pg_query_dir = os.path.join('third_party', 'libpg_query')
 pg_query_include_dir = os.path.join('third_party', 'libpg_query', 'include')
-
+hll_dir = os.path.join('third_party', 'hyperloglog')
+tdigest_dir = os.path.join('third_party', 'tdigest')
 utf8proc_dir = os.path.join('third_party', 'utf8proc')
 utf8proc_include_dir = os.path.join('third_party', 'utf8proc', 'include')
 
@@ -32,8 +35,10 @@ main_header_files = [os.path.join(include_dir, 'duckdb.hpp'),
     os.path.join(include_dir, 'duckdb.h'),
     os.path.join(include_dir, 'duckdb', 'common', 'types', 'date.hpp'),
     os.path.join(include_dir, 'duckdb', 'common', 'arrow.hpp'),
-	os.path.join(include_dir, 'duckdb', 'common', 'types', 'decimal.hpp'),
+    os.path.join(include_dir, 'duckdb', 'common', 'types', 'blob.hpp'),
+    os.path.join(include_dir, 'duckdb', 'common', 'types', 'decimal.hpp'),
     os.path.join(include_dir, 'duckdb', 'common', 'types', 'hugeint.hpp'),
+    os.path.join(include_dir, 'duckdb', 'common', 'types', 'uuid.hpp'),
     os.path.join(include_dir, 'duckdb', 'common', 'types', 'interval.hpp'),
     os.path.join(include_dir, 'duckdb', 'common', 'types', 'timestamp.hpp'),
     os.path.join(include_dir, 'duckdb', 'common', 'types', 'time.hpp'),
@@ -45,11 +50,12 @@ main_header_files = [os.path.join(include_dir, 'duckdb.hpp'),
     os.path.join(include_dir, 'duckdb', 'function', 'table_function.hpp'),
     os.path.join(include_dir, 'duckdb', 'parser', 'parsed_data', 'create_table_function_info.hpp'),
     os.path.join(include_dir, 'duckdb', 'parser', 'parsed_data', 'create_copy_function_info.hpp')]
+extended_amalgamation = False
 if '--extended' in sys.argv:
     def add_include_dir(dirpath):
         return [os.path.join(dirpath, x) for x in os.listdir(dirpath)]
 
-
+    extended_amalgamation = True
     main_header_files += [os.path.join(include_dir, x) for x in [
         'duckdb/planner/expression/bound_constant_expression.hpp',
         'duckdb/planner/expression/bound_function_expression.hpp',
@@ -61,32 +67,45 @@ if '--extended' in sys.argv:
         'duckdb/function/pragma_function.hpp',
         'duckdb/parser/qualified_name.hpp',
         'duckdb/parser/parser.hpp',
-        'duckdb/planner/binder.hpp']]
+        'duckdb/planner/binder.hpp',
+        'duckdb/storage/object_cache.hpp',
+        'duckdb/planner/table_filter.hpp',
+        "duckdb/storage/statistics/string_statistics.hpp",
+        "duckdb/storage/statistics/numeric_statistics.hpp",
+        "duckdb/planner/filter/conjunction_filter.hpp",
+        "duckdb/planner/filter/constant_filter.hpp",
+        "duckdb/execution/operator/persistent/buffered_csv_reader.hpp",
+        "duckdb/common/types/vector_cache.hpp",
+        "duckdb/planner/filter/null_filter.hpp",
+        "duckdb/common/arrow_wrapper.hpp"]]
     main_header_files += add_include_dir(os.path.join(include_dir, 'duckdb/parser/expression'))
     main_header_files += add_include_dir(os.path.join(include_dir, 'duckdb/parser/parsed_data'))
     main_header_files += add_include_dir(os.path.join(include_dir, 'duckdb/parser/tableref'))
 # include paths for where to search for include files during amalgamation
-include_paths = [include_dir, fmt_include_dir, re2_dir, miniz_dir, utf8proc_include_dir, utf8proc_dir, pg_query_include_dir, pg_query_dir, moodycamel_include_dir,pcg_include_dir]
+include_paths = [include_dir, fmt_include_dir, re2_dir, miniz_dir, utf8proc_include_dir, hll_dir, tdigest_dir, utf8proc_dir, pg_query_include_dir, pg_query_dir, moodycamel_include_dir,pcg_include_dir]
 # paths of where to look for files to compile and include to the final amalgamation
-compile_directories = [src_dir, fmt_dir, miniz_dir, re2_dir, utf8proc_dir, pg_query_dir]
+compile_directories = [src_dir, fmt_dir, miniz_dir, re2_dir, hll_dir, utf8proc_dir, pg_query_dir]
 
 # files always excluded
-always_excluded = ['src/amalgamation/duckdb.cpp', 'src/amalgamation/duckdb.hpp', 'src/amalgamation/parquet-extension.cpp', 'src/amalgamation/parquet-extension.hpp']
+always_excluded = ['src/amalgamation/duckdb.cpp', 'src/amalgamation/duckdb.hpp', 'src/amalgamation/parquet-amalgamation.cpp', 'src/amalgamation/parquet-amalgamation.hpp']
 # files excluded from the amalgamation
-excluded_files = ['grammar.cpp', 'grammar.hpp', 'symbols.cpp', 'file_system.cpp']
+excluded_files = ['grammar.cpp', 'grammar.hpp', 'symbols.cpp']
 # files excluded from individual file compilation during test_compile
 excluded_compilation_files = excluded_files + ['gram.hpp', 'kwlist.hpp', "duckdb-c.cpp"]
-
-file_system_cpp = os.path.join('src', 'common', 'file_system.cpp')
 
 linenumbers = False
 
 def get_includes(fpath, text):
     # find all the includes referred to in the directory
-    include_statements = re.findall("(^[#]include[\t ]+[\"]([^\"]+)[\"])", text, flags=re.MULTILINE)
+    regex_include_statements = re.findall("(^[\t ]*[#][\t ]*include[\t ]+[\"]([^\"]+)[\"])", text, flags=re.MULTILINE)
+    include_statements = []
     include_files = []
     # figure out where they are located
-    for included_file in [x[1] for x in include_statements]:
+    for x in regex_include_statements:
+        included_file = x[1]
+        if skip_duckdb_includes and 'duckdb' in included_file:
+            continue
+        include_statements.append(x[0])
         included_file = os.sep.join(included_file.split('/'))
         found = False
         for include_path in include_paths:
@@ -97,7 +116,7 @@ def get_includes(fpath, text):
                 break
         if not found:
             raise Exception('Could not find include file "' + included_file + '", included from file "' + fpath + '"')
-    return ([x[0] for x in include_statements], include_files)
+    return (include_statements, include_files)
 
 def cleanup_file(text):
     # remove all "#pragma once" notifications
@@ -186,6 +205,7 @@ def write_dir(dir):
     for fname in files:
         if fname in excluded_files:
             continue
+        # print(fname)
         fpath = os.path.join(dir, fname)
         if os.path.isdir(fpath):
             text += write_dir(fpath)
@@ -233,6 +253,8 @@ def generate_duckdb_hpp(header_file):
 
         hfile.write("#pragma once\n")
         hfile.write("#define DUCKDB_AMALGAMATION 1\n")
+        if extended_amalgamation:
+            hfile.write("#define DUCKDB_AMALGAMATION_EXTENDED 1\n")
         hfile.write("#define DUCKDB_SOURCE_ID \"%s\"\n" % git_commit_hash())
         hfile.write("#define DUCKDB_VERSION \"%s\"\n" % git_dev_version())
         for fpath in main_header_files:
@@ -252,11 +274,9 @@ def generate_amalgamation(source_file, header_file):
         header_file_name = header_file.split(os.sep)[-1]
         sfile.write('#include "' + header_file_name + '"\n\n')
         sfile.write("#ifndef DUCKDB_AMALGAMATION\n#error header mismatch\n#endif\n\n")
+        sfile.write("#if (!defined(DEBUG) && !defined NDEBUG)\n#define NDEBUG\n#endif\n\n")
         for compile_dir in compile_directories:
             sfile.write(write_dir(compile_dir))
-        # for windows we write file_system.cpp last
-        # this is because it includes windows.h which contains a lot of #define statements that mess up the other code
-        sfile.write(write_file(file_system_cpp, True))
 
         sfile.write('\n\n/*\n')
         license_idx = 0
@@ -292,7 +312,7 @@ def list_sources():
     file_list = []
     for compile_dir in compile_directories:
         list_files(compile_dir, file_list)
-    return file_list + [file_system_cpp]
+    return file_list
 
 def list_include_files_recursive(dname, file_list):
     files = os.listdir(dname)
@@ -351,8 +371,6 @@ def gather_file(current_file, source_files, header_files):
         text = '\n#line 1 "%s"\n' % (current_file,) + text
     source_files.append(cleanup_file(text))
 
-
-
 def gather_files(dir, source_files, header_files):
     files = os.listdir(dir)
     files.sort()
@@ -377,10 +395,6 @@ def generate_amalgamation_splits(source_file, header_file, nsplits):
         if compile_dir != src_dir:
             continue
         gather_files(compile_dir, source_files, header_files)
-
-    # for windows we write file_system.cpp last
-    # this is because it includes windows.h which contains a lot of #define statements that mess up the other code
-    source_files.append(write_file(os.path.join('src', 'common', 'file_system.cpp'), True))
 
     # write duckdb-internal.hpp
     if '.hpp' in header_file:

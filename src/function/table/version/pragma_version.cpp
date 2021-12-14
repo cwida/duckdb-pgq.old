@@ -1,4 +1,4 @@
-#include "duckdb/function/table/sqlite_functions.hpp"
+#include "duckdb/function/table/system_functions.hpp"
 #include "duckdb/main/database.hpp"
 
 namespace duckdb {
@@ -9,24 +9,26 @@ struct PragmaVersionData : public FunctionOperatorData {
 	bool finished;
 };
 
-static unique_ptr<FunctionData> pragma_version_bind(ClientContext &context, vector<Value> &inputs,
-                                                    unordered_map<string, Value> &named_parameters,
-                                                    vector<LogicalType> &return_types, vector<string> &names) {
-	names.push_back("library_version");
+static unique_ptr<FunctionData> PragmaVersionBind(ClientContext &context, vector<Value> &inputs,
+                                                  unordered_map<string, Value> &named_parameters,
+                                                  vector<LogicalType> &input_table_types,
+                                                  vector<string> &input_table_names, vector<LogicalType> &return_types,
+                                                  vector<string> &names) {
+	names.emplace_back("library_version");
 	return_types.push_back(LogicalType::VARCHAR);
-	names.push_back("source_id");
+	names.emplace_back("source_id");
 	return_types.push_back(LogicalType::VARCHAR);
 	return nullptr;
 }
 
-static unique_ptr<FunctionOperatorData> pragma_version_init(ClientContext &context, const FunctionData *bind_data,
-                                                            vector<column_t> &column_ids,
-                                                            TableFilterCollection *filters) {
+static unique_ptr<FunctionOperatorData> PragmaVersionInit(ClientContext &context, const FunctionData *bind_data,
+                                                          const vector<column_t> &column_ids,
+                                                          TableFilterCollection *filters) {
 	return make_unique<PragmaVersionData>();
 }
 
-static void pragma_version(ClientContext &context, const FunctionData *bind_data, FunctionOperatorData *operator_state,
-                           DataChunk &output) {
+static void PragmaVersionFunction(ClientContext &context, const FunctionData *bind_data,
+                                  FunctionOperatorData *operator_state, DataChunk *input, DataChunk &output) {
 	auto &data = (PragmaVersionData &)*operator_state;
 	if (data.finished) {
 		// finished returning values
@@ -39,7 +41,7 @@ static void pragma_version(ClientContext &context, const FunctionData *bind_data
 }
 
 void PragmaVersion::RegisterFunction(BuiltinFunctions &set) {
-	set.AddFunction(TableFunction("pragma_version", {}, pragma_version, pragma_version_bind, pragma_version_init));
+	set.AddFunction(TableFunction("pragma_version", {}, PragmaVersionFunction, PragmaVersionBind, PragmaVersionInit));
 }
 
 const char *DuckDB::SourceID() {

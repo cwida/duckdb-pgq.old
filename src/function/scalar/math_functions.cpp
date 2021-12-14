@@ -30,6 +30,12 @@ void BuiltinFunctions::RegisterMathFunctions() {
 
 	Register<GammaFun>();
 	Register<LogGammaFun>();
+
+	Register<FactorialFun>();
+
+	Register<NextAfterFun>();
+
+	Register<EvenFun>();
 }
 
 } // namespace duckdb

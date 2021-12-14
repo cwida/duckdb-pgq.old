@@ -36,6 +36,11 @@ CREATE TABLE date_values (
 );
 INSERT INTO date_values
     VALUES (date '1992-01-01', time '12:00:03', timestamp '1992-09-20 10:00:03'), (NULL, NULL, NULL);
+CREATE TABLE uuid_values (
+    u uuid
+);
+INSERT INTO uuid_values
+    VALUES ('A0EEBC99-9C0B-4EF8-BB6D-6BB9BD380A11'), (NULL), ('47183823-2574-4bfd-b411-99ed177d3e43'), ('{10203040506070800102030405060708}');
 -- test constraints
 CREATE TABLE check_constraint (
     i integer,
@@ -80,35 +85,4 @@ SELECT
     repeat('a', 100000) a;
 COMMIT;
 
--- generate a bunch of shit in the WAL just to force a checkpoint
--- FIXME: this really needs to be done better
-
-UPDATE
-    big_integers
-SET
-    i = i + 1;
-
-UPDATE
-    big_integers
-SET
-    i = i + 1;
-
-UPDATE
-    big_integers
-SET
-    i = i + 1;
-
-UPDATE
-    big_integers
-SET
-    i = i + 1;
-
-UPDATE
-    big_integers
-SET
-    i = i + 1;
-
-UPDATE
-    big_integers
-SET
-    i = i - 5;
+FORCE CHECKPOINT;

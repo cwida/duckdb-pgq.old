@@ -8,6 +8,8 @@ void BuiltinFunctions::RegisterGenericFunctions() {
 	Register<GreatestFun>();
 	Register<StatsFun>();
 	Register<TypeOfFun>();
+	Register<CurrentSettingFun>();
+	Register<SystemFun>();
 }
 
 } // namespace duckdb

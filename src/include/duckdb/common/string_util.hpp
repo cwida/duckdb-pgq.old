@@ -30,6 +30,12 @@ public:
 	static bool CharacterIsDigit(char c) {
 		return c >= '0' && c <= '9';
 	}
+	static char CharacterToLower(char c) {
+		if (c >= 'A' && c <= 'Z') {
+			return c - ('A' - 'a');
+		}
+		return c;
+	}
 
 	//! Returns true if the needle string exists in the haystack
 	static bool Contains(const string &haystack, const string &needle);
@@ -45,6 +51,9 @@ public:
 
 	//! Split the input string based on newline char
 	static vector<string> Split(const string &str, char delimiter);
+
+	//! Split the input string allong a quote. Note that any escaping is NOT supported.
+	static vector<string> SplitWithQuote(const string &str, char delimiter = ',', char quote = '"');
 
 	//! Join multiple strings into one string. Components are concatenated by the given separator
 	static string Join(const vector<string> &input, const string &separator);
@@ -70,11 +79,8 @@ public:
 		return result;
 	}
 
-	//! Append the prefix to the beginning of each line in str
-	static string Prefix(const string &str, const string &prefix);
-
 	//! Return a string that formats the give number of bytes
-	static string FormatSize(idx_t bytes);
+	static string BytesToHumanReadableString(idx_t bytes);
 
 	//! Convert a string to uppercase
 	static string Upper(const string &str);
@@ -109,8 +115,8 @@ public:
 	static vector<string> TopNStrings(vector<std::pair<string, idx_t>> scores, idx_t n = 5, idx_t threshold = 5);
 	//! Computes the levenshtein distance of each string in strings, and compares it to target, then returns TopNStrings
 	//! with the given params.
-	static vector<string> TopNLevenshtein(vector<string> strings, const string &target, idx_t n = 5,
+	static vector<string> TopNLevenshtein(const vector<string> &strings, const string &target, idx_t n = 5,
 	                                      idx_t threshold = 5);
-	static string CandidatesMessage(const vector<string> &candidates, string candidate = "Candidate bindings");
+	static string CandidatesMessage(const vector<string> &candidates, const string &candidate = "Candidate bindings");
 };
 } // namespace duckdb

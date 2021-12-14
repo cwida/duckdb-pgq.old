@@ -4,12 +4,12 @@
 
 namespace duckdb {
 
-BoundCastExpression::BoundCastExpression(unique_ptr<Expression> child_p, LogicalType target_type_p)
-    : Expression(ExpressionType::OPERATOR_CAST, ExpressionClass::BOUND_CAST, move(target_type_p)),
-      child(move(child_p)) {
+BoundCastExpression::BoundCastExpression(unique_ptr<Expression> child_p, LogicalType target_type_p, bool try_cast_p)
+    : Expression(ExpressionType::OPERATOR_CAST, ExpressionClass::BOUND_CAST, move(target_type_p)), child(move(child_p)),
+      try_cast(try_cast_p) {
 }
 
-unique_ptr<Expression> BoundCastExpression::AddCastToType(unique_ptr<Expression> expr, LogicalType target_type) {
+unique_ptr<Expression> BoundCastExpression::AddCastToType(unique_ptr<Expression> expr, const LogicalType &target_type) {
 	D_ASSERT(expr);
 	if (expr->expression_class == ExpressionClass::BOUND_PARAMETER) {
 		auto &parameter = (BoundParameterExpression &)*expr;
@@ -18,12 +18,20 @@ unique_ptr<Expression> BoundCastExpression::AddCastToType(unique_ptr<Expression>
 		auto &def = (BoundDefaultExpression &)*expr;
 		def.return_type = target_type;
 	} else if (expr->return_type != target_type) {
+		auto &expr_type = expr->return_type;
+		if (target_type.id() == LogicalTypeId::LIST && expr_type.id() == LogicalTypeId::LIST) {
+			auto &target_list = ListType::GetChildType(target_type);
+			auto &expr_list = ListType::GetChildType(expr_type);
+			if (target_list.id() == LogicalTypeId::ANY || expr_list == target_list) {
+				return expr;
+			}
+		}
 		return make_unique<BoundCastExpression>(move(expr), target_type);
 	}
 	return expr;
 }
 
-bool BoundCastExpression::CastIsInvertible(LogicalType source_type, LogicalType target_type) {
+bool BoundCastExpression::CastIsInvertible(const LogicalType &source_type, const LogicalType &target_type) {
 	if (source_type.id() == LogicalTypeId::BOOLEAN || target_type.id() == LogicalTypeId::BOOLEAN) {
 		return false;
 	}
@@ -33,32 +41,55 @@ bool BoundCastExpression::CastIsInvertible(LogicalType source_type, LogicalType 
 	if (source_type.id() == LogicalTypeId::DOUBLE || target_type.id() == LogicalTypeId::DOUBLE) {
 		return false;
 	}
+	if (source_type.id() == LogicalTypeId::DECIMAL || target_type.id() == LogicalTypeId::DECIMAL) {
+		uint8_t source_width, target_width;
+		uint8_t source_scale, target_scale;
+		// cast to or from decimal
+		// cast is only invertible if the cast is strictly widening
+		if (!source_type.GetDecimalProperties(source_width, source_scale)) {
+			return false;
+		}
+		if (!target_type.GetDecimalProperties(target_width, target_scale)) {
+			return false;
+		}
+		if (target_scale < source_scale) {
+			return false;
+		}
+		return true;
+	}
 	if (source_type.id() == LogicalTypeId::VARCHAR) {
-		return target_type.id() == LogicalTypeId::DATE || target_type.id() == LogicalTypeId::TIMESTAMP;
+		return target_type.id() == LogicalTypeId::DATE || target_type.id() == LogicalTypeId::TIME ||
+		       target_type.id() == LogicalTypeId::TIMESTAMP || target_type.id() == LogicalTypeId::TIMESTAMP_NS ||
+		       target_type.id() == LogicalTypeId::TIMESTAMP_MS || target_type.id() == LogicalTypeId::TIMESTAMP_SEC;
 	}
 	if (target_type.id() == LogicalTypeId::VARCHAR) {
-		return source_type.id() == LogicalTypeId::DATE || source_type.id() == LogicalTypeId::TIMESTAMP;
+		return source_type.id() == LogicalTypeId::DATE || source_type.id() == LogicalTypeId::TIME ||
+		       source_type.id() == LogicalTypeId::TIMESTAMP || source_type.id() == LogicalTypeId::TIMESTAMP_NS ||
+		       source_type.id() == LogicalTypeId::TIMESTAMP_MS || source_type.id() == LogicalTypeId::TIMESTAMP_SEC;
 	}
 	return true;
 }
 
 string BoundCastExpression::ToString() const {
-	return "CAST[" + return_type.ToString() + "](" + child->GetName() + ")";
+	return (try_cast ? "TRY_CAST(" : "CAST(") + child->GetName() + " AS " + return_type.ToString() + ")";
 }
 
-bool BoundCastExpression::Equals(const BaseExpression *other_) const {
-	if (!Expression::Equals(other_)) {
+bool BoundCastExpression::Equals(const BaseExpression *other_p) const {
+	if (!Expression::Equals(other_p)) {
 		return false;
 	}
-	auto other = (BoundCastExpression *)other_;
+	auto other = (BoundCastExpression *)other_p;
 	if (!Expression::Equals(child.get(), other->child.get())) {
+		return false;
+	}
+	if (try_cast != other->try_cast) {
 		return false;
 	}
 	return true;
 }
 
 unique_ptr<Expression> BoundCastExpression::Copy() {
-	auto copy = make_unique<BoundCastExpression>(child->Copy(), return_type);
+	auto copy = make_unique<BoundCastExpression>(child->Copy(), return_type, try_cast);
 	copy->CopyProperties(*this);
 	return move(copy);
 }

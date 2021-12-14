@@ -9,6 +9,8 @@
 #pragma once
 
 #include "duckdb/storage/statistics/base_statistics.hpp"
+#include "duckdb/common/enums/filter_propagate_result.hpp"
+#include "duckdb/storage/statistics/validity_statistics.hpp"
 
 namespace duckdb {
 
@@ -17,7 +19,7 @@ public:
 	constexpr static uint32_t MAX_STRING_MINMAX_SIZE = 8;
 
 public:
-	StringStatistics(LogicalType type);
+	explicit StringStatistics(LogicalType type);
 
 	//! The minimum value of the segment, potentially truncated
 	data_t min[MAX_STRING_MINMAX_SIZE];
@@ -37,9 +39,9 @@ public:
 	unique_ptr<BaseStatistics> Copy() override;
 	void Serialize(Serializer &serializer) override;
 	static unique_ptr<BaseStatistics> Deserialize(Deserializer &source, LogicalType type);
-	void Verify(Vector &vector, idx_t count) override;
+	void Verify(Vector &vector, const SelectionVector &sel, idx_t count) override;
 
-	bool CheckZonemap(ExpressionType comparison_type, string value);
+	FilterPropagateResult CheckZonemap(ExpressionType comparison_type, const string &value);
 
 	string ToString() override;
 };

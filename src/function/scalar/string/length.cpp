@@ -16,6 +16,23 @@ struct StringLengthOperator {
 	}
 };
 
+struct ArrayLengthOperator {
+	template <class TA, class TR>
+	static inline TR Operation(TA input) {
+		return input.length;
+	}
+};
+
+struct ArrayLengthBinaryOperator {
+	template <class TA, class TB, class TR>
+	static inline TR Operation(TA input, TB dimension) {
+		if (dimension != 1) {
+			throw NotImplementedException("array_length for dimensions other than 1 not implemented");
+		}
+		return input.length;
+	}
+};
+
 // strlen returns the size in bytes
 struct StrLenOperator {
 	template <class TA, class TR>
@@ -32,9 +49,9 @@ struct BitLenOperator {
 	}
 };
 
-static unique_ptr<BaseStatistics> length_propagate_stats(ClientContext &context, BoundFunctionExpression &expr,
-                                                         FunctionData *bind_data,
-                                                         vector<unique_ptr<BaseStatistics>> &child_stats) {
+static unique_ptr<BaseStatistics> LengthPropagateStats(ClientContext &context, BoundFunctionExpression &expr,
+                                                       FunctionData *bind_data,
+                                                       vector<unique_ptr<BaseStatistics>> &child_stats) {
 	D_ASSERT(child_stats.size() == 1);
 	// can only propagate stats if the children have stats
 	if (!child_stats[0]) {
@@ -42,30 +59,52 @@ static unique_ptr<BaseStatistics> length_propagate_stats(ClientContext &context,
 	}
 	auto &sstats = (StringStatistics &)*child_stats[0];
 	if (!sstats.has_unicode) {
-		expr.function.function = ScalarFunction::UnaryFunction<string_t, int64_t, StrLenOperator, true>;
+		expr.function.function = ScalarFunction::UnaryFunction<string_t, int64_t, StrLenOperator>;
 	}
 	return nullptr;
 }
 
+static unique_ptr<FunctionData> ListLengthBind(ClientContext &context, ScalarFunction &bound_function,
+                                               vector<unique_ptr<Expression>> &arguments) {
+	bound_function.arguments[0] = arguments[0]->return_type;
+	return nullptr;
+}
+
 void LengthFun::RegisterFunction(BuiltinFunctions &set) {
-	set.AddFunction({"length", "len"},
-	                ScalarFunction({LogicalType::VARCHAR}, LogicalType::BIGINT,
-	                               ScalarFunction::UnaryFunction<string_t, int64_t, StringLengthOperator, true>, false,
-	                               nullptr, nullptr, length_propagate_stats));
+	ScalarFunction array_length_unary = ScalarFunction(
+	    {LogicalType::LIST(LogicalType::ANY)}, LogicalType::BIGINT,
+	    ScalarFunction::UnaryFunction<list_entry_t, int64_t, ArrayLengthOperator>, false, ListLengthBind);
+	ScalarFunctionSet length("length");
+	length.AddFunction(ScalarFunction({LogicalType::VARCHAR}, LogicalType::BIGINT,
+	                                  ScalarFunction::UnaryFunction<string_t, int64_t, StringLengthOperator>, false,
+	                                  nullptr, nullptr, LengthPropagateStats));
+	length.AddFunction(array_length_unary);
+	set.AddFunction(length);
+	length.name = "len";
+	set.AddFunction(length);
+
+	ScalarFunctionSet array_length("array_length");
+	array_length.AddFunction(array_length_unary);
+	array_length.AddFunction(
+	    ScalarFunction({LogicalType::LIST(LogicalType::ANY), LogicalType::BIGINT}, LogicalType::BIGINT,
+	                   ScalarFunction::BinaryFunction<list_entry_t, int64_t, int64_t, ArrayLengthBinaryOperator>, false,
+	                   ListLengthBind));
+	set.AddFunction(array_length);
+
 	set.AddFunction(ScalarFunction("strlen", {LogicalType::VARCHAR}, LogicalType::BIGINT,
-	                               ScalarFunction::UnaryFunction<string_t, int64_t, StrLenOperator, true>));
+	                               ScalarFunction::UnaryFunction<string_t, int64_t, StrLenOperator>));
 	set.AddFunction(ScalarFunction("bit_length", {LogicalType::VARCHAR}, LogicalType::BIGINT,
-	                               ScalarFunction::UnaryFunction<string_t, int64_t, BitLenOperator, true>));
+	                               ScalarFunction::UnaryFunction<string_t, int64_t, BitLenOperator>));
 	// length for BLOB type
 	set.AddFunction(ScalarFunction("octet_length", {LogicalType::BLOB}, LogicalType::BIGINT,
-	                               ScalarFunction::UnaryFunction<string_t, int64_t, StrLenOperator, true>));
+	                               ScalarFunction::UnaryFunction<string_t, int64_t, StrLenOperator>));
 }
 
 struct UnicodeOperator {
 	template <class TA, class TR>
 	static inline TR Operation(const TA &input) {
-		const auto str = reinterpret_cast<const utf8proc_uint8_t *>(input.GetDataUnsafe());
-		const auto len = input.GetSize();
+		auto str = reinterpret_cast<const utf8proc_uint8_t *>(input.GetDataUnsafe());
+		auto len = input.GetSize();
 		utf8proc_int32_t codepoint;
 		(void)utf8proc_iterate(str, len, &codepoint);
 		return codepoint;
@@ -74,7 +113,7 @@ struct UnicodeOperator {
 
 void UnicodeFun::RegisterFunction(BuiltinFunctions &set) {
 	ScalarFunction unicode("unicode", {LogicalType::VARCHAR}, LogicalType::INTEGER,
-	                       ScalarFunction::UnaryFunction<string_t, int32_t, UnicodeOperator, true>);
+	                       ScalarFunction::UnaryFunction<string_t, int32_t, UnicodeOperator>);
 	set.AddFunction(unicode);
 	unicode.name = "ord";
 	set.AddFunction(unicode);

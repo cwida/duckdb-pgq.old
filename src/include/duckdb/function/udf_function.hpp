@@ -16,7 +16,7 @@ namespace duckdb {
 struct UDFWrapper {
 public:
 	template <typename TR, typename... Args>
-	static scalar_function_t CreateScalarFunction(string name, TR (*udf_func)(Args...)) {
+	static scalar_function_t CreateScalarFunction(const string &name, TR (*udf_func)(Args...)) {
 		const std::size_t num_template_argc = sizeof...(Args);
 		switch (num_template_argc) {
 		case 1:
@@ -25,24 +25,23 @@ public:
 			return CreateBinaryFunction<TR, Args...>(name, udf_func);
 		case 3:
 			return CreateTernaryFunction<TR, Args...>(name, udf_func);
-		default:
-			throw duckdb::NotImplementedException("UDF function only supported until ternary!");
-		}
+		default: // LCOV_EXCL_START
+			throw std::runtime_error("UDF function only supported until ternary!");
+		} // LCOV_EXCL_STOP
 	}
 
 	template <typename TR, typename... Args>
-	static scalar_function_t CreateScalarFunction(string name, vector<LogicalType> args, LogicalType ret_type,
+	static scalar_function_t CreateScalarFunction(const string &name, vector<LogicalType> args, LogicalType ret_type,
 	                                              TR (*udf_func)(Args...)) {
-		if (!TypesMatch<TR>(ret_type)) {
-			throw duckdb::TypeMismatchException(GetTypeId<TR>(), ret_type.InternalType(),
-			                                    "Return type doesn't match with the first template type.");
-		}
+		if (!TypesMatch<TR>(ret_type)) { // LCOV_EXCL_START
+			throw std::runtime_error("Return type doesn't match with the first template type.");
+		} // LCOV_EXCL_STOP
 
 		const std::size_t num_template_types = sizeof...(Args);
-		if (num_template_types != args.size()) {
-			throw duckdb::InvalidInputException(
+		if (num_template_types != args.size()) { // LCOV_EXCL_START
+			throw std::runtime_error(
 			    "The number of templated types should be the same quantity of the LogicalType arguments.");
-		}
+		} // LCOV_EXCL_STOP
 
 		switch (num_template_types) {
 		case 1:
@@ -51,14 +50,14 @@ public:
 			return CreateBinaryFunction<TR, Args...>(name, args, ret_type, udf_func);
 		case 3:
 			return CreateTernaryFunction<TR, Args...>(name, args, ret_type, udf_func);
-		default:
-			throw duckdb::NotImplementedException("UDF function only supported until ternary!");
-		}
+		default: // LCOV_EXCL_START
+			throw std::runtime_error("UDF function only supported until ternary!");
+		} // LCOV_EXCL_STOP
 	}
 
 	template <typename TR, typename... Args>
-	static void RegisterFunction(string name, scalar_function_t udf_function, ClientContext &context,
-	                             LogicalType varargs = LogicalType::INVALID) {
+	static void RegisterFunction(const string &name, scalar_function_t udf_function, ClientContext &context,
+	                             LogicalType varargs = LogicalType(LogicalTypeId::INVALID)) {
 		vector<LogicalType> arguments;
 		GetArgumentTypesRecursive<Args...>(arguments);
 
@@ -67,53 +66,48 @@ public:
 		RegisterFunction(name, arguments, ret_type, udf_function, context, varargs);
 	}
 
-	static void RegisterFunction(string name, vector<LogicalType> args, LogicalType ret_type,
-	                             scalar_function_t udf_function, ClientContext &context,
-	                             LogicalType varargs = LogicalType::INVALID);
+	DUCKDB_API static void RegisterFunction(string name, vector<LogicalType> args, LogicalType ret_type,
+	                                        scalar_function_t udf_function, ClientContext &context,
+	                                        LogicalType varargs = LogicalType(LogicalTypeId::INVALID));
 
 	//--------------------------------- Aggregate UDFs ------------------------------------//
 	template <typename UDF_OP, typename STATE, typename TR, typename TA>
-	static AggregateFunction CreateAggregateFunction(string name) {
+	static AggregateFunction CreateAggregateFunction(const string &name) {
 		return CreateUnaryAggregateFunction<UDF_OP, STATE, TR, TA>(name);
 	}
 
 	template <typename UDF_OP, typename STATE, typename TR, typename TA, typename TB>
-	static AggregateFunction CreateAggregateFunction(string name) {
+	static AggregateFunction CreateAggregateFunction(const string &name) {
 		return CreateBinaryAggregateFunction<UDF_OP, STATE, TR, TA, TB>(name);
 	}
 
 	template <typename UDF_OP, typename STATE, typename TR, typename TA>
-	static AggregateFunction CreateAggregateFunction(string name, LogicalType ret_type, LogicalType input_type) {
-		if (!TypesMatch<TR>(ret_type)) {
-			throw duckdb::TypeMismatchException(GetTypeId<TR>(), ret_type.InternalType(),
-			                                    "The return argument don't match!");
-		}
+	static AggregateFunction CreateAggregateFunction(const string &name, LogicalType ret_type, LogicalType input_type) {
+		if (!TypesMatch<TR>(ret_type)) { // LCOV_EXCL_START
+			throw std::runtime_error("The return argument don't match!");
+		} // LCOV_EXCL_STOP
 
-		if (!TypesMatch<TA>(input_type)) {
-			throw duckdb::TypeMismatchException(GetTypeId<TA>(), input_type.InternalType(),
-			                                    "The input argument don't match!");
-		}
+		if (!TypesMatch<TA>(input_type)) { // LCOV_EXCL_START
+			throw std::runtime_error("The input argument don't match!");
+		} // LCOV_EXCL_STOP
 
 		return CreateUnaryAggregateFunction<UDF_OP, STATE, TR, TA>(name, ret_type, input_type);
 	}
 
 	template <typename UDF_OP, typename STATE, typename TR, typename TA, typename TB>
-	static AggregateFunction CreateAggregateFunction(string name, LogicalType ret_type, LogicalType input_typeA,
+	static AggregateFunction CreateAggregateFunction(const string &name, LogicalType ret_type, LogicalType input_typeA,
 	                                                 LogicalType input_typeB) {
-		if (!TypesMatch<TR>(ret_type)) {
-			throw duckdb::TypeMismatchException(GetTypeId<TR>(), ret_type.InternalType(),
-			                                    "The return argument don't match!");
+		if (!TypesMatch<TR>(ret_type)) { // LCOV_EXCL_START
+			throw std::runtime_error("The return argument don't match!");
 		}
 
 		if (!TypesMatch<TA>(input_typeA)) {
-			throw duckdb::TypeMismatchException(GetTypeId<TA>(), input_typeA.InternalType(),
-			                                    "The first input argument don't match!");
+			throw std::runtime_error("The first input argument don't match!");
 		}
 
 		if (!TypesMatch<TB>(input_typeB)) {
-			throw duckdb::TypeMismatchException(GetTypeId<TB>(), input_typeB.InternalType(),
-			                                    "The second input argument don't match!");
-		}
+			throw std::runtime_error("The second input argument don't match!");
+		} // LCOV_EXCL_STOP
 
 		return CreateBinaryAggregateFunction<UDF_OP, STATE, TR, TA, TB>(name, ret_type, input_typeA, input_typeB);
 	}
@@ -127,52 +121,44 @@ public:
 	                                                 bind_aggregate_function_t bind = nullptr,
 	                                                 aggregate_destructor_t destructor = nullptr) {
 
-		AggregateFunction aggr_function(name, arguments, return_type, state_size, initialize, update, combine, finalize,
-		                                simple_update, bind, destructor);
+		AggregateFunction aggr_function(move(name), move(arguments), move(return_type), state_size, initialize, update,
+		                                combine, finalize, simple_update, bind, destructor);
 		return aggr_function;
 	}
 
-	static void RegisterAggrFunction(AggregateFunction aggr_function, ClientContext &context,
-	                                 LogicalType varargs = LogicalType::INVALID);
+	DUCKDB_API static void RegisterAggrFunction(AggregateFunction aggr_function, ClientContext &context,
+	                                            LogicalType varargs = LogicalType(LogicalTypeId::INVALID));
 
 private:
 	//-------------------------------- Templated functions --------------------------------//
-	template <typename TR, typename... Args>
-	static scalar_function_t CreateUnaryFunction(string name, TR (*udf_func)(Args...)) {
-		D_ASSERT(sizeof...(Args) == 1);
-		return CreateUnaryFunction<TR, Args...>(name, udf_func);
-	}
+	struct UnaryUDFExecutor {
+		template <class INPUT_TYPE, class RESULT_TYPE>
+		static RESULT_TYPE Operation(INPUT_TYPE input, ValidityMask &mask, idx_t idx, void *dataptr) {
+			typedef RESULT_TYPE (*unary_function_t)(INPUT_TYPE);
+			auto udf = (unary_function_t)dataptr;
+			return udf(input);
+		}
+	};
 
 	template <typename TR, typename TA>
-	static scalar_function_t CreateUnaryFunction(string name, TR (*udf_func)(TA)) {
+	static scalar_function_t CreateUnaryFunction(const string &name, TR (*udf_func)(TA)) {
 		scalar_function_t udf_function = [=](DataChunk &input, ExpressionState &state, Vector &result) -> void {
-			UnaryExecutor::Execute<TA, TR>(input.data[0], result, input.size(), udf_func);
+			UnaryExecutor::GenericExecute<TA, TR, UnaryUDFExecutor>(input.data[0], result, input.size(),
+			                                                        (void *)udf_func);
 		};
 		return udf_function;
 	}
 
-	template <typename TR, typename... Args>
-	static scalar_function_t CreateBinaryFunction(string name, TR (*udf_func)(Args...)) {
-		D_ASSERT(sizeof...(Args) == 2);
-		return CreateBinaryFunction<TR, Args...>(name, udf_func);
-	}
-
 	template <typename TR, typename TA, typename TB>
-	static scalar_function_t CreateBinaryFunction(string name, TR (*udf_func)(TA, TB)) {
+	static scalar_function_t CreateBinaryFunction(const string &name, TR (*udf_func)(TA, TB)) {
 		scalar_function_t udf_function = [=](DataChunk &input, ExpressionState &state, Vector &result) -> void {
 			BinaryExecutor::Execute<TA, TB, TR>(input.data[0], input.data[1], result, input.size(), udf_func);
 		};
 		return udf_function;
 	}
 
-	template <typename TR, typename... Args>
-	static scalar_function_t CreateTernaryFunction(string name, TR (*udf_func)(Args...)) {
-		D_ASSERT(sizeof...(Args) == 3);
-		return CreateTernaryFunction<TR, Args...>(name, udf_func);
-	}
-
 	template <typename TR, typename TA, typename TB, typename TC>
-	static scalar_function_t CreateTernaryFunction(string name, TR (*udf_func)(TA, TB, TC)) {
+	static scalar_function_t CreateTernaryFunction(const string &name, TR (*udf_func)(TA, TB, TC)) {
 		scalar_function_t udf_function = [=](DataChunk &input, ExpressionState &state, Vector &result) -> void {
 			TernaryExecutor::Execute<TA, TB, TC, TR>(input.data[0], input.data[1], input.data[2], result, input.size(),
 			                                         udf_func);
@@ -180,28 +166,42 @@ private:
 		return udf_function;
 	}
 
+	template <typename TR, typename... Args>
+	static scalar_function_t CreateUnaryFunction(const string &name, TR (*udf_func)(Args...)) { // LCOV_EXCL_START
+		throw std::runtime_error("Incorrect number of arguments for unary function");
+	} // LCOV_EXCL_STOP
+
+	template <typename TR, typename... Args>
+	static scalar_function_t CreateBinaryFunction(const string &name, TR (*udf_func)(Args...)) { // LCOV_EXCL_START
+		throw std::runtime_error("Incorrect number of arguments for binary function");
+	} // LCOV_EXCL_STOP
+
+	template <typename TR, typename... Args>
+	static scalar_function_t CreateTernaryFunction(const string &name, TR (*udf_func)(Args...)) { // LCOV_EXCL_START
+		throw std::runtime_error("Incorrect number of arguments for ternary function");
+	} // LCOV_EXCL_STOP
+
 	template <typename T>
 	static LogicalType GetArgumentType() {
 		if (std::is_same<T, bool>()) {
-			return LogicalType::BOOLEAN;
+			return LogicalType(LogicalTypeId::BOOLEAN);
 		} else if (std::is_same<T, int8_t>()) {
-			return LogicalType::TINYINT;
+			return LogicalType(LogicalTypeId::TINYINT);
 		} else if (std::is_same<T, int16_t>()) {
-			return LogicalType::SMALLINT;
+			return LogicalType(LogicalTypeId::SMALLINT);
 		} else if (std::is_same<T, int32_t>()) {
-			return LogicalType::INTEGER;
+			return LogicalType(LogicalTypeId::INTEGER);
 		} else if (std::is_same<T, int64_t>()) {
-			return LogicalType::BIGINT;
+			return LogicalType(LogicalTypeId::BIGINT);
 		} else if (std::is_same<T, float>()) {
-			return LogicalType::FLOAT;
+			return LogicalType(LogicalTypeId::FLOAT);
 		} else if (std::is_same<T, double>()) {
-			return LogicalType::DOUBLE;
+			return LogicalType(LogicalTypeId::DOUBLE);
 		} else if (std::is_same<T, string_t>()) {
-			return LogicalType::VARCHAR;
-		} else {
-			// unrecognized type
-			throw duckdb::InternalException("Unrecognized type!");
-		}
+			return LogicalType(LogicalTypeId::VARCHAR);
+		} else { // LCOV_EXCL_START
+			throw std::runtime_error("Unrecognized type!");
+		} // LCOV_EXCL_STOP
 	}
 
 	template <typename TA, typename TB, typename... Args>
@@ -219,50 +219,46 @@ private:
 	//-------------------------------- Argumented functions --------------------------------//
 
 	template <typename TR, typename... Args>
-	static scalar_function_t CreateUnaryFunction(string name, vector<LogicalType> args, LogicalType ret_type,
-	                                             TR (*udf_func)(Args...)) {
-		D_ASSERT(sizeof...(Args) == 1);
-		return CreateUnaryFunction<TR, Args...>(name, args, ret_type, udf_func);
-	}
+	static scalar_function_t CreateUnaryFunction(const string &name, vector<LogicalType> args, LogicalType ret_type,
+	                                             TR (*udf_func)(Args...)) { // LCOV_EXCL_START
+		throw std::runtime_error("Incorrect number of arguments for unary function");
+	} // LCOV_EXCL_STOP
 
 	template <typename TR, typename TA>
-	static scalar_function_t CreateUnaryFunction(string name, vector<LogicalType> args, LogicalType ret_type,
+	static scalar_function_t CreateUnaryFunction(const string &name, vector<LogicalType> args, LogicalType ret_type,
 	                                             TR (*udf_func)(TA)) {
-		if (args.size() != 1) {
-			throw duckdb::InvalidInputException("The number of LogicalType arguments (\"args\") should be 1!");
+		if (args.size() != 1) { // LCOV_EXCL_START
+			throw std::runtime_error("The number of LogicalType arguments (\"args\") should be 1!");
 		}
 		if (!TypesMatch<TA>(args[0])) {
-			throw duckdb::TypeMismatchException(GetTypeId<TA>(), args[0].InternalType(),
-			                                    "The first arguments don't match!");
-		}
+			throw std::runtime_error("The first arguments don't match!");
+		} // LCOV_EXCL_STOP
 
 		scalar_function_t udf_function = [=](DataChunk &input, ExpressionState &state, Vector &result) -> void {
-			UnaryExecutor::Execute<TA, TR>(input.data[0], result, input.size(), udf_func);
+			UnaryExecutor::GenericExecute<TA, TR, UnaryUDFExecutor>(input.data[0], result, input.size(),
+			                                                        (void *)udf_func);
 		};
 		return udf_function;
 	}
 
 	template <typename TR, typename... Args>
-	static scalar_function_t CreateBinaryFunction(string name, vector<LogicalType> args, LogicalType ret_type,
-	                                              TR (*udf_func)(Args...)) {
-		D_ASSERT(sizeof...(Args) == 2);
-		return CreateBinaryFunction<TR, Args...>(name, args, ret_type, udf_func);
-	}
+	static scalar_function_t CreateBinaryFunction(const string &name, vector<LogicalType> args, LogicalType ret_type,
+	                                              TR (*udf_func)(Args...)) { // LCOV_EXCL_START
+		throw std::runtime_error("Incorrect number of arguments for binary function");
+	} // LCOV_EXCL_STOP
 
 	template <typename TR, typename TA, typename TB>
-	static scalar_function_t CreateBinaryFunction(string name, vector<LogicalType> args, LogicalType ret_type,
+	static scalar_function_t CreateBinaryFunction(const string &name, vector<LogicalType> args, LogicalType ret_type,
 	                                              TR (*udf_func)(TA, TB)) {
-		if (args.size() != 2) {
-			throw duckdb::InvalidInputException("The number of LogicalType arguments (\"args\") should be 2!");
+		if (args.size() != 2) { // LCOV_EXCL_START
+			throw std::runtime_error("The number of LogicalType arguments (\"args\") should be 2!");
 		}
 		if (!TypesMatch<TA>(args[0])) {
-			throw duckdb::TypeMismatchException(GetTypeId<TA>(), args[0].InternalType(),
-			                                    "The first arguments don't match!");
+			throw std::runtime_error("The first arguments don't match!");
 		}
 		if (!TypesMatch<TB>(args[1])) {
-			throw duckdb::TypeMismatchException(GetTypeId<TB>(), args[1].InternalType(),
-			                                    "The second arguments don't match!");
-		}
+			throw std::runtime_error("The second arguments don't match!");
+		} // LCOV_EXCL_STOP
 
 		scalar_function_t udf_function = [=](DataChunk &input, ExpressionState &state, Vector &result) {
 			BinaryExecutor::Execute<TA, TB, TR>(input.data[0], input.data[1], result, input.size(), udf_func);
@@ -271,30 +267,26 @@ private:
 	}
 
 	template <typename TR, typename... Args>
-	static scalar_function_t CreateTernaryFunction(string name, vector<LogicalType> args, LogicalType ret_type,
-	                                               TR (*udf_func)(Args...)) {
-		D_ASSERT(sizeof...(Args) == 3);
-		return CreateTernaryFunction<TR, Args...>(name, args, ret_type, udf_func);
-	}
+	static scalar_function_t CreateTernaryFunction(const string &name, vector<LogicalType> args, LogicalType ret_type,
+	                                               TR (*udf_func)(Args...)) { // LCOV_EXCL_START
+		throw std::runtime_error("Incorrect number of arguments for ternary function");
+	} // LCOV_EXCL_STOP
 
 	template <typename TR, typename TA, typename TB, typename TC>
-	static scalar_function_t CreateTernaryFunction(string name, vector<LogicalType> args, LogicalType ret_type,
+	static scalar_function_t CreateTernaryFunction(const string &name, vector<LogicalType> args, LogicalType ret_type,
 	                                               TR (*udf_func)(TA, TB, TC)) {
-		if (args.size() != 3) {
-			throw duckdb::InvalidInputException("The number of LogicalType arguments (\"args\") should be 3!");
+		if (args.size() != 3) { // LCOV_EXCL_START
+			throw std::runtime_error("The number of LogicalType arguments (\"args\") should be 3!");
 		}
 		if (!TypesMatch<TA>(args[0])) {
-			throw duckdb::TypeMismatchException(GetTypeId<TA>(), args[0].InternalType(),
-			                                    "The first arguments don't match!");
+			throw std::runtime_error("The first arguments don't match!");
 		}
 		if (!TypesMatch<TB>(args[1])) {
-			throw duckdb::TypeMismatchException(GetTypeId<TB>(), args[1].InternalType(),
-			                                    "The second arguments don't match!");
+			throw std::runtime_error("The second arguments don't match!");
 		}
 		if (!TypesMatch<TC>(args[2])) {
-			throw duckdb::TypeMismatchException(GetTypeId<TC>(), args[2].InternalType(),
-			                                    "The second arguments don't match!");
-		}
+			throw std::runtime_error("The second arguments don't match!");
+		} // LCOV_EXCL_STOP
 
 		scalar_function_t udf_function = [=](DataChunk &input, ExpressionState &state, Vector &result) -> void {
 			TernaryExecutor::Execute<TA, TB, TC, TR>(input.data[0], input.data[1], input.data[2], result, input.size(),
@@ -312,13 +304,19 @@ private:
 			return std::is_same<T, int8_t>();
 		case LogicalTypeId::SMALLINT:
 			return std::is_same<T, int16_t>();
-		case LogicalTypeId::DATE:
 		case LogicalTypeId::INTEGER:
 			return std::is_same<T, int32_t>();
 		case LogicalTypeId::BIGINT:
-		case LogicalTypeId::TIME:
-		case LogicalTypeId::TIMESTAMP:
 			return std::is_same<T, int64_t>();
+		case LogicalTypeId::DATE:
+			return std::is_same<T, date_t>();
+		case LogicalTypeId::TIME:
+			return std::is_same<T, dtime_t>();
+		case LogicalTypeId::TIMESTAMP:
+		case LogicalTypeId::TIMESTAMP_MS:
+		case LogicalTypeId::TIMESTAMP_NS:
+		case LogicalTypeId::TIMESTAMP_SEC:
+			return std::is_same<T, timestamp_t>();
 		case LogicalTypeId::FLOAT:
 			return std::is_same<T, float>();
 		case LogicalTypeId::DOUBLE:
@@ -327,22 +325,23 @@ private:
 		case LogicalTypeId::CHAR:
 		case LogicalTypeId::BLOB:
 			return std::is_same<T, string_t>();
-		default:
-			throw InvalidTypeException(sql_type.InternalType(), "Type does not supported!");
-		}
+		default: // LCOV_EXCL_START
+			throw std::runtime_error("Type is not supported!");
+		} // LCOV_EXCL_STOP
 	}
 
 private:
 	//-------------------------------- Aggregate functions --------------------------------//
 	template <typename UDF_OP, typename STATE, typename TR, typename TA>
-	static AggregateFunction CreateUnaryAggregateFunction(string name) {
+	static AggregateFunction CreateUnaryAggregateFunction(const string &name) {
 		LogicalType return_type = GetArgumentType<TR>();
 		LogicalType input_type = GetArgumentType<TA>();
 		return CreateUnaryAggregateFunction<UDF_OP, STATE, TR, TA>(name, return_type, input_type);
 	}
 
 	template <typename UDF_OP, typename STATE, typename TR, typename TA>
-	static AggregateFunction CreateUnaryAggregateFunction(string name, LogicalType ret_type, LogicalType input_type) {
+	static AggregateFunction CreateUnaryAggregateFunction(const string &name, LogicalType ret_type,
+	                                                      LogicalType input_type) {
 		AggregateFunction aggr_function =
 		    AggregateFunction::UnaryAggregate<STATE, TR, TA, UDF_OP>(input_type, ret_type);
 		aggr_function.name = name;
@@ -350,7 +349,7 @@ private:
 	}
 
 	template <typename UDF_OP, typename STATE, typename TR, typename TA, typename TB>
-	static AggregateFunction CreateBinaryAggregateFunction(string name) {
+	static AggregateFunction CreateBinaryAggregateFunction(const string &name) {
 		LogicalType return_type = GetArgumentType<TR>();
 		LogicalType input_typeA = GetArgumentType<TA>();
 		LogicalType input_typeB = GetArgumentType<TB>();
@@ -358,8 +357,8 @@ private:
 	}
 
 	template <typename UDF_OP, typename STATE, typename TR, typename TA, typename TB>
-	static AggregateFunction CreateBinaryAggregateFunction(string name, LogicalType ret_type, LogicalType input_typeA,
-	                                                       LogicalType input_typeB) {
+	static AggregateFunction CreateBinaryAggregateFunction(const string &name, LogicalType ret_type,
+	                                                       LogicalType input_typeA, LogicalType input_typeB) {
 		AggregateFunction aggr_function =
 		    AggregateFunction::BinaryAggregate<STATE, TR, TA, TB, UDF_OP>(input_typeA, input_typeB, ret_type);
 		aggr_function.name = name;

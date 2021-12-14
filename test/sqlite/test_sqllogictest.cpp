@@ -26,16 +26,11 @@
 #include "re2/re2.h"
 
 #include "catch.hpp"
-#include "sqllogictest.hpp"
 #include "termcolor.hpp"
 
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
-#ifndef _WIN32
-#include <unistd.h>
-#define stricmp strcasecmp
-#endif
 
 #include "duckdb.hpp"
 #include "duckdb/common/types.hpp"
@@ -47,6 +42,7 @@
 #include "extension_helper.hpp"
 
 #include "test_helpers.hpp"
+#include "test_helper_extension.hpp"
 
 #include <algorithm>
 #include <functional>
@@ -54,14 +50,30 @@
 #include <string>
 #include <vector>
 #include <iostream>
+#include <thread>
+#include <cfloat>
 
 using namespace duckdb;
 using namespace std;
 
-#define DEFAULT_HASH_THRESHOLD 0
+struct Command;
+struct LoopCommand;
+
+struct LoopDefinition {
+	string loop_iterator_name;
+	int loop_idx;
+	int loop_start;
+	int loop_end;
+	vector<string> tokens;
+};
 
 struct SQLLogicTestRunner {
 public:
+	SQLLogicTestRunner(string dbpath) : dbpath(move(dbpath)) {
+		config = GetTestConfig();
+	}
+	~SQLLogicTestRunner();
+
 	void ExecuteFile(string script);
 	void LoadDatabase(string dbpath);
 
@@ -69,6 +81,7 @@ public:
 
 public:
 	string dbpath;
+	vector<string> loaded_databases;
 	unique_ptr<DuckDB> db;
 	unique_ptr<Connection> con;
 	unique_ptr<DBConfig> config;
@@ -77,17 +90,25 @@ public:
 	bool output_hash_mode = false;
 	bool output_result_mode = false;
 	bool debug_mode = false;
-	int hashThreshold = DEFAULT_HASH_THRESHOLD; /* Threshold for hashing res */
-	bool in_loop = false;
-	string loop_iterator_name;
-	int loop_idx;
-	int loop_start;
-	int loop_end;
+	bool finished_processing_file = false;
+	int hashThreshold = 0; /* Threshold for hashing res */
+	vector<LoopCommand *> active_loops;
+	unique_ptr<Command> top_level_loop;
+	vector<LoopDefinition *> running_loops;
 	bool original_sqlite_test = false;
 
 	//! The map converting the labels to the hash values
 	unordered_map<string, string> hash_label_map;
 	unordered_map<string, unique_ptr<QueryResult>> result_label_map;
+
+	bool InLoop() {
+		return !active_loops.empty();
+	}
+	void ExecuteCommand(unique_ptr<Command> command);
+	void StartLoop(LoopDefinition loop);
+	void EndLoop();
+	static string ReplaceLoopIterator(string text, string loop_iterator_name, string replacement);
+	static string LoopReplacement(string text, const vector<LoopDefinition *> &loops);
 };
 
 /*
@@ -95,21 +116,30 @@ public:
 */
 typedef struct Script Script;
 struct Script {
-	char *zScript;        /* Complete text of the input script */
-	int iCur;             /* Index in zScript of start of current line */
-	char *zLine;          /* Pointer to start of current line */
-	int len;              /* Length of current line */
-	int iNext;            /* index of start of next line */
-	int nLine;            /* line number for the current line */
-	int iEnd;             /* Index in zScript of '\000' at end of script */
-	int startLine;        /* Line number of start of current record */
-	int copyFlag;         /* If true, copy lines to output as they are read */
-	char azToken[4][200]; /* tokenization of a line */
-};
+	char *zScript; /* Complete text of the input script */
+	int iCur;      /* Index in zScript of start of current line */
+	char *zLine;   /* Pointer to start of current line */
+	int len;       /* Length of current line */
+	int iNext;     /* index of start of next line */
+	int nLine;     /* line number for the current line */
+	int iEnd;      /* Index in zScript of '\000' at end of script */
+	int startLine; /* Line number of start of current record */
+	int copyFlag;  /* If true, copy lines to output as they are read */
+	vector<string> tokens;
 
-// stub because not used
-void sqllogictestRegisterEngine(const DbEngine *p) {
-}
+	void Clear() {
+		zScript = nullptr;
+		iCur = 0;
+		zLine = nullptr;
+		len = 0;
+		iNext = 0;
+		nLine = 0;
+		iEnd = 0;
+		startLine = 0;
+		copyFlag = 0;
+		tokens.clear();
+	}
+};
 
 /*
 ** Advance the cursor to the start of the next non-comment line of the
@@ -239,19 +269,18 @@ static void findToken(const char *z, int *piStart, int *pLen) {
 static void tokenizeLine(Script *p) {
 	int i, j, k;
 	int len, n;
-	for (i = 0; i < (int)count(p->azToken); i++)
-		p->azToken[i][0] = 0;
+	p->tokens.clear();
+
 	p->startLine = p->nLine;
-	for (i = j = 0; j < p->len && i < (int)count(p->azToken); i++) {
+	for (i = j = 0; j < p->len; i++) {
 		findToken(&p->zLine[j], &k, &len);
 		j += k;
 		n = len;
-		if (n >= (int)sizeof(p->azToken[0])) {
-			n = sizeof(p->azToken[0]) - 1;
-		}
-		memcpy(p->azToken[i], &p->zLine[j], n);
-		p->azToken[i][n] = 0;
+		p->tokens.push_back(string(p->zLine + j, n));
 		j += n + 1;
+	}
+	while (p->tokens.size() < 4) {
+		p->tokens.push_back(string());
 	}
 }
 
@@ -371,6 +400,17 @@ static void print_error_header(const char *description, string file_name, int nl
 	std::cerr << termcolor::bold << "(" << file_name << ":" << nline << ")!" << termcolor::reset << std::endl;
 }
 
+static void print_result_error(vector<string> &result_values, vector<string> &values, idx_t expected_column_count,
+                               bool row_wise) {
+	print_header("Expected result:");
+	print_line_sep();
+	print_expected_result(values, expected_column_count, row_wise);
+	print_line_sep();
+	print_header("Actual result:");
+	print_line_sep();
+	print_expected_result(result_values, expected_column_count, false);
+}
+
 static void print_result_error(MaterializedQueryResult &result, vector<string> &values, idx_t expected_column_count,
                                bool row_wise) {
 	print_header("Expected result:");
@@ -407,17 +447,13 @@ static bool result_is_hash(string result) {
 	return pos == result.size();
 }
 
-static string replace_loop_iterator(string text, string loop_iterator_name, idx_t index) {
-	return StringUtil::Replace(text, "${" + loop_iterator_name + "}", to_string(index));
-}
-
 static bool result_is_file(string result) {
 	return StringUtil::StartsWith(result, "<FILE>:");
 }
 
 bool compare_values(MaterializedQueryResult &result, string lvalue_str, string rvalue_str, string zScriptFile,
                     int query_line, string zScript, int current_row, int current_column, vector<string> &values,
-                    int expected_column_count, bool row_wise) {
+                    int expected_column_count, bool row_wise, vector<string> &result_values) {
 	Value lvalue, rvalue;
 	bool error = false;
 	// simple first test: compare string value directly
@@ -473,6 +509,24 @@ bool compare_values(MaterializedQueryResult &result, string lvalue_str, string r
 			print_line_sep();
 			return false;
 		}
+	} else if (sql_type == LogicalType::BOOLEAN) {
+		auto low_r_val = StringUtil::Lower(rvalue_str);
+		auto low_l_val = StringUtil::Lower(lvalue_str);
+
+		string true_str = "true";
+		string false_str = "false";
+		if (low_l_val == true_str || lvalue_str == "1") {
+			lvalue = Value(1);
+		} else if (low_l_val == false_str || lvalue_str == "0") {
+			lvalue = Value(0);
+		}
+		if (low_r_val == true_str || rvalue_str == "1") {
+			rvalue = Value(1);
+		} else if (low_r_val == false_str || rvalue_str == "0") {
+			rvalue = Value(0);
+		}
+		error = !Value::ValuesAreEqual(lvalue, rvalue);
+
 	} else {
 		// for other types we just mark the result as incorrect
 		error = true;
@@ -487,7 +541,7 @@ bool compare_values(MaterializedQueryResult &result, string lvalue_str, string r
 		          << termcolor::reset;
 		std::cerr << lvalue_str << " <> " << rvalue_str << std::endl;
 		print_line_sep();
-		print_result_error(result, values, expected_column_count, row_wise);
+		print_result_error(result_values, values, expected_column_count, row_wise);
 		return false;
 	}
 	return true;
@@ -533,19 +587,31 @@ struct Command {
 	unique_ptr<MaterializedQueryResult> ExecuteQuery(Connection *connection, string file_name, int query_line,
 	                                                 string sql_query) {
 		query_break(query_line);
-		return connection->Query(sql_query);
+		auto result = connection->Query(sql_query);
+
+		if (!result->success) {
+			TestHelperExtension::SetLastError(result->error);
+		} else {
+			TestHelperExtension::ClearLastError();
+		}
+
+		return result;
 	}
 
-	virtual void Execute() = 0;
-	void ExecuteLoop() {
-		// store the original query
+	virtual void ExecuteInternal() = 0;
+	void Execute() {
+		if (runner.finished_processing_file) {
+			return;
+		}
+		if (runner.running_loops.empty()) {
+			ExecuteInternal();
+			return;
+		}
 		auto original_query = sql_query;
 		// perform the string replacement
-		if (runner.in_loop) {
-			sql_query = replace_loop_iterator(sql_query, runner.loop_iterator_name, runner.loop_idx);
-		}
+		sql_query = SQLLogicTestRunner::LoopReplacement(sql_query, runner.running_loops);
 		// execute the iterated statement
-		Execute();
+		ExecuteInternal();
 		// now restore the original query
 		sql_query = original_query;
 	}
@@ -557,7 +623,7 @@ struct Statement : public Command {
 
 	bool expect_ok;
 
-	void Execute() override;
+	void ExecuteInternal() override;
 };
 
 enum class SortStyle : uint8_t { NO_SORT, ROW_SORT, VALUE_SORT };
@@ -572,7 +638,7 @@ struct Query : public Command {
 	bool query_has_label = false;
 	string query_label;
 
-	void Execute() override;
+	void ExecuteInternal() override;
 	void ColumnCountMismatch(MaterializedQueryResult &result, int expected_column_count, bool row_wise);
 	vector<string> LoadResultFromFile(string fname, vector<string> names);
 };
@@ -581,10 +647,80 @@ struct RestartCommand : public Command {
 	RestartCommand(SQLLogicTestRunner &runner) : Command(runner) {
 	}
 
-	void Execute() override;
+	void ExecuteInternal() override;
 };
 
-void Statement::Execute() {
+struct LoopCommand : public Command {
+	LoopCommand(SQLLogicTestRunner &runner, LoopDefinition definition_p)
+	    : Command(runner), definition(move(definition_p)) {
+	}
+
+	LoopDefinition definition;
+	vector<unique_ptr<Command>> loop_commands;
+
+	void ExecuteInternal();
+};
+
+void LoopCommand::ExecuteInternal() {
+	definition.loop_idx = definition.loop_start;
+	runner.running_loops.push_back(&definition);
+	bool finished = false;
+	while (!finished && !runner.finished_processing_file) {
+		// execute the current iteration of the loop
+		for (auto &statement : loop_commands) {
+			statement->Execute();
+		}
+		definition.loop_idx++;
+		if (definition.loop_idx >= definition.loop_end) {
+			// finished
+			break;
+		}
+	}
+	runner.running_loops.pop_back();
+}
+
+void SQLLogicTestRunner::ExecuteCommand(unique_ptr<Command> command) {
+	if (InLoop()) {
+		active_loops.back()->loop_commands.push_back(move(command));
+	} else {
+		command->Execute();
+	}
+}
+
+void SQLLogicTestRunner::StartLoop(LoopDefinition definition) {
+	auto loop = make_unique<LoopCommand>(*this, move(definition));
+	auto loop_ptr = loop.get();
+	if (InLoop()) {
+		// already in a loop: add it to the currently active loop
+		active_loops.back()->loop_commands.push_back(move(loop));
+	} else {
+		// not in a loop yet: new top-level loop
+		top_level_loop = move(loop);
+	}
+	active_loops.push_back(loop_ptr);
+}
+
+void SQLLogicTestRunner::EndLoop() {
+	// finish a loop: pop it from the active_loop queue
+	active_loops.pop_back();
+	if (active_loops.empty()) {
+		// not in a loop
+		top_level_loop->Execute();
+		top_level_loop.reset();
+	}
+}
+
+static bool SkipErrorMessage(const string &message) {
+	if (StringUtil::Contains(message, "HTTP")) {
+		return true;
+	}
+	if (StringUtil::Contains(message, "Unable to connect")) {
+		return true;
+	}
+	return false;
+}
+
+void Statement::ExecuteInternal() {
 	auto connection = CommandConnection();
 
 	if (runner.output_result_mode || runner.debug_mode) {
@@ -607,8 +743,7 @@ void Statement::Execute() {
 		// even in the case of "statement error", we do not accept ALL errors
 		// internal errors are never expected
 		// neither are "unoptimized result differs from original result" errors
-		bool internal_error = StringUtil::Contains(result->error, "Unoptimized Result differs from original result!");
-		internal_error = internal_error || StringUtil::Contains(result->error, "INTERNAL");
+		bool internal_error = TestIsInternalError(result->error);
 		if (!internal_error) {
 			error = !error;
 		} else {
@@ -626,7 +761,11 @@ void Statement::Execute() {
 		if (result) {
 			result->Print();
 		}
-		FAIL_LINE(file_name, query_line);
+		if (expect_ok && SkipErrorMessage(result->error)) {
+			runner.finished_processing_file = true;
+			return;
+		}
+		FAIL_LINE(file_name, query_line, 0);
 	}
 	REQUIRE(!error);
 }
@@ -639,12 +778,13 @@ void Query::ColumnCountMismatch(MaterializedQueryResult &result, int expected_co
 	print_sql(sql_query);
 	print_line_sep();
 	print_result_error(result, values, expected_column_count, row_wise);
-	FAIL_LINE(file_name, query_line);
+	FAIL_LINE(file_name, query_line, 0);
 }
 
 vector<string> Query::LoadResultFromFile(string fname, vector<string> names) {
 	DuckDB db(nullptr);
 	Connection con(db);
+	con.Query("PRAGMA threads=" + to_string(std::thread::hardware_concurrency()));
 	fname = StringUtil::Replace(fname, "<FILE>:", "");
 
 	string struct_definition = "STRUCT_PACK(";
@@ -661,7 +801,7 @@ vector<string> Query::LoadResultFromFile(string fname, vector<string> names) {
 	if (!csv_result->success) {
 		string error = StringUtil::Format("Could not read CSV File \"%s\": %s", fname, csv_result->error);
 		print_error_header(error.c_str(), file_name.c_str(), query_line);
-		FAIL_LINE(file_name, query_line);
+		FAIL_LINE(file_name, query_line, 0);
 	}
 	expected_column_count = csv_result->ColumnCount();
 
@@ -680,7 +820,7 @@ vector<string> Query::LoadResultFromFile(string fname, vector<string> names) {
 	return values;
 }
 
-void Query::Execute() {
+void Query::ExecuteInternal() {
 	auto connection = CommandConnection();
 
 	if (runner.output_result_mode || runner.debug_mode) {
@@ -699,7 +839,11 @@ void Query::Execute() {
 		print_line_sep();
 		print_header("Actual result:");
 		result->Print();
-		FAIL_LINE(file_name, query_line);
+		if (SkipErrorMessage(result->error)) {
+			runner.finished_processing_file = true;
+			return;
+		}
+		FAIL_LINE(file_name, query_line, 0);
 	}
 	idx_t row_count = result->collection.Count();
 	idx_t column_count = result->ColumnCount();
@@ -781,8 +925,8 @@ void Query::Execute() {
 	char zHash[100]; /* Storage space for hash results */
 	vector<string> comparison_values;
 	if (values.size() == 1 && result_is_file(values[0])) {
-		comparison_values = LoadResultFromFile(
-		    replace_loop_iterator(values[0], runner.loop_iterator_name, runner.loop_idx), result->names);
+		comparison_values =
+		    LoadResultFromFile(SQLLogicTestRunner::LoopReplacement(values[0], runner.running_loops), result->names);
 	} else {
 		comparison_values = values;
 	}
@@ -849,7 +993,7 @@ void Query::Execute() {
 			fprintf(stderr, "Expected %d columns, but %d values were supplied\n", (int)expected_column_count,
 			        (int)comparison_values.size());
 			fprintf(stderr, "This is not cleanly divisible (i.e. the last row does not have enough values)\n");
-			FAIL_LINE(file_name, query_line);
+			FAIL_LINE(file_name, query_line, 0);
 		}
 		if (expected_rows != result->collection.Count()) {
 			if (column_count_mismatch) {
@@ -862,7 +1006,7 @@ void Query::Execute() {
 			print_sql(sql_query);
 			print_line_sep();
 			print_result_error(*result, comparison_values, expected_column_count, row_wise);
-			FAIL_LINE(file_name, query_line);
+			FAIL_LINE(file_name, query_line, 0);
 		}
 
 		if (row_wise) {
@@ -885,14 +1029,14 @@ void Query::Execute() {
 					print_line_sep();
 					print_sql(sql_query);
 					print_line_sep();
-					FAIL_LINE(file_name, query_line);
+					FAIL_LINE(file_name, query_line, 0);
 				}
 				for (idx_t c = 0; c < splits.size(); c++) {
 					bool success = compare_values(*result, azResult[current_row * expected_column_count + c], splits[c],
 					                              file_name, query_line, sql_query, current_row, c, comparison_values,
-					                              expected_column_count, row_wise);
+					                              expected_column_count, row_wise, azResult);
 					if (!success) {
-						FAIL_LINE(file_name, query_line);
+						FAIL_LINE(file_name, query_line, 0);
 					}
 					// we do this just to increment the assertion counter
 					REQUIRE(success);
@@ -902,11 +1046,12 @@ void Query::Execute() {
 		} else {
 			int current_row = 0, current_column = 0;
 			for (int i = 0; i < nResult && i < (int)comparison_values.size(); i++) {
-				bool success = compare_values(*result, azResult[current_row * expected_column_count + current_column],
-				                              comparison_values[i], file_name, query_line, sql_query, current_row,
-				                              current_column, comparison_values, expected_column_count, row_wise);
+				bool success =
+				    compare_values(*result, azResult[current_row * expected_column_count + current_column],
+				                   comparison_values[i], file_name, query_line, sql_query, current_row, current_column,
+				                   comparison_values, expected_column_count, row_wise, azResult);
 				if (!success) {
-					FAIL_LINE(file_name, query_line);
+					FAIL_LINE(file_name, query_line, 0);
 				}
 				// we do this just to increment the assertion counter
 				REQUIRE(success);
@@ -933,7 +1078,7 @@ void Query::Execute() {
 			          << string(result->ColumnCount(), 'I') << termcolor::reset << termcolor::bold << "\""
 			          << termcolor::reset << std::endl;
 			print_line_sep();
-			FAIL_LINE(file_name, query_line);
+			FAIL_LINE(file_name, query_line, 0);
 		}
 	} else {
 		bool hash_compare_error = false;
@@ -951,7 +1096,7 @@ void Query::Execute() {
 			if (values.size() <= 0) {
 				print_error_header("Error in test: attempting to compare hash but no hash found!", file_name,
 				                   query_line);
-				FAIL_LINE(file_name, query_line);
+				FAIL_LINE(file_name, query_line, 0);
 			}
 			hash_compare_error = strcmp(values[0].c_str(), zHash) != 0;
 		}
@@ -970,17 +1115,19 @@ void Query::Execute() {
 			print_header("Actual result:");
 			print_line_sep();
 			result->Print();
-			FAIL_LINE(file_name, query_line);
+			FAIL_LINE(file_name, query_line, 0);
 		}
 		REQUIRE(!hash_compare_error);
 	}
 }
 
-void RestartCommand::Execute() {
+void RestartCommand::ExecuteInternal() {
 	runner.LoadDatabase(runner.dbpath);
 }
 
 void SQLLogicTestRunner::LoadDatabase(string dbpath) {
+	loaded_databases.push_back(dbpath);
+
 	// restart the database with the specified db path
 	db.reset();
 	con.reset();
@@ -996,11 +1143,42 @@ void SQLLogicTestRunner::LoadDatabase(string dbpath) {
 	}
 }
 
+string SQLLogicTestRunner::ReplaceLoopIterator(string text, string loop_iterator_name, string replacement) {
+	return StringUtil::Replace(text, "${" + loop_iterator_name + "}", replacement);
+}
+
+string SQLLogicTestRunner::LoopReplacement(string text, const vector<LoopDefinition *> &loops) {
+	for (auto &active_loop : loops) {
+		if (active_loop->tokens.empty()) {
+			// regular loop
+			text = ReplaceLoopIterator(text, active_loop->loop_iterator_name, to_string(active_loop->loop_idx));
+		} else {
+			// foreach loop
+			text =
+			    ReplaceLoopIterator(text, active_loop->loop_iterator_name, active_loop->tokens[active_loop->loop_idx]);
+		}
+	}
+	return text;
+}
+
 string SQLLogicTestRunner::ReplaceKeywords(string input) {
-	FileSystem fs;
 	input = StringUtil::Replace(input, "__TEST_DIR__", TestDirectoryPath());
-	input = StringUtil::Replace(input, "__WORKING_DIRECTORY__", fs.GetWorkingDirectory());
+	input = StringUtil::Replace(input, "__WORKING_DIRECTORY__", FileSystem::GetWorkingDirectory());
+	input = StringUtil::Replace(input, "__BUILD_DIRECTORY__", DUCKDB_BUILD_DIRECTORY);
 	return input;
+}
+
+SQLLogicTestRunner::~SQLLogicTestRunner() {
+	for (auto &loaded_path : loaded_databases) {
+		if (loaded_path.empty()) {
+			continue;
+		}
+		// only delete database files that were created during the tests
+		if (!StringUtil::StartsWith(loaded_path, TestDirectoryPath())) {
+			continue;
+		}
+		DeleteDatabase(loaded_path);
+	}
 }
 
 void SQLLogicTestRunner::ExecuteFile(string script) {
@@ -1016,17 +1194,21 @@ void SQLLogicTestRunner::ExecuteFile(string script) {
 	Script sScript;   /* Script parsing status */
 	FILE *in;         /* For reading script */
 	int bHt = 0;      /* True if -ht command-line option */
-	bool skip_execution = false;
-	vector<unique_ptr<Command>> loop_statements;
+	int skip_level = 0;
 
-	// for the original SQLite tests we skip the index (for now)
+	// for the original SQLite tests we convert floating point numbers to integers
+	// for our own tests this is undesirable since it hides certain errors
 	if (script.find("sqlite") != string::npos || script.find("sqllogictest") != string::npos) {
 		original_sqlite_test = true;
 	}
 
-	// initialize an in-memory database
-	db = make_unique<DuckDB>();
-	con = make_unique<Connection>(*db);
+	if (!dbpath.empty()) {
+		// delete the target database file, if it exists
+		DeleteDatabase(dbpath);
+	}
+
+	// initialize the database with the default dbpath
+	LoadDatabase(dbpath);
 
 	/*
 	** Read the entire script file contents into memory
@@ -1055,7 +1237,7 @@ void SQLLogicTestRunner::ExecuteFile(string script) {
 	/* Initialize the sScript structure so that the cursor will be pointing
 	** to the start of the first line in the file after nextLine() is called
 	** once. */
-	memset(&sScript, 0, sizeof(sScript));
+	sScript.Clear();
 	sScript.zScript = zScript;
 	sScript.zLine = zScript;
 	sScript.iEnd = nScript;
@@ -1070,7 +1252,7 @@ void SQLLogicTestRunner::ExecuteFile(string script) {
 		tokenizeLine(&sScript);
 
 		bSkip = false;
-		while (strcmp(sScript.azToken[0], "skipif") == 0 || strcmp(sScript.azToken[0], "onlyif") == 0) {
+		while (sScript.tokens[0] == "skipif" || sScript.tokens[0] == "onlyif") {
 			int bMatch;
 			/* The "skipif" and "onlyif" modifiers allow skipping or using
 			** statement or query record for a particular database engine.
@@ -1083,8 +1265,8 @@ void SQLLogicTestRunner::ExecuteFile(string script) {
 			** then we skip this rest of this record for "skipif". For
 			** "onlyif" we skip the record if the record does not match.
 			*/
-			bMatch = stricmp(sScript.azToken[1], zDbEngine) == 0;
-			if (sScript.azToken[0][0] == 's') {
+			bMatch = sScript.tokens[1] == zDbEngine;
+			if (sScript.tokens[0][0] == 's') {
 				if (bMatch)
 					bSkip = true;
 			} else {
@@ -1100,7 +1282,7 @@ void SQLLogicTestRunner::ExecuteFile(string script) {
 		}
 
 		/* Figure out the record type and do appropriate processing */
-		if (strcmp(sScript.azToken[0], "statement") == 0) {
+		if (sScript.tokens[0] == "statement") {
 			auto command = make_unique<Statement>(*this);
 
 			/* Extract the SQL from second and subsequent lines of the
@@ -1121,9 +1303,9 @@ void SQLLogicTestRunner::ExecuteFile(string script) {
 			command->sql_query = ReplaceKeywords(zScript);
 
 			// parse
-			if (strcmp(sScript.azToken[1], "ok") == 0) {
+			if (sScript.tokens[1] == "ok") {
 				command->expect_ok = true;
-			} else if (strcmp(sScript.azToken[1], "error") == 0) {
+			} else if (sScript.tokens[1] == "error") {
 				command->expect_ok = false;
 			} else {
 				fprintf(stderr, "%s:%d: statement argument should be 'ok' or 'error'\n", zScriptFile,
@@ -1131,16 +1313,12 @@ void SQLLogicTestRunner::ExecuteFile(string script) {
 				FAIL();
 			}
 
-			command->connection_name = sScript.azToken[2];
-			if (skip_execution) {
+			command->connection_name = sScript.tokens[2];
+			if (skip_level > 0) {
 				continue;
 			}
-			if (in_loop) {
-				loop_statements.push_back(move(command));
-			} else {
-				command->Execute();
-			}
-		} else if (strcmp(sScript.azToken[0], "query") == 0) {
+			ExecuteCommand(move(command));
+		} else if (sScript.tokens[0] == "query") {
 			auto command = make_unique<Query>(*this);
 
 			int k = 0;
@@ -1153,7 +1331,7 @@ void SQLLogicTestRunner::ExecuteFile(string script) {
 			 *characters
 			 ** from the set 'TIR':*/
 			command->expected_column_count = 0;
-			for (k = 0; (c = sScript.azToken[1][k]) != 0; k++) {
+			for (k = 0; (c = sScript.tokens[1][k]) != 0; k++) {
 				command->expected_column_count++;
 				if (c != 'T' && c != 'I' && c != 'R') {
 					fprintf(stderr,
@@ -1190,17 +1368,17 @@ void SQLLogicTestRunner::ExecuteFile(string script) {
 
 			// figure out the sort style/connection style
 			command->sort_style = SortStyle::NO_SORT;
-			if (sScript.azToken[2][0] == 0 || strcmp(sScript.azToken[2], "nosort") == 0) {
+			if (sScript.tokens[2].empty() || sScript.tokens[2] == "nosort") {
 				/* Do no sorting */
 				command->sort_style = SortStyle::NO_SORT;
-			} else if (strcmp(sScript.azToken[2], "rowsort") == 0) {
+			} else if (sScript.tokens[2] == "rowsort") {
 				/* Row-oriented sorting */
 				command->sort_style = SortStyle::ROW_SORT;
-			} else if (strcmp(sScript.azToken[2], "valuesort") == 0) {
+			} else if (sScript.tokens[2] == "valuesort") {
 				/* Sort all values independently */
 				command->sort_style = SortStyle::VALUE_SORT;
 			} else {
-				command->connection_name = sScript.azToken[2];
+				command->connection_name = sScript.tokens[2];
 			}
 
 			/* In verify mode, first skip over the ---- line if we are
@@ -1216,19 +1394,13 @@ void SQLLogicTestRunner::ExecuteFile(string script) {
 					break;
 				}
 			}
-			command->query_has_label = sScript.azToken[3][0];
-			command->query_label = sScript.azToken[3];
-			if (skip_execution) {
+			command->query_has_label = sScript.tokens[3][0];
+			command->query_label = sScript.tokens[3];
+			if (skip_level > 0) {
 				continue;
 			}
-			if (in_loop) {
-				// in a loop: add to loop statements
-				loop_statements.push_back(move(command));
-			} else {
-				// execute the command and compare it against the results
-				command->Execute();
-			}
-		} else if (strcmp(sScript.azToken[0], "hash-threshold") == 0) {
+			ExecuteCommand(move(command));
+		} else if (sScript.tokens[0] == "hash-threshold") {
 			/* Set the maximum number of result values that will be accepted
 			** for a query.  If the number of result values exceeds this
 			*number,
@@ -1242,9 +1414,9 @@ void SQLLogicTestRunner::ExecuteFile(string script) {
 			** any specifed in the script.
 			*/
 			if (!bHt) {
-				hashThreshold = atoi(sScript.azToken[1]);
+				hashThreshold = atoi(sScript.tokens[1].c_str());
 			}
-		} else if (strcmp(sScript.azToken[0], "halt") == 0) {
+		} else if (sScript.tokens[0] == "halt") {
 			/* Used for debugging.  Stop reading the test script and shut
 			 *down.
 			 ** A "halt" record can be inserted in the middle of a test
@@ -1254,68 +1426,152 @@ void SQLLogicTestRunner::ExecuteFile(string script) {
 			 */
 			fprintf(stderr, "%s:%d: halt\n", zScriptFile, sScript.startLine);
 			break;
-		} else if (strcmp(sScript.azToken[0], "mode") == 0) {
-			if (strcmp(sScript.azToken[1], "output_hash") == 0) {
+		} else if (sScript.tokens[0] == "mode") {
+			if (sScript.tokens[1] == "output_hash") {
 				output_hash_mode = true;
-			} else if (strcmp(sScript.azToken[1], "output_result") == 0) {
+			} else if (sScript.tokens[1] == "output_result") {
 				output_result_mode = true;
-			} else if (strcmp(sScript.azToken[1], "debug") == 0) {
+			} else if (sScript.tokens[1] == "debug") {
 				debug_mode = true;
-			} else if (strcmp(sScript.azToken[1], "skip") == 0) {
-				skip_execution = true;
-			} else if (strcmp(sScript.azToken[1], "unskip") == 0) {
-				skip_execution = false;
+			} else if (sScript.tokens[1] == "skip") {
+				skip_level++;
+			} else if (sScript.tokens[1] == "unskip") {
+				skip_level--;
 			} else {
-				fprintf(stderr, "%s:%d: unrecognized mode: '%s'\n", zScriptFile, sScript.startLine, sScript.azToken[1]);
+				fprintf(stderr, "%s:%d: unrecognized mode: '%s'\n", zScriptFile, sScript.startLine,
+				        sScript.tokens[1].c_str());
 				FAIL();
 			}
-		} else if (strcmp(sScript.azToken[0], "loop") == 0) {
-			if (skip_execution) {
+		} else if (sScript.tokens[0] == "loop" || sScript.tokens[0] == "foreach") {
+			if (skip_level > 0) {
 				continue;
 			}
-			if (in_loop) {
-				fprintf(stderr, "%s:%d: Test error: nested loops not supported!\n", zScriptFile, sScript.startLine);
-				FAIL();
-			}
-			in_loop = true;
-			if (strlen(sScript.azToken[1]) == 0 || strlen(sScript.azToken[2]) == 0 || strlen(sScript.azToken[3]) == 0) {
-				fprintf(stderr, "%s:%d: Test error: expected loop [iterator_name] [start] [end] (e.g. loop i 1 300)!\n",
-				        zScriptFile, sScript.startLine);
-				FAIL();
-			}
-			// parse the loop parameters
-			loop_iterator_name = sScript.azToken[1];
-			loop_start = std::stoi(sScript.azToken[2]);
-			loop_end = std::stoi(sScript.azToken[3]);
-		} else if (strcmp(sScript.azToken[0], "endloop") == 0) {
-			if (skip_execution) {
-				continue;
-			}
-			if (!in_loop) {
-				fprintf(stderr, "%s:%d: Test error: end loop without start loop!\n", zScriptFile, sScript.startLine);
-				FAIL();
-			}
-			if (loop_statements.size() == 0) {
-				fprintf(stderr, "%s:%d: Test error: empty loop!\n", zScriptFile, sScript.startLine);
-				FAIL();
-			}
-			for (loop_idx = loop_start; loop_idx < loop_end; loop_idx++) {
-				for (auto &statement : loop_statements) {
-					statement->ExecuteLoop();
+			if (sScript.tokens[0] == "loop") {
+				if (sScript.tokens[1].empty() || sScript.tokens[2].empty() || sScript.tokens[3].empty()) {
+					fprintf(stderr,
+					        "%s:%d: Test error: expected loop [iterator_name] [start] [end] (e.g. loop i 1 300)!\n",
+					        zScriptFile, sScript.startLine);
+					FAIL();
 				}
+				LoopDefinition def;
+				def.loop_iterator_name = sScript.tokens[1];
+				try {
+					def.loop_start = std::stoi(sScript.tokens[2].c_str());
+					def.loop_end = std::stoi(sScript.tokens[3].c_str());
+				} catch (...) {
+					fprintf(stderr,
+					        "%s:%d: Test error: expected loop [iterator_name] [start] [end] (e.g. loop i 1 300)!\n",
+					        zScriptFile, sScript.startLine);
+					FAIL();
+				}
+				def.loop_idx = def.loop_start;
+				StartLoop(def);
+			} else {
+				if (sScript.tokens[1].empty() || sScript.tokens[2].empty()) {
+					fprintf(stderr,
+					        "%s:%d: Test error: expected foreach [iterator_name] [m1] [m2] [etc...] (e.g. foreach type "
+					        "integer smallint float)!\n",
+					        zScriptFile, sScript.startLine);
+					FAIL();
+				}
+				LoopDefinition def;
+				def.loop_iterator_name = sScript.tokens[1];
+				for (idx_t i = 2; i < sScript.tokens.size(); i++) {
+					if (sScript.tokens[i].empty()) {
+						break;
+					}
+					auto token_name = StringUtil::Lower(sScript.tokens[i]);
+					StringUtil::Trim(token_name);
+					bool collection = false;
+					bool is_compression = token_name == "<compression>";
+					bool is_all = token_name == "<alltypes>";
+					bool is_numeric = is_all || token_name == "<numeric>";
+					bool is_integral = is_numeric || token_name == "<integral>";
+					bool is_signed = is_integral || token_name == "<signed>";
+					bool is_unsigned = is_integral || token_name == "<unsigned>";
+					if (is_signed) {
+						def.tokens.push_back("tinyint");
+						def.tokens.push_back("smallint");
+						def.tokens.push_back("integer");
+						def.tokens.push_back("bigint");
+						def.tokens.push_back("hugeint");
+						collection = true;
+					}
+					if (is_unsigned) {
+						def.tokens.push_back("utinyint");
+						def.tokens.push_back("usmallint");
+						def.tokens.push_back("uinteger");
+						def.tokens.push_back("ubigint");
+						collection = true;
+					}
+					if (is_numeric) {
+						def.tokens.push_back("float");
+						def.tokens.push_back("double");
+						collection = true;
+					}
+					if (is_all) {
+						def.tokens.push_back("bool");
+						def.tokens.push_back("interval");
+						def.tokens.push_back("varchar");
+						collection = true;
+					}
+					if (is_compression) {
+						def.tokens.push_back("none");
+						def.tokens.push_back("uncompressed");
+						def.tokens.push_back("rle");
+						collection = true;
+					}
+					if (!collection) {
+						def.tokens.push_back(sScript.tokens[i]);
+					}
+				}
+				def.loop_idx = 0;
+				def.loop_start = 0;
+				def.loop_end = def.tokens.size();
+				StartLoop(def);
 			}
-			loop_statements.clear();
-			in_loop = false;
-		} else if (strcmp(sScript.azToken[0], "require") == 0) {
+		} else if (sScript.tokens[0] == "endloop") {
+			if (skip_level > 0) {
+				continue;
+			}
+			EndLoop();
+		} else if (sScript.tokens[0] == "require") {
 			// require command
-			string param = StringUtil::Lower(sScript.azToken[1]);
-			if (param == "vector_size") {
+			string param = StringUtil::Lower(sScript.tokens[1]);
+			// os specific stuff
+			if (param == "notmingw") {
+#ifdef __MINGW32__
+				return;
+#endif
+			} else if (param == "mingw") {
+#ifndef __MINGW32__
+				return;
+#endif
+			} else if (param == "notwindows") {
+#ifdef _WIN32
+				return;
+#endif
+			} else if (param == "windows") {
+#ifndef _WIN32
+				return;
+#endif
+			} else if (param == "longdouble") {
+#if LDBL_MANT_DIG < 54
+				return;
+#endif
+			} else if (param == "noforcestorage") {
+				if (TestForceStorage()) {
+					return;
+				}
+			} else if (param == "vector_size") {
 				// require a specific vector size
-				int required_vector_size = std::stoi(sScript.azToken[2]);
+				int required_vector_size = std::stoi(sScript.tokens[2].c_str());
 				if (STANDARD_VECTOR_SIZE < required_vector_size) {
 					// vector size is too low for this test: skip it
 					return;
 				}
+			} else if (param == "test_helper") {
+				db->LoadExtension<TestHelperExtension>();
 			} else {
 				auto result = ExtensionHelper::LoadExtension(*db, param);
 				if (result == ExtensionLoadResult::LOADED_EXTENSION) {
@@ -1323,38 +1579,35 @@ void SQLLogicTestRunner::ExecuteFile(string script) {
 					extensions.insert(param);
 				} else if (result == ExtensionLoadResult::EXTENSION_UNKNOWN) {
 					fprintf(stderr, "%s:%d: unknown extension type: '%s'\n", zScriptFile, sScript.startLine,
-					        sScript.azToken[1]);
+					        sScript.tokens[1].c_str());
 					FAIL();
 				} else if (result == ExtensionLoadResult::NOT_LOADED) {
 					// extension known but not build: skip this test
 					return;
 				}
 			}
-		} else if (strcmp(sScript.azToken[0], "load") == 0) {
-			if (in_loop) {
+		} else if (sScript.tokens[0] == "load") {
+			if (InLoop()) {
 				fprintf(stderr, "%s:%d: load cannot be called in a loop\n", zScriptFile, sScript.startLine);
 				FAIL();
 			}
-			bool readonly = string(sScript.azToken[2]) == "readonly";
-			dbpath = ReplaceKeywords(sScript.azToken[1]);
-			if (dbpath.empty() || dbpath == ":memory:") {
-				fprintf(stderr, "%s:%d: load needs a database parameter: cannot load an in-memory database\n",
-				        zScriptFile, sScript.startLine);
-				FAIL();
-			}
+			bool readonly = sScript.tokens[2] == "readonly";
+			dbpath = ReplaceKeywords(sScript.tokens[1]);
 			if (!readonly) {
 				// delete the target database file, if it exists
 				DeleteDatabase(dbpath);
 			}
 			// set up the config file
-			config = GetTestConfig();
 			if (readonly) {
 				config->use_temporary_directory = false;
 				config->access_mode = AccessMode::READ_ONLY;
+			} else {
+				config->use_temporary_directory = true;
+				config->access_mode = AccessMode::AUTOMATIC;
 			}
 			// now create the database file
 			LoadDatabase(dbpath);
-		} else if (strcmp(sScript.azToken[0], "restart") == 0) {
+		} else if (sScript.tokens[0] == "restart") {
 			if (dbpath.empty()) {
 				fprintf(stderr, "%s:%d: cannot restart an in-memory database, did you forget to call \"load\"?\n",
 				        zScriptFile, sScript.startLine);
@@ -1363,16 +1616,17 @@ void SQLLogicTestRunner::ExecuteFile(string script) {
 			// restart the current database
 			// first clear all connections
 			auto command = make_unique<RestartCommand>(*this);
-			if (in_loop) {
-				loop_statements.push_back(move(command));
-			} else {
-				command->Execute();
-			}
+			ExecuteCommand(move(command));
 		} else {
 			/* An unrecognized record type is an error */
-			fprintf(stderr, "%s:%d: unknown record type: '%s'\n", zScriptFile, sScript.startLine, sScript.azToken[0]);
+			fprintf(stderr, "%s:%d: unknown record type: '%s'\n", zScriptFile, sScript.startLine,
+			        sScript.tokens[0].c_str());
 			FAIL();
 		}
+	}
+	if (InLoop()) {
+		fprintf(stderr, "%s:%d: Missing endloop!\n", zScriptFile, sScript.startLine);
+		FAIL();
 	}
 }
 
@@ -1400,7 +1654,14 @@ static void testRunner() {
 	// name if someone has a better idea...
 	auto name = Catch::getResultCapture().getCurrentTestName();
 	// fprintf(stderr, "%s\n", name.c_str());
-	SQLLogicTestRunner runner;
+	string initial_dbpath;
+	if (TestForceStorage()) {
+		auto storage_name = StringUtil::Replace(name, "/", "_");
+		storage_name = StringUtil::Replace(storage_name, ".", "_");
+		storage_name = StringUtil::Replace(storage_name, "\\", "_");
+		initial_dbpath = TestCreatePath(storage_name + ".db");
+	}
+	SQLLogicTestRunner runner(move(initial_dbpath));
 	runner.ExecuteFile(name);
 }
 
@@ -1409,6 +1670,10 @@ static string ParseGroupFromPath(string file) {
 	if (file.find(".test_slow") != std::string::npos) {
 		// "slow" in the name indicates a slow test (i.e. only run as part of allunit)
 		extension = "[.]";
+	}
+	if (file.find(".test_coverage") != std::string::npos) {
+		// "slow" in the name indicates a slow test (i.e. only run as part of allunit)
+		return "[coverage][.]";
 	}
 	// move backwards to the last slash
 	int group_begin = -1, group_end = -1;
@@ -1428,84 +1693,76 @@ static string ParseGroupFromPath(string file) {
 	return "[" + file.substr(0, group_end) + "]" + extension;
 }
 
-struct AutoRegTests {
-	AutoRegTests() {
-		vector<string> excludes = {
-		    "test/select1.test", // tested separately
-		    "test/select2.test", "test/select3.test", "test/select4.test",
-		    "test/index",                     // no index yet
-		    "random/groupby/",                // having column binding issue with first
-		    "random/select/slt_good_70.test", // join on not between
-		    "random/expr/slt_good_10.test",   // these all fail because the AVG
-		                                      // decimal rewrite
-		    "random/expr/slt_good_102.test", "random/expr/slt_good_107.test", "random/expr/slt_good_108.test",
-		    "random/expr/slt_good_109.test", "random/expr/slt_good_111.test", "random/expr/slt_good_112.test",
-		    "random/expr/slt_good_113.test", "random/expr/slt_good_115.test", "random/expr/slt_good_116.test",
-		    "random/expr/slt_good_117.test", "random/expr/slt_good_13.test", "random/expr/slt_good_15.test",
-		    "random/expr/slt_good_16.test", "random/expr/slt_good_17.test", "random/expr/slt_good_19.test",
-		    "random/expr/slt_good_21.test", "random/expr/slt_good_22.test", "random/expr/slt_good_24.test",
-		    "random/expr/slt_good_28.test", "random/expr/slt_good_29.test", "random/expr/slt_good_3.test",
-		    "random/expr/slt_good_30.test", "random/expr/slt_good_34.test", "random/expr/slt_good_38.test",
-		    "random/expr/slt_good_4.test", "random/expr/slt_good_41.test", "random/expr/slt_good_44.test",
-		    "random/expr/slt_good_45.test", "random/expr/slt_good_49.test", "random/expr/slt_good_52.test",
-		    "random/expr/slt_good_53.test", "random/expr/slt_good_55.test", "random/expr/slt_good_59.test",
-		    "random/expr/slt_good_6.test", "random/expr/slt_good_60.test", "random/expr/slt_good_63.test",
-		    "random/expr/slt_good_64.test", "random/expr/slt_good_67.test", "random/expr/slt_good_69.test",
-		    "random/expr/slt_good_7.test", "random/expr/slt_good_71.test", "random/expr/slt_good_72.test",
-		    "random/expr/slt_good_8.test", "random/expr/slt_good_80.test", "random/expr/slt_good_82.test",
-		    "random/expr/slt_good_85.test", "random/expr/slt_good_9.test", "random/expr/slt_good_90.test",
-		    "random/expr/slt_good_91.test", "random/expr/slt_good_94.test", "random/expr/slt_good_95.test",
-		    "random/expr/slt_good_96.test", "random/expr/slt_good_99.test", "random/aggregates/slt_good_2.test",
-		    "random/aggregates/slt_good_5.test", "random/aggregates/slt_good_7.test",
-		    "random/aggregates/slt_good_9.test", "random/aggregates/slt_good_17.test",
-		    "random/aggregates/slt_good_28.test", "random/aggregates/slt_good_45.test",
-		    "random/aggregates/slt_good_50.test", "random/aggregates/slt_good_52.test",
-		    "random/aggregates/slt_good_58.test", "random/aggregates/slt_good_65.test",
-		    "random/aggregates/slt_good_66.test", "random/aggregates/slt_good_76.test",
-		    "random/aggregates/slt_good_81.test", "random/aggregates/slt_good_90.test",
-		    "random/aggregates/slt_good_96.test", "random/aggregates/slt_good_102.test",
-		    "random/aggregates/slt_good_106.test", "random/aggregates/slt_good_112.test",
-		    "random/aggregates/slt_good_118.test",
-		    "third_party/sqllogictest/test/evidence/in1.test", // UNIQUE index on text
-		    "evidence/slt_lang_replace.test",                  // feature not supported
-		    "evidence/slt_lang_reindex.test",                  // "
-		    "evidence/slt_lang_dropindex.test",                // "
-		    "evidence/slt_lang_createtrigger.test",            // "
-		    "evidence/slt_lang_droptrigger.test",              // "
-		    "evidence/slt_lang_update.test",                   //  Multiple assignments to same column "x"
-		    // these fail because of overflows in multiplications (sqlite does automatic upcasting)
-		    "random/aggregates/slt_good_51.test", "random/aggregates/slt_good_73.test",
-		    "random/aggregates/slt_good_3.test", "random/aggregates/slt_good_64.test",
-		    "random/aggregates/slt_good_122.test", "random/aggregates/slt_good_110.test",
-		    "random/aggregates/slt_good_101.test", "random/aggregates/slt_good_56.test",
-		    "random/aggregates/slt_good_75.test", "random/expr/slt_good_51.test", "random/expr/slt_good_77.test",
-		    "random/expr/slt_good_66.test", "random/expr/slt_good_0.test", "random/expr/slt_good_61.test",
-		    "random/expr/slt_good_47.test", "random/expr/slt_good_11.test", "random/expr/slt_good_40.test",
-		    "random/expr/slt_good_42.test", "random/expr/slt_good_27.test", "random/expr/slt_good_103.test",
-		    "random/expr/slt_good_75.test"};
-		FileSystem fs;
-		fs.SetWorkingDirectory(DUCKDB_ROOT_DIRECTORY);
-		listFiles(fs, fs.JoinPath(fs.JoinPath("third_party", "sqllogictest"), "test"), [excludes](const string &path) {
-			if (endsWith(path, ".test")) {
-				for (auto excl : excludes) {
-					if (path.find(excl) != string::npos) {
-						return;
-					}
+namespace duckdb {
+
+void RegisterSqllogictests() {
+	vector<string> excludes = {
+	    "test/select1.test", // tested separately
+	    "test/select2.test", "test/select3.test", "test/select4.test",
+	    "test/index",                     // no index yet
+	    "random/groupby/",                // having column binding issue with first
+	    "random/select/slt_good_70.test", // join on not between
+	    "random/expr/slt_good_10.test",   // these all fail because the AVG
+	                                      // decimal rewrite
+	    "random/expr/slt_good_102.test", "random/expr/slt_good_107.test", "random/expr/slt_good_108.test",
+	    "random/expr/slt_good_109.test", "random/expr/slt_good_111.test", "random/expr/slt_good_112.test",
+	    "random/expr/slt_good_113.test", "random/expr/slt_good_115.test", "random/expr/slt_good_116.test",
+	    "random/expr/slt_good_117.test", "random/expr/slt_good_13.test", "random/expr/slt_good_15.test",
+	    "random/expr/slt_good_16.test", "random/expr/slt_good_17.test", "random/expr/slt_good_19.test",
+	    "random/expr/slt_good_21.test", "random/expr/slt_good_22.test", "random/expr/slt_good_24.test",
+	    "random/expr/slt_good_28.test", "random/expr/slt_good_29.test", "random/expr/slt_good_3.test",
+	    "random/expr/slt_good_30.test", "random/expr/slt_good_34.test", "random/expr/slt_good_38.test",
+	    "random/expr/slt_good_4.test", "random/expr/slt_good_41.test", "random/expr/slt_good_44.test",
+	    "random/expr/slt_good_45.test", "random/expr/slt_good_49.test", "random/expr/slt_good_52.test",
+	    "random/expr/slt_good_53.test", "random/expr/slt_good_55.test", "random/expr/slt_good_59.test",
+	    "random/expr/slt_good_6.test", "random/expr/slt_good_60.test", "random/expr/slt_good_63.test",
+	    "random/expr/slt_good_64.test", "random/expr/slt_good_67.test", "random/expr/slt_good_69.test",
+	    "random/expr/slt_good_7.test", "random/expr/slt_good_71.test", "random/expr/slt_good_72.test",
+	    "random/expr/slt_good_8.test", "random/expr/slt_good_80.test", "random/expr/slt_good_82.test",
+	    "random/expr/slt_good_85.test", "random/expr/slt_good_9.test", "random/expr/slt_good_90.test",
+	    "random/expr/slt_good_91.test", "random/expr/slt_good_94.test", "random/expr/slt_good_95.test",
+	    "random/expr/slt_good_96.test", "random/expr/slt_good_99.test", "random/aggregates/slt_good_2.test",
+	    "random/aggregates/slt_good_5.test", "random/aggregates/slt_good_7.test", "random/aggregates/slt_good_9.test",
+	    "random/aggregates/slt_good_17.test", "random/aggregates/slt_good_28.test",
+	    "random/aggregates/slt_good_45.test", "random/aggregates/slt_good_50.test",
+	    "random/aggregates/slt_good_52.test", "random/aggregates/slt_good_58.test",
+	    "random/aggregates/slt_good_65.test", "random/aggregates/slt_good_66.test",
+	    "random/aggregates/slt_good_76.test", "random/aggregates/slt_good_81.test",
+	    "random/aggregates/slt_good_90.test", "random/aggregates/slt_good_96.test",
+	    "random/aggregates/slt_good_102.test", "random/aggregates/slt_good_106.test",
+	    "random/aggregates/slt_good_112.test", "random/aggregates/slt_good_118.test",
+	    "third_party/sqllogictest/test/evidence/in1.test", // UNIQUE index on text
+	    "evidence/slt_lang_replace.test",                  // feature not supported
+	    "evidence/slt_lang_reindex.test",                  // "
+	    "evidence/slt_lang_dropindex.test",                // "
+	    "evidence/slt_lang_createtrigger.test",            // "
+	    "evidence/slt_lang_droptrigger.test",              // "
+	    "evidence/slt_lang_update.test",                   //  Multiple assignments to same column "x"
+	    // these fail because of overflows in multiplications (sqlite does automatic upcasting)
+	    "random/aggregates/slt_good_51.test", "random/aggregates/slt_good_73.test", "random/aggregates/slt_good_3.test",
+	    "random/aggregates/slt_good_64.test", "random/aggregates/slt_good_122.test",
+	    "random/aggregates/slt_good_110.test", "random/aggregates/slt_good_101.test",
+	    "random/aggregates/slt_good_56.test", "random/aggregates/slt_good_75.test", "random/expr/slt_good_51.test",
+	    "random/expr/slt_good_77.test", "random/expr/slt_good_66.test", "random/expr/slt_good_0.test",
+	    "random/expr/slt_good_61.test", "random/expr/slt_good_47.test", "random/expr/slt_good_11.test",
+	    "random/expr/slt_good_40.test", "random/expr/slt_good_42.test", "random/expr/slt_good_27.test",
+	    "random/expr/slt_good_103.test", "random/expr/slt_good_75.test"};
+	unique_ptr<FileSystem> fs = FileSystem::CreateLocal();
+	listFiles(*fs, fs->JoinPath(fs->JoinPath("third_party", "sqllogictest"), "test"), [excludes](const string &path) {
+		if (endsWith(path, ".test")) {
+			for (auto excl : excludes) {
+				if (path.find(excl) != string::npos) {
+					return;
 				}
-				REGISTER_TEST_CASE(testRunner, path, "[sqlitelogic][.]");
 			}
-		});
-		listFiles(fs, "test", [excludes](const string &path) {
-			if (endsWith(path, ".test") || endsWith(path, ".test_slow")) {
-				for (auto excl : excludes) {
-					if (path.find(excl) != string::npos) {
-						return;
-					}
-				}
-				// parse the name / group from the test
-				REGISTER_TEST_CASE(testRunner, path, ParseGroupFromPath(path));
-			}
-		});
-	}
-};
-AutoRegTests autoreg;
+			REGISTER_TEST_CASE(testRunner, StringUtil::Replace(path, "\\", "/"), "[sqlitelogic][.]");
+		}
+	});
+	listFiles(*fs, "test", [excludes](const string &path) {
+		if (endsWith(path, ".test") || endsWith(path, ".test_slow") || endsWith(path, ".test_coverage")) {
+			// parse the name / group from the test
+			REGISTER_TEST_CASE(testRunner, StringUtil::Replace(path, "\\", "/"), ParseGroupFromPath(path));
+		}
+	});
+}
+} // namespace duckdb

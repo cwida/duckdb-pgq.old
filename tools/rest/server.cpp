@@ -55,8 +55,8 @@ std::string random_string(size_t length) {
 }
 
 struct RestClientState {
-	unique_ptr<QueryResult> res;
-	unique_ptr<Connection> con;
+	unique_ptr<duckdb::QueryResult> res;
+	unique_ptr<duckdb::Connection> con;
 	time_t touched;
 };
 
@@ -66,11 +66,10 @@ template <class T, class TARGET>
 static void assign_json_loop(Vector &v, idx_t col_idx, idx_t count, json &j) {
 	v.Normalify(count);
 	auto data_ptr = FlatVector::GetData<T>(v);
-	auto &nullmask = FlatVector::Nullmask(v);
+	auto &mask = FlatVector::Validity(v);
 	for (idx_t i = 0; i < count; i++) {
-		if (!nullmask[i]) {
+		if (mask.RowIsValid(i)) {
 			j["data"][col_idx] += (TARGET)data_ptr[i];
-
 		} else {
 			j["data"][col_idx] += nullptr;
 		}
@@ -80,7 +79,7 @@ static void assign_json_loop(Vector &v, idx_t col_idx, idx_t count, json &j) {
 static void assign_json_string_loop(Vector &v, idx_t col_idx, idx_t count, json &j) {
 	Vector cast_vector(LogicalType::VARCHAR);
 	Vector *result_vector;
-	if (v.type.id() != LogicalTypeId::VARCHAR) {
+	if (v.GetType().id() != LogicalTypeId::VARCHAR) {
 		VectorOperations::Cast(v, cast_vector, count);
 		result_vector = &cast_vector;
 	} else {
@@ -88,9 +87,9 @@ static void assign_json_string_loop(Vector &v, idx_t col_idx, idx_t count, json 
 	}
 	result_vector->Normalify(count);
 	auto data_ptr = FlatVector::GetData<string_t>(*result_vector);
-	auto &nullmask = FlatVector::Nullmask(*result_vector);
+	auto &mask = FlatVector::Validity(*result_vector);
 	for (idx_t i = 0; i < count; i++) {
-		if (!nullmask[i]) {
+		if (mask.RowIsValid(i)) {
 			j["data"][col_idx] += data_ptr[i].GetString();
 
 		} else {
@@ -103,7 +102,7 @@ void serialize_chunk(QueryResult *res, DataChunk *chunk, json &j) {
 	D_ASSERT(res);
 	for (size_t col_idx = 0; col_idx < chunk->ColumnCount(); col_idx++) {
 		Vector &v = chunk->data[col_idx];
-		switch (v.type.id()) {
+		switch (v.GetType().id()) {
 		case LogicalTypeId::BOOLEAN:
 			assign_json_loop<bool, int64_t>(v, col_idx, chunk->size(), j);
 			break;
@@ -192,7 +191,7 @@ void serialize_json(const Request &req, Response &resp, json &j) {
 	}
 }
 
-void sleep_thread(Connection *conn, bool *is_active, int timeout_duration) {
+void sleep_thread(duckdb::Connection *conn, bool *is_active, int timeout_duration) {
 	// timeout is given in seconds
 	// we wait 10ms per iteration, so timeout * 100 gives us the amount of
 	// iterations
@@ -260,7 +259,7 @@ int main(int argc, char **argv) {
 		} else if (arg == "--read_only") {
 			config.access_mode = AccessMode::READ_ONLY;
 		} else if (arg == "--disable_copy") {
-			config.enable_copy = false;
+			config.enable_external_access = false;
 		} else if (StringUtil::StartsWith(arg, "--database=")) {
 			auto splits = StringUtil::Split(arg, '=');
 			if (splits.size() != 2) {
@@ -345,7 +344,7 @@ int main(int argc, char **argv) {
 		json j;
 
 		RestClientState state;
-		state.con = make_unique<Connection>(duckdb);
+		state.con = make_unique<duckdb::Connection>(duckdb);
 		state.con->EnableProfiling();
 		state.touched = std::time(nullptr);
 		bool is_active = true;
@@ -388,7 +387,9 @@ int main(int argc, char **argv) {
 			string query_ref = random_string(10);
 			j["ref"] = query_ref;
 			auto chunk = state.res->Fetch();
-			serialize_chunk(state.res.get(), chunk.get(), j);
+			if (chunk != nullptr) {
+				serialize_chunk(state.res.get(), chunk.get(), j);
+			}
 			{
 				std::lock_guard<std::mutex> guard(client_state_map_mutex);
 				client_state_map[query_ref] = move(state);
@@ -439,7 +440,7 @@ int main(int argc, char **argv) {
 
 	svr.Get("/close", [&](const Request &req, Response &resp) {
 		auto ref = req.get_param_value("ref");
-		Connection conn(duckdb);
+		duckdb::Connection conn(duckdb);
 		json j;
 		std::lock_guard<std::mutex> guard(client_state_map_mutex);
 		if (client_state_map.find(ref) != client_state_map.end()) {

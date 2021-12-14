@@ -192,8 +192,8 @@ typedef struct PGTypeName {
  */
 typedef struct PGColumnRef {
 	PGNodeTag type;
-	PGList *fields; /* field names (PGValue strings) or PGAStar */
-	int location;   /* token location, or -1 if unknown */
+	PGList *fields;       /* field names (PGValue strings) or PGAStar */
+	int location;         /* token location, or -1 if unknown */
 } PGColumnRef;
 
 /*
@@ -253,6 +253,7 @@ typedef struct PGTypeCast {
 	PGNodeTag type;
 	PGNode *arg;          /* the expression being casted */
 	PGTypeName *typeName; /* the target type */
+	int tryCast;          /* TRY_CAST or CAST */
 	int location;         /* token location, or -1 if unknown */
 } PGTypeCast;
 
@@ -289,6 +290,7 @@ typedef struct PGFuncCall {
 	bool agg_within_group;    /* ORDER BY appeared in WITHIN GROUP */
 	bool agg_star;            /* argument was really '*' */
 	bool agg_distinct;        /* arguments were labeled DISTINCT */
+	bool agg_ignore_nulls;    /* arguments were labeled IGNORE NULLS */
 	bool func_variadic;       /* last argument was labeled VARIADIC */
 	struct PGWindowDef *over; /* OVER clause, if any */
 	int location;             /* token location, or -1 if unknown */
@@ -302,6 +304,9 @@ typedef struct PGFuncCall {
  */
 typedef struct PGAStar {
 	PGNodeTag type;
+	char *relation;       /* relation name (optional) */
+	PGList *except_list;  /* optional: EXCLUDE list */
+	PGList *replace_list; /* optional: REPLACE list */
 } PGAStar;
 
 /*
@@ -1201,7 +1206,6 @@ typedef struct PGSelectStmt {
 	bool all;                  /* ALL specified? */
 	struct PGSelectStmt *larg; /* left child */
 	struct PGSelectStmt *rarg; /* right child */
-	bool match_clause;
 	                           /* Eventually add fields for CORRESPONDING spec here */
 } PGSelectStmt;
 
@@ -1306,9 +1310,9 @@ typedef enum PGObjectType {
  */
 typedef struct PGCreateSchemaStmt {
 	PGNodeTag type;
-	char *schemaname;   /* the name of the schema to create */
-	PGList *schemaElts; /* schema components (list of parsenodes) */
-	bool if_not_exists; /* just do nothing if schema already exists? */
+	char *schemaname;                     /* the name of the schema to create */
+	PGList *schemaElts;                   /* schema components (list of parsenodes) */
+	PGOnCreateConflict onconflict;        /* what to do on create conflict */
 } PGCreateSchemaStmt;
 
 typedef enum PGDropBehavior {
@@ -1461,12 +1465,19 @@ typedef enum {
 	VAR_RESET_ALL    /* RESET ALL */
 } VariableSetKind;
 
+typedef enum {
+	VAR_SET_SCOPE_LOCAL,   /* SET LOCAL var */
+	VAR_SET_SCOPE_SESSION, /* SET SESSION var */
+	VAR_SET_SCOPE_GLOBAL,  /* SET GLOBAL var */
+	VAR_SET_SCOPE_DEFAULT  /* SET var (same as SET_SESSION) */
+} VariableSetScope;
+
 typedef struct PGVariableSetStmt {
 	PGNodeTag type;
 	VariableSetKind kind;
+	VariableSetScope scope;
 	char *name;    /* variable to be set */
 	PGList *args;  /* PGList of PGAConst nodes */
-	bool is_local; /* SET LOCAL? */
 } PGVariableSetStmt;
 
 /* ----------------------
@@ -1474,8 +1485,9 @@ typedef struct PGVariableSetStmt {
  * ----------------------
  */
 typedef struct PGVariableShowStmt {
-	PGNodeTag type;
-	char *name;
+	PGNodeTag   type;
+	char       *name;
+	int         is_summary; // whether or not this is a DESCRIBE or a SUMMARIZE
 } PGVariableShowStmt;
 
 /* ----------------------
@@ -1484,9 +1496,10 @@ typedef struct PGVariableShowStmt {
  */
 typedef struct PGVariableShowSelectStmt
 {
-	PGNodeTag		type;
-	PGNode	*stmt;
-	char	   *name;
+	PGNodeTag   type;
+	PGNode     *stmt;
+	char       *name;
+	int         is_summary; // whether or not this is a DESCRIBE or a SUMMARIZE
 } PGVariableShowSelectStmt;
 
 
@@ -1503,16 +1516,16 @@ typedef struct PGVariableShowSelectStmt
 
 typedef struct PGCreateStmt {
 	PGNodeTag type;
-	PGRangeVar *relation;      /* relation to create */
-	PGList *tableElts;         /* column definitions (list of PGColumnDef) */
-	PGList *inhRelations;      /* relations to inherit from (list of
-								 * inhRelation) */
-	PGTypeName *ofTypename;    /* OF typename */
-	PGList *constraints;       /* constraints (list of PGConstraint nodes) */
-	PGList *options;           /* options from WITH clause */
-	PGOnCommitAction oncommit; /* what do we do at COMMIT? */
-	char *tablespacename;      /* table space to use, or NULL */
-	bool if_not_exists;        /* just do nothing if it already exists? */
+	PGRangeVar *relation;                 /* relation to create */
+	PGList *tableElts;                    /* column definitions (list of PGColumnDef) */
+	PGList *inhRelations;                 /* relations to inherit from (list of
+										* inhRelation) */
+	PGTypeName *ofTypename;               /* OF typename */
+	PGList *constraints;                  /* constraints (list of PGConstraint nodes) */
+	PGList *options;                      /* options from WITH clause */
+	PGOnCommitAction oncommit;            /* what do we do at COMMIT? */
+	char *tablespacename;                 /* table space to use, or NULL */
+	PGOnCreateConflict onconflict;        /* what to do on create conflict */
 } PGCreateStmt;
 
 /* ----------
@@ -1560,7 +1573,8 @@ typedef enum PGConstrType /* types of constraints */
   PG_CONSTR_ATTR_DEFERRABLE, /* attributes for previous constraint node */
   PG_CONSTR_ATTR_NOT_DEFERRABLE,
   PG_CONSTR_ATTR_DEFERRED,
-  PG_CONSTR_ATTR_IMMEDIATE } PGConstrType;
+  PG_CONSTR_ATTR_IMMEDIATE,
+  PG_CONSTR_COMPRESSION} PGConstrType;
 
 /* Foreign key action codes */
 #define PG_FKCONSTR_ACTION_NOACTION 'a'
@@ -1618,6 +1632,11 @@ typedef struct PGConstraint {
 	/* Fields used for constraints that allow a NOT VALID specification */
 	bool skip_validation; /* skip validation of existing rows? */
 	bool initially_valid; /* mark the new constraint as valid? */
+
+
+	/* Field Used for COMPRESSION constraint */
+	char *compression_name;  /* existing index to use; otherwise NULL */
+
 } PGConstraint;
 
 /* ----------------------
@@ -1631,7 +1650,7 @@ typedef struct PGCreateSeqStmt {
 	PGList *options;
 	PGOid ownerId; /* ID of owner, or InvalidOid for default */
 	bool for_identity;
-	bool if_not_exists; /* just do nothing if it already exists? */
+	PGOnCreateConflict onconflict;        /* what to do on create conflict */
 } PGCreateSeqStmt;
 
 typedef struct PGAlterSeqStmt {
@@ -1641,85 +1660,6 @@ typedef struct PGAlterSeqStmt {
 	bool for_identity;
 	bool missing_ok; /* skip error if a role is missing? */
 } PGAlterSeqStmt;
-
-/* ----------------------
- *		CREATE PROPERTY GRAPH Statement
- * ----------------------
- */
-typedef struct PGCreatePropertyGraphStmt {
-	PGNodeTag type;
-	char *name;
-	PGList *vertex_tables;
-	PGList *edge_tables;
-	// bool if_not_exists; /* just do nothing if schema already exists? */
-} PGCreatePropertyGraphStmt;
-
-typedef struct PGPropertyGraphTable {
-
-	PGNodeTag type;
-	/* Fields used for both edge and vertex table */
-	PGRangeVar *name;
-
-	PGList *labels; //verify if multi label
-	
-	PGList *keys;
-
-	bool contains_discriminator;
-	char *discriminator;
-
-	bool is_vertex_table;
-	
-	/* Fields only used for Edge Tables */
-	
-	PGList *source_key;
-	PGRangeVar *source_key_reference;
-	PGList *destination_key;
-	PGRangeVar *destination_key_reference;
-
-	/*TODO: Foreign key constraints */
-	// PGConstraint *source;
-	// PGConstraint *destination;
-} PGPropertyGraphTable;
-
-typedef struct PGMatchPattern {
-	PGNodeTag type;
-	PGRangeVar *name;
-	char *pg_name;
-	PGList *pattern;
-	PGNode *where_clause;
-	PGList *columns;
-
-} PGMatchPattern;
-
-typedef enum PGMatchDirection {
-	PG_MATCH_DIR_LEFT,
-	PG_MATCH_DIR_RIGHT,
-	PG_MATCH_DIR_ANY
-} PGMatchDirection;
-
-typedef enum PGMatchStarPattern {
-	PG_STAR_NONE,
-	PG_STAR_ALL,
-	PG_STAR_BOUNDED
-} PGMatchStarPattern;
-
-typedef struct PGGraphVariablePattern {
-	PGNodeTag type;
-	char *alias_name;
-	char *label_name;
-} PGGraphVariablePattern;
-
-typedef struct PGGraphElementPattern {
-	PGNodeTag type;
-	PGNode *pattern_clause;
-	bool is_vertex_pattern;
-	
-	//Only used for Edge pattern
-	PGMatchDirection direction;
-	PGMatchStarPattern star_pattern;
-	int lower_bound;
-	int upper_bound;
-} PGGraphElementPattern;
 
 /* ----------------------
  *		CREATE FUNCTION Statement
@@ -1778,7 +1718,7 @@ typedef struct PGIndexStmt {
 	bool initdeferred;      /* is the constraint INITIALLY DEFERRED? */
 	bool transformed;       /* true when transformIndexStmt is finished */
 	bool concurrent;        /* should this be a concurrent index build? */
-	bool if_not_exists;     /* just do nothing if index already exists? */
+	PGOnCreateConflict onconflict;        /* what to do on create conflict */
 } PGIndexStmt;
 
 /* ----------------------
@@ -1846,7 +1786,7 @@ typedef struct PGViewStmt {
 	PGRangeVar *view;                  /* the view to be created */
 	PGList *aliases;                   /* target column names */
 	PGNode *query;                     /* the SELECT query (as a raw parse tree) */
-	bool replace;                      /* replace an existing view? */
+	PGOnCreateConflict onconflict;     /* what to do on create conflict */
 	PGList *options;                   /* options from WITH clause */
 	PGViewCheckOption withCheckOption; /* WITH CHECK OPTION */
 } PGViewStmt;
@@ -1855,9 +1795,14 @@ typedef struct PGViewStmt {
  *		Load Statement
  * ----------------------
  */
+
+typedef enum PGLoadInstallType { PG_LOAD_TYPE_LOAD,  PG_LOAD_TYPE_INSTALL, PG_LOAD_TYPE_FORCE_INSTALL } PGLoadInstallType;
+
+
 typedef struct PGLoadStmt {
 	PGNodeTag type;
-	char *filename; /* file to load */
+	const char *filename; /* file to load */
+	PGLoadInstallType load_type;
 } PGLoadStmt;
 
 /* ----------------------
@@ -1919,7 +1864,7 @@ typedef struct PGCreateTableAsStmt {
 	PGIntoClause *into;   /* destination table */
 	PGObjectType relkind; /* PG_OBJECT_TABLE or PG_OBJECT_MATVIEW */
 	bool is_select_into;  /* it was written as SELECT INTO */
-	bool if_not_exists;   /* just do nothing if it already exists? */
+	PGOnCreateConflict onconflict;        /* what to do on create conflict */
 } PGCreateTableAsStmt;
 
 /* ----------------------
@@ -2012,10 +1957,10 @@ typedef struct PGImportStmt {
  */
 typedef struct PGIntervalConstant {
 	PGNodeTag type;
-	int val_type;         /* interval constant type, either T_PGString, T_PGInteger or T_PGAExpr */
-	char *sval;           /* T_PGString */
-	int ival;             /* T_PGString */
-	PGNode *eval;         /* T_PGAExpr */
+	int val_type;         /* interval constant type, either duckdb_libpgquery::T_PGString, duckdb_libpgquery::T_PGInteger or duckdb_libpgquery::T_PGAExpr */
+	char *sval;           /* duckdb_libpgquery::T_PGString */
+	int ival;             /* duckdb_libpgquery::T_PGString */
+	PGNode *eval;         /* duckdb_libpgquery::T_PGAExpr */
 	PGList *typmods;      /* how to interpret the interval constant (year, month, day, etc)  */
 	int location;         /* token location, or -1 if unknown */
 } PGIntervalConstant;
@@ -2038,6 +1983,14 @@ typedef struct PGSampleOptions {
 	int location;             /* token location, or -1 if unknown */
 } PGSampleOptions;
 
+/* ----------------------
+ *              Limit Percentage
+ * ----------------------
+ */
+typedef struct PGLimitPercent {
+	PGNodeTag type;
+    PGNode* limit_percent;  /* limit percent */
+} PGLimitPercent;
 
 /* ----------------------
  *		Lambda Function
@@ -2049,5 +2002,109 @@ typedef struct PGLambdaFunction {
 	PGNode *function;            /* lambda expression */
 	int location;                /* token location, or -1 if unknown */
 } PGLambdaFunction;
+
+/* ----------------------
+ *		Positional Reference
+ * ----------------------
+ */
+typedef struct PGPositionalReference {
+	PGNodeTag type;
+	int position;
+	int location;                /* token location, or -1 if unknown */
+} PGPositionalReference;
+
+/* ----------------------
+ *		Enum Statement
+ * ----------------------
+ */
+
+typedef struct PGCreateEnumStmt
+{
+	PGNodeTag		type;
+	PGList	   *typeName;		/* qualified name (list of Value strings) */
+	PGList	   *vals;			/* enum values (list of Value strings) */
+} PGCreateEnumStmt;
+
+
+
+
+/* ----------------------
+ *		CREATE PROPERTY GRAPH Statement
+ * ----------------------
+ */
+typedef struct PGCreatePropertyGraphStmt {
+	PGNodeTag type;
+	char *name;
+	PGList *vertex_tables;
+	PGList *edge_tables;
+	// bool if_not_exists; /* just do nothing if schema already exists? */
+} PGCreatePropertyGraphStmt;
+
+typedef struct PGPropertyGraphTable {
+
+	PGNodeTag type;
+	/* Fields used for both edge and vertex table */
+	PGRangeVar *name;
+
+	PGList *labels; //verify if multi label
+	
+	PGList *keys;
+
+	bool contains_discriminator;
+	char *discriminator;
+
+	bool is_vertex_table;
+	
+	/* Fields only used for Edge Tables */
+	
+	PGList *source_key;
+	PGRangeVar *source_key_reference;
+	PGList *destination_key;
+	PGRangeVar *destination_key_reference;
+
+	/*TODO: Foreign key constraints */
+	// PGConstraint *source;
+	// PGConstraint *destination;
+} PGPropertyGraphTable;
+
+typedef struct PGMatchPattern {
+	PGNodeTag type;
+	PGRangeVar *name;
+	char *pg_name;
+	PGList *pattern;
+	PGNode *where_clause;
+	PGList *columns;
+
+} PGMatchPattern;
+
+typedef enum PGMatchDirection {
+	PG_MATCH_DIR_LEFT,
+	PG_MATCH_DIR_RIGHT,
+	PG_MATCH_DIR_ANY
+} PGMatchDirection;
+
+typedef enum PGMatchStarPattern {
+	PG_STAR_NONE,
+	PG_STAR_ALL,
+	PG_STAR_BOUNDED
+} PGMatchStarPattern;
+
+typedef struct PGGraphVariablePattern {
+	PGNodeTag type;
+	char *alias_name;
+	char *label_name;
+} PGGraphVariablePattern;
+
+typedef struct PGGraphElementPattern {
+	PGNodeTag type;
+	PGNode *pattern_clause;
+	bool is_vertex_pattern;
+	
+	//Only used for Edge pattern
+	PGMatchDirection direction;
+	PGMatchStarPattern star_pattern;
+	int lower_bound;
+	int upper_bound;
+} PGGraphElementPattern;
 
 }

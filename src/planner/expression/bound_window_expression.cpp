@@ -1,4 +1,6 @@
 #include "duckdb/planner/expression/bound_window_expression.hpp"
+
+#include "duckdb/common/string_util.hpp"
 #include "duckdb/function/aggregate_function.hpp"
 
 namespace duckdb {
@@ -11,14 +13,136 @@ BoundWindowExpression::BoundWindowExpression(ExpressionType type, LogicalType re
 }
 
 string BoundWindowExpression::ToString() const {
-	return "WINDOW";
+	string result = aggregate.get() ? aggregate->name : ExpressionTypeToString(type);
+	result += "(";
+	result += StringUtil::Join(children, children.size(), ", ",
+	                           [](const unique_ptr<Expression> &child) { return child->GetName(); });
+	// Lead/Lag extra arguments
+	if (offset_expr.get()) {
+		result += ", ";
+		result += offset_expr->GetName();
+	}
+	if (default_expr.get()) {
+		result += ", ";
+		result += default_expr->GetName();
+	}
+
+	// Over clause
+	result += ") OVER(";
+	string sep;
+
+	// Partitions
+	if (!partitions.empty()) {
+		result += "PARTITION BY ";
+		result += StringUtil::Join(partitions, partitions.size(), ", ",
+		                           [](const unique_ptr<Expression> &partition) { return partition->GetName(); });
+		sep = " ";
+	}
+
+	// Orders
+	if (!orders.empty()) {
+		result += sep;
+		result += "ORDER BY ";
+		result += StringUtil::Join(orders, orders.size(), ", ", [](const BoundOrderByNode &order) {
+			auto str = order.expression->GetName();
+			str += (order.type == OrderType::ASCENDING) ? " ASC" : " DESC";
+			switch (order.null_order) {
+			case OrderByNullType::NULLS_FIRST:
+				str += " NULLS FIRST";
+				break;
+			case OrderByNullType::NULLS_LAST:
+				str += " NULLS LAST";
+				break;
+			default:
+				break;
+			}
+			return str;
+		});
+		sep = " ";
+	}
+
+	// Rows/Range
+	string units = "ROWS";
+	string from;
+	switch (start) {
+	case WindowBoundary::CURRENT_ROW_RANGE:
+	case WindowBoundary::CURRENT_ROW_ROWS:
+		from = "CURRENT ROW";
+		units = (start == WindowBoundary::CURRENT_ROW_RANGE) ? "RANGE" : "ROWS";
+		break;
+	case WindowBoundary::UNBOUNDED_PRECEDING:
+		if (end != WindowBoundary::CURRENT_ROW_RANGE) {
+			from = "UNBOUNDED PRECEDING";
+		}
+		break;
+	case WindowBoundary::EXPR_PRECEDING_ROWS:
+	case WindowBoundary::EXPR_PRECEDING_RANGE:
+		from = start_expr->GetName() + " PRECEDING";
+		units = (start == WindowBoundary::EXPR_PRECEDING_RANGE) ? "RANGE" : "ROWS";
+		break;
+	case WindowBoundary::EXPR_FOLLOWING_ROWS:
+	case WindowBoundary::EXPR_FOLLOWING_RANGE:
+		from = start_expr->GetName() + " FOLLOWING";
+		units = (start == WindowBoundary::EXPR_FOLLOWING_RANGE) ? "RANGE" : "ROWS";
+		break;
+	default:
+		break;
+	}
+
+	string to;
+	switch (end) {
+	case WindowBoundary::CURRENT_ROW_RANGE:
+		if (start != WindowBoundary::UNBOUNDED_PRECEDING) {
+			to = "CURRENT ROW";
+			units = "RANGE";
+		}
+		break;
+	case WindowBoundary::CURRENT_ROW_ROWS:
+		to = "CURRENT ROW";
+		units = "ROWS";
+		break;
+	case WindowBoundary::UNBOUNDED_PRECEDING:
+		to = "UNBOUNDED PRECEDING";
+		break;
+	case WindowBoundary::EXPR_PRECEDING_ROWS:
+	case WindowBoundary::EXPR_PRECEDING_RANGE:
+		to = end_expr->GetName() + " PRECEDING";
+		units = (start == WindowBoundary::EXPR_PRECEDING_RANGE) ? "RANGE" : "ROWS";
+		break;
+	case WindowBoundary::EXPR_FOLLOWING_ROWS:
+	case WindowBoundary::EXPR_FOLLOWING_RANGE:
+		to = end_expr->GetName() + " FOLLOWING";
+		units = (start == WindowBoundary::EXPR_FOLLOWING_RANGE) ? "RANGE" : "ROWS";
+		break;
+	default:
+		break;
+	}
+
+	if (!from.empty() || !to.empty()) {
+		result += sep + units;
+	}
+	if (!from.empty() && !to.empty()) {
+		result += " BETWEEN ";
+		result += from;
+		result += " AND ";
+		result += to;
+	} else if (!from.empty()) {
+		result += " ";
+		result += from;
+	} else if (!to.empty()) {
+		result += " ";
+		result += to;
+	}
+
+	result += ")";
+	return result;
 }
 
-bool BoundWindowExpression::Equals(const BaseExpression *other_) const {
-	if (!Expression::Equals(other_)) {
+bool BoundWindowExpression::Equals(const BaseExpression *other_p) const {
+	if (!Expression::Equals(other_p)) {
 		return false;
 	}
-	auto other = (BoundWindowExpression *)other_;
+	auto other = (BoundWindowExpression *)other_p;
 
 	if (start != other->start || end != other->end) {
 		return false;
@@ -40,6 +164,10 @@ bool BoundWindowExpression::Equals(const BaseExpression *other_) const {
 		return false;
 	}
 
+	return KeysAreCompatible(other);
+}
+
+bool BoundWindowExpression::KeysAreCompatible(const BoundWindowExpression *other) const {
 	// check if the partitions are equivalent
 	if (partitions.size() != other->partitions.size()) {
 		return false;
@@ -81,9 +209,15 @@ unique_ptr<Expression> BoundWindowExpression::Copy() {
 	for (auto &e : partitions) {
 		new_window->partitions.push_back(e->Copy());
 	}
-
+	for (auto &ps : partitions_stats) {
+		if (ps) {
+			new_window->partitions_stats.push_back(ps->Copy());
+		} else {
+			new_window->partitions_stats.push_back(nullptr);
+		}
+	}
 	for (auto &o : orders) {
-		new_window->orders.push_back(BoundOrderByNode(o.type, o.null_order, o.expression->Copy()));
+		new_window->orders.emplace_back(o.type, o.null_order, o.expression->Copy());
 	}
 
 	new_window->start = start;

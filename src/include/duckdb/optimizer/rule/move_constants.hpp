@@ -16,9 +16,10 @@ namespace duckdb {
 // then this will turn it into x = 4999.
 class MoveConstantsRule : public Rule {
 public:
-	MoveConstantsRule(ExpressionRewriter &rewriter);
+	explicit MoveConstantsRule(ExpressionRewriter &rewriter);
 
-	unique_ptr<Expression> Apply(LogicalOperator &op, vector<Expression *> &bindings, bool &changes_made) override;
+	unique_ptr<Expression> Apply(LogicalOperator &op, vector<Expression *> &bindings, bool &changes_made,
+	                             bool is_root) override;
 };
 
 } // namespace duckdb

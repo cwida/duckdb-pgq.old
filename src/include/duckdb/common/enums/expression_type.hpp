@@ -50,11 +50,13 @@ enum class ExpressionType : uint8_t {
 	COMPARE_NOT_IN = 36,
 	// IS DISTINCT FROM operator
 	COMPARE_DISTINCT_FROM = 37,
-	// compare final boundary
 
 	COMPARE_BETWEEN = 38,
 	COMPARE_NOT_BETWEEN = 39,
-	COMPARE_BOUNDARY_END = COMPARE_NOT_BETWEEN,
+	// IS NOT DISTINCT FROM operator
+	COMPARE_NOT_DISTINCT_FROM = 40,
+	// compare final boundary
+	COMPARE_BOUNDARY_END = COMPARE_NOT_DISTINCT_FROM,
 
 	// -----------------------------
 	// Conjunction Operators
@@ -79,6 +81,7 @@ enum class ExpressionType : uint8_t {
 	// -----------------------------
 	AGGREGATE = 100,
 	BOUND_AGGREGATE = 101,
+	GROUPING_FUNCTION = 102,
 
 	// -----------------------------
 	// Window Functions
@@ -96,6 +99,7 @@ enum class ExpressionType : uint8_t {
 	WINDOW_LAST_VALUE = 131,
 	WINDOW_LEAD = 132,
 	WINDOW_LAG = 133,
+	WINDOW_NTH_VALUE = 134,
 
 	// -----------------------------
 	// Functions
@@ -109,6 +113,10 @@ enum class ExpressionType : uint8_t {
 	CASE_EXPR = 150,
 	OPERATOR_NULLIF = 151,
 	OPERATOR_COALESCE = 152,
+	ARRAY_EXTRACT = 153,
+	ARRAY_SLICE = 154,
+	STRUCT_EXTRACT = 155,
+	ARRAY_CONSTRUCTOR = 156,
 
 	// -----------------------------
 	// Subquery IN/EXISTS
@@ -133,7 +141,8 @@ enum class ExpressionType : uint8_t {
 	BOUND_COLUMN_REF = 228,
 	BOUND_UNNEST = 229,
 	COLLATE = 230,
-	LAMBDA = 231
+	LAMBDA = 231,
+	POSITIONAL_REFERENCE = 232
 };
 
 //===--------------------------------------------------------------------===//
@@ -155,12 +164,13 @@ enum class ExpressionClass : uint8_t {
 	FUNCTION = 9,
 	OPERATOR = 10,
 	STAR = 11,
-	TABLE_STAR = 12,
 	SUBQUERY = 13,
 	WINDOW = 14,
 	PARAMETER = 15,
 	COLLATE = 16,
 	LAMBDA = 17,
+	POSITIONAL_REFERENCE = 18,
+	BETWEEN = 19,
 	//===--------------------------------------------------------------------===//
 	// Bound Expressions
 	//===--------------------------------------------------------------------===//

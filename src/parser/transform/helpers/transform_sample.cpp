@@ -5,7 +5,7 @@
 
 namespace duckdb {
 
-static SampleMethod GetSampleMethod(string method) {
+static SampleMethod GetSampleMethod(const string &method) {
 	auto lmethod = StringUtil::Lower(method);
 	if (lmethod == "system") {
 		return SampleMethod::SYSTEM_SAMPLE;
@@ -47,7 +47,7 @@ unique_ptr<SampleOptions> Transformer::TransformSampleOptions(duckdb_libpgquery:
 	if (sample_options.method) {
 		result->method = GetSampleMethod(sample_options.method);
 	}
-	result->seed = sample_options.seed;
+	result->seed = sample_options.seed == 0 ? -1 : sample_options.seed;
 	return result;
 }
 

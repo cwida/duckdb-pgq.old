@@ -2,9 +2,11 @@ add_library_unity(
   duckdb_common_enums
   OBJECT
   catalog_type.cpp
+  compression_type.cpp
   expression_type.cpp
   join_type.cpp
   logical_operator_type.cpp
+  optimizer_type.cpp
   physical_operator_type.cpp
   statement_type.cpp
   relation_type.cpp)

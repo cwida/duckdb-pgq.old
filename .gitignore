@@ -38,6 +38,7 @@ cscope.out
 autoconf/aclocal.m4
 autoconf/autom4te.cache
 /compile_commands.json
+/.wasm
 
 #==============================================================================#
 # Directories to ignore (do not add trailing '/'s, they skip symlinks).
@@ -73,6 +74,7 @@ m4/lt~obsolete.m4
 #==============================================================================#
 #m4/
 build/
+duckdb_benchmark_data/
 #*.m4
 *.o
 *.lo
@@ -169,6 +171,10 @@ local.properties
 .settings/
 .loadpath
 .recommenders
+
+# Clang language server (C/C++ tooling)
+/.cache/clangd
+.ccls-cache
 
 # Eclipse Core
 .project
@@ -293,6 +299,7 @@ docs
 
 # tests
 test/test.sql
+duckdb_benchmark_data/
 
 # SQLite logic tests
 test/evidence/
@@ -320,3 +327,14 @@ tools/duckdb.Rcheck/
 tools/*.tar.gz
 .Rhistory
 ub_*.cpp
+
+# python parquet files used in tests
+tools/pythonpkg/tests/unsigned.parquet
+tools/pythonpkg/tests/userdata1.parquet
+
+# node tests
+__nvm
+
+*.vcxproj*
+*.cmake
+*.sln

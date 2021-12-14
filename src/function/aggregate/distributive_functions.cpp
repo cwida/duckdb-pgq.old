@@ -17,6 +17,15 @@ void BuiltinFunctions::RegisterDistributiveAggregates() {
 	Register<MinFun>();
 	Register<SumFun>();
 	Register<StringAggFun>();
+	Register<ApproxCountDistinctFun>();
+	Register<ProductFun>();
+	Register<BoolOrFun>();
+	Register<BoolAndFun>();
+	Register<ArgMinFun>();
+	Register<ArgMaxFun>();
+	Register<SkewFun>();
+	Register<KurtosisFun>();
+	Register<EntropyFun>();
 }
 
 } // namespace duckdb

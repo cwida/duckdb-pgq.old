@@ -14,15 +14,9 @@ namespace duckdb {
 
 class PhysicalExecute : public PhysicalOperator {
 public:
-	PhysicalExecute(PhysicalOperator *plan) : PhysicalOperator(PhysicalOperatorType::EXECUTE, plan->types), plan(plan) {
-	}
+	explicit PhysicalExecute(PhysicalOperator *plan);
 
 	PhysicalOperator *plan;
-
-public:
-	void GetChunkInternal(ExecutionContext &context, DataChunk &chunk, PhysicalOperatorState *state) override;
-
-	unique_ptr<PhysicalOperatorState> GetOperatorState() override;
 };
 
 } // namespace duckdb

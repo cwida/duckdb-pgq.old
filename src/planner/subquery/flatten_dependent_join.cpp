@@ -44,7 +44,7 @@ bool FlattenDependentJoins::DetectCorrelatedExpressions(LogicalOperator *op) {
 
 unique_ptr<LogicalOperator> FlattenDependentJoins::PushDownDependentJoin(unique_ptr<LogicalOperator> plan) {
 	auto result = PushDownDependentJoinInternal(move(plan));
-	if (replacement_map.size() > 0) {
+	if (!replacement_map.empty()) {
 		// check if we have to replace any COUNT aggregates into "CASE WHEN X IS NULL THEN 0 ELSE COUNT END"
 		RewriteCountAggregates aggr(replacement_map);
 		aggr.VisitOperator(*result);
@@ -69,6 +69,7 @@ unique_ptr<LogicalOperator> FlattenDependentJoins::PushDownDependentJoinInternal
 		return move(cross_product);
 	}
 	switch (plan->type) {
+	case LogicalOperatorType::LOGICAL_UNNEST:
 	case LogicalOperatorType::LOGICAL_FILTER: {
 		// filter
 		// first we flatten the dependent join in the child of the filter
@@ -110,6 +111,9 @@ unique_ptr<LogicalOperator> FlattenDependentJoins::PushDownDependentJoinInternal
 		for (idx_t i = 0; i < correlated_columns.size(); i++) {
 			auto colref = make_unique<BoundColumnRefExpression>(
 			    correlated_columns[i].type, ColumnBinding(base_binding.table_index, base_binding.column_index + i));
+			for (auto &set : aggr.grouping_sets) {
+				set.insert(aggr.groups.size());
+			}
 			aggr.groups.push_back(move(colref));
 		}
 		if (aggr.groups.size() == correlated_columns.size()) {
@@ -266,6 +270,9 @@ unique_ptr<LogicalOperator> FlattenDependentJoins::PushDownDependentJoinInternal
 		if (limit.offset_val > 0) {
 			throw ParserException("OFFSET not supported in correlated subquery");
 		}
+		if (limit.limit) {
+			throw ParserException("Non-constant limit not supported in correlated subquery");
+		}
 		plan->children[0] = PushDownDependentJoinInternal(move(plan->children[0]));
 		if (limit.limit_val == 0) {
 			// limit = 0 means we return zero columns here
@@ -310,8 +317,7 @@ unique_ptr<LogicalOperator> FlattenDependentJoins::PushDownDependentJoinInternal
 	case LogicalOperatorType::LOGICAL_ORDER_BY:
 		throw ParserException("ORDER BY not supported in correlated subquery");
 	default:
-		throw NotImplementedException("Logical operator type \"%s\" for dependent join",
-		                              LogicalOperatorToString(plan->type));
+		throw InternalException("Logical operator type \"%s\" for dependent join", LogicalOperatorToString(plan->type));
 	}
 }
 

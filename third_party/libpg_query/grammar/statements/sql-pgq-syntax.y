@@ -142,7 +142,7 @@ EdgePattern:
             FullEdgePattern                                         {$$ = $1;}
             // | 
             // AbbreviatedEdgePattern                                
-            {
+            // {
                 //how to handle this for conversion in tranform
             //     $$ = (PGNode *) makeString($1);
             // }

@@ -625,6 +625,9 @@ group_by_list:
 group_by_item:
 			a_expr									{ $$ = $1; }
 			| empty_grouping_set					{ $$ = $1; }
+			| cube_clause							{ $$ = $1; }
+			| rollup_clause							{ $$ = $1; }
+			| grouping_sets_clause					{ $$ = $1; }
 		;
 
 empty_grouping_set:
@@ -639,6 +642,32 @@ empty_grouping_set:
  * so that they shift in these rules rather than reducing the conflicting
  * unreserved_keyword rule.
  */
+
+rollup_clause:
+			ROLLUP '(' expr_list ')'
+				{
+					$$ = (PGNode *) makeGroupingSet(GROUPING_SET_ROLLUP, $3, @1);
+				}
+		;
+
+cube_clause:
+			CUBE '(' expr_list ')'
+				{
+					$$ = (PGNode *) makeGroupingSet(GROUPING_SET_CUBE, $3, @1);
+				}
+		;
+
+grouping_sets_clause:
+			GROUPING SETS '(' group_by_list ')'
+				{
+					$$ = (PGNode *) makeGroupingSet(GROUPING_SET_SETS, $4, @1);
+				}
+		;
+
+grouping_or_grouping_id:
+		GROUPING								{ $$ = NULL; }
+		| GROUPING_ID							{ $$ = NULL; }
+		;
 
 having_clause:
 			HAVING a_expr							{ $$ = $2; }
@@ -762,33 +791,6 @@ table_ref:	relation_expr opt_alias_clause opt_tablesample_clause
 					n->subquery = $1;
 					n->alias = $2;
 					n->sample = $3;
-					/*
-					 * The SQL spec does not permit a subselect
-					 * (<derived_table>) without an alias clause,
-					 * so we don't either.  This avoids the problem
-					 * of needing to invent a unique refname for it.
-					 * That could be surmounted if there's sufficient
-					 * popular demand, but for now let's just implement
-					 * the spec and see if anyone complains.
-					 * However, it does seem like a good idea to emit
-					 * an error message that's better than "syntax error".
-					 */
-					if ($2 == NULL)
-					{
-						if (IsA($1, PGSelectStmt) &&
-							((PGSelectStmt *) $1)->valuesLists)
-							ereport(ERROR,
-									(errcode(PG_ERRCODE_SYNTAX_ERROR),
-									 errmsg("VALUES in FROM must have an alias"),
-									 errhint("For example, FROM (VALUES ...) [AS] foo."),
-									 parser_errposition(@1)));
-						else
-							ereport(ERROR,
-									(errcode(PG_ERRCODE_SYNTAX_ERROR),
-									 errmsg("subquery in FROM must have an alias"),
-									 errhint("For example, FROM (SELECT ...) [AS] foo."),
-									 parser_errposition(@1)));
-					}
 					$$ = (PGNode *) n;
 				}
 			| LATERAL_P select_with_parens opt_alias_clause
@@ -798,23 +800,6 @@ table_ref:	relation_expr opt_alias_clause opt_tablesample_clause
 					n->subquery = $2;
 					n->alias = $3;
 					n->sample = NULL;
-					/* same comment as above */
-					if ($3 == NULL)
-					{
-						if (IsA($2, PGSelectStmt) &&
-							((PGSelectStmt *) $2)->valuesLists)
-							ereport(ERROR,
-									(errcode(PG_ERRCODE_SYNTAX_ERROR),
-									 errmsg("VALUES in FROM must have an alias"),
-									 errhint("For example, FROM (VALUES ...) [AS] foo."),
-									 parser_errposition(@2)));
-						else
-							ereport(ERROR,
-									(errcode(PG_ERRCODE_SYNTAX_ERROR),
-									 errmsg("subquery in FROM must have an alias"),
-									 errhint("For example, FROM (SELECT ...) [AS] foo."),
-									 parser_errposition(@2)));
-					}
 					$$ = (PGNode *) n;
 				}
 			| joined_table
@@ -1207,8 +1192,15 @@ Typename:	SimpleTypename opt_array_bounds
 					$$->arrayBounds = list_make1(makeInteger(-1));
 					$$->setof = true;
 				}
-			| RowOrStruct '(' colid_type_list ')' {
+			| RowOrStruct '(' colid_type_list ')' opt_array_bounds {
                $$ = SystemTypeName("struct");
+               $$->arrayBounds = $5;
+               $$->typmods = $3;
+               $$->location = @1;
+               }
+            | MAP '(' type_list ')' opt_array_bounds {
+               $$ = SystemTypeName("map");
+               $$->arrayBounds = $5;
                $$->typmods = $3;
                $$->location = @1;
 			}
@@ -1268,18 +1260,18 @@ ConstTypename:
  * constants for them.
  */
 GenericType:
-			type_function_name opt_type_modifiers
+			type_name_token opt_type_modifiers
 				{
 					$$ = makeTypeName($1);
 					$$->typmods = $2;
 					$$->location = @1;
 				}
-			| type_function_name attrs opt_type_modifiers
-				{
-					$$ = makeTypeNameFromNameList(lcons(makeString($1), $2));
-					$$->typmods = $3;
-					$$->location = @1;
-				}
+			// | type_name_token attrs opt_type_modifiers
+			// 	{
+			// 		$$ = makeTypeNameFromNameList(lcons(makeString($1), $2));
+			// 		$$->typmods = $3;
+			// 		$$->location = @1;
+			// 	}
 		;
 
 opt_type_modifiers: '(' expr_list ')'				{ $$ = $2; }
@@ -1670,7 +1662,7 @@ opt_interval:
 a_expr:		c_expr									{ $$ = $1; }
 			|
 			a_expr TYPECAST Typename
-					{ $$ = makeTypeCast($1, $3, @2); }
+					{ $$ = makeTypeCast($1, $3, 0, @2); }
 			| a_expr COLLATE any_name
 				{
 					PGCollateClause *n = makeNode(PGCollateClause);
@@ -1881,6 +1873,14 @@ a_expr:		c_expr									{ $$ = $1; }
 				PGFuncCall *n = makeFuncCall(SystemFuncName("row"), $1, @1);
 				$$ = (PGNode *) n;
 			}
+			| '{' dict_arguments '}' {
+				PGFuncCall *n = makeFuncCall(SystemFuncName("struct_pack"), $2, @2);
+				$$ = (PGNode *) n;
+			}
+			| '[' opt_expr_list ']' {
+				PGFuncCall *n = makeFuncCall(SystemFuncName("list_value"), $2, @2);
+				$$ = (PGNode *) n;
+			}
 			| row LAMBDA_ARROW a_expr
 			{
 				PGLambdaFunction *n = makeNode(PGLambdaFunction);
@@ -2083,6 +2083,11 @@ a_expr:		c_expr									{ $$ = $1; }
 					n->location = @1;
 					$$ = (PGNode *)n;
 				}
+			| ARRAY '[' opt_expr_list ']' {
+				PGList *func_name = list_make1(makeString("construct_array"));
+				PGFuncCall *n = makeFuncCall(func_name, $3, @1);
+				$$ = (PGNode *) n;
+			}
 		;
 
 /*
@@ -2097,7 +2102,7 @@ a_expr:		c_expr									{ $$ = $1; }
 b_expr:		c_expr
 				{ $$ = $1; }
 			| b_expr TYPECAST Typename
-				{ $$ = makeTypeCast($1, $3, @2); }
+				{ $$ = makeTypeCast($1, $3, 0, @2); }
 			| '+' b_expr					%prec UMINUS
 				{ $$ = (PGNode *) makeSimpleAExpr(PG_AEXPR_OP, "+", NULL, $2, @1); }
 			| '-' b_expr					%prec UMINUS
@@ -2160,6 +2165,13 @@ b_expr:		c_expr
  */
 c_expr:		columnref								{ $$ = $1; }
 			| AexprConst							{ $$ = $1; }
+			| '#' ICONST
+				{
+					PGPositionalReference *n = makeNode(PGPositionalReference);
+					n->position = $2;
+					n->location = @1;
+					$$ = (PGNode *) n;
+				}
 			| '?' opt_indirection
 				{
 					if ($2)
@@ -2201,8 +2213,18 @@ c_expr:		columnref								{ $$ = $1; }
 				}
 			| case_expr
 				{ $$ = $1; }
-			| func_expr
-				{ $$ = $1; }
+			| func_expr opt_indirection
+				{
+					if ($2) {
+						PGAIndirection *n = makeNode(PGAIndirection);
+						n->arg = $1;
+						n->indirection = check_indirection($2, yyscanner);
+						$$ = (PGNode *)n;
+					}
+					else {
+						$$ = $1;
+					}
+				}
 			| select_with_parens			%prec UMINUS
 				{
 					PGSubLink *n = makeNode(PGSubLink);
@@ -2249,6 +2271,13 @@ c_expr:		columnref								{ $$ = $1; }
 					n->location = @1;
 					$$ = (PGNode *)n;
 				}
+			| grouping_or_grouping_id '(' expr_list ')'
+			  {
+				  PGGroupingFunc *g = makeNode(PGGroupingFunc);
+				  g->args = $3;
+				  g->location = @1;
+				  $$ = (PGNode *)g;
+			  }
 		;
 
 func_application: func_name '(' ')'
@@ -2441,7 +2470,9 @@ func_expr_common_subexpr:
 					$$ = makeSQLValueFunction(PG_SVFOP_CURRENT_SCHEMA, -1, @1);
 				}
 			| CAST '(' a_expr AS Typename ')'
-				{ $$ = makeTypeCast($3, $5, @1); }
+				{ $$ = makeTypeCast($3, $5, 0, @1); }
+			| TRY_CAST '(' a_expr AS Typename ')'
+				{ $$ = makeTypeCast($3, $5, 1, @1); }
 			| EXTRACT '(' extract_list ')'
 				{
 					$$ = (PGNode *) makeFuncCall(SystemFuncName("date_part"), $3, @1);
@@ -2618,18 +2649,6 @@ opt_frame_clause:
 				{
 					PGWindowDef *n = $2;
 					n->frameOptions |= FRAMEOPTION_NONDEFAULT | FRAMEOPTION_RANGE;
-					if (n->frameOptions & (FRAMEOPTION_START_VALUE_PRECEDING |
-										   FRAMEOPTION_END_VALUE_PRECEDING))
-						ereport(ERROR,
-								(errcode(PG_ERRCODE_FEATURE_NOT_SUPPORTED),
-								 errmsg("RANGE PRECEDING is only supported with UNBOUNDED"),
-								 parser_errposition(@1)));
-					if (n->frameOptions & (FRAMEOPTION_START_VALUE_FOLLOWING |
-										   FRAMEOPTION_END_VALUE_FOLLOWING))
-						ereport(ERROR,
-								(errcode(PG_ERRCODE_FEATURE_NOT_SUPPORTED),
-								 errmsg("RANGE FOLLOWING is only supported with UNBOUNDED"),
-								 parser_errposition(@1)));
 					$$ = n;
 				}
 			| ROWS frame_extent
@@ -2771,6 +2790,20 @@ row:		qualified_row							{ $$ = $1;}
 			| '(' expr_list ',' a_expr ')'			{ $$ = lappend($2, $4); }
 		;
 
+dict_arg:
+	ColIdOrString ':' a_expr						{
+		PGNamedArgExpr *na = makeNode(PGNamedArgExpr);
+		na->name = $1;
+		na->arg = (PGExpr *) $3;
+		na->argnumber = -1;
+		na->location = @1;
+		$$ = (PGNode *) na;
+	}
+
+dict_arguments:
+	dict_arg						{ $$ = list_make1($1); }
+	| dict_arguments ',' dict_arg	{ $$ = lappend($1, $3); }
+
 sub_type:	ANY										{ $$ = PG_ANY_SUBLINK; }
 			| SOME									{ $$ = PG_ANY_SUBLINK; }
 			| ALL									{ $$ = PG_ALL_SUBLINK; }
@@ -2851,6 +2884,18 @@ expr_list:	a_expr
 					$$ = lappend($1, $3);
 				}
 		;
+
+opt_expr_list:
+			expr_list
+				{
+					$$ = $1;
+				}
+			| /* empty */
+				{
+					$$ = NULL;
+				}
+		;
+
 
 /* function arguments can have names */
 func_arg_list:  func_arg_expr
@@ -2983,7 +3028,7 @@ substr_list:
 					 */
 					$$ = list_make3($1, makeIntConst(1, -1),
 									makeTypeCast($2,
-												 SystemTypeName("int4"), -1));
+												 SystemTypeName("int4"), 0, -1));
 				}
 			| expr_list
 				{
@@ -3075,10 +3120,6 @@ indirection_el:
 				{
 					$$ = (PGNode *) makeString($2);
 				}
-			| '.' '*'
-				{
-					$$ = (PGNode *) makeNode(PGAStar);
-				}
 			| '[' a_expr ']'
 				{
 					PGAIndices *ai = makeNode(PGAIndices);
@@ -3164,11 +3205,30 @@ target_el:	a_expr AS ColLabelOrString
 					$$->val = (PGNode *)$1;
 					$$->location = @1;
 				}
-			| '*'
+			| '*' opt_except_list opt_replace_list
 				{
 					PGColumnRef *n = makeNode(PGColumnRef);
-					n->fields = list_make1(makeNode(PGAStar));
+					PGAStar *star = makeNode(PGAStar);
+					n->fields = list_make1(star);
 					n->location = @1;
+					star->except_list = $2;
+					star->replace_list = $3;
+
+					$$ = makeNode(PGResTarget);
+					$$->name = NULL;
+					$$->indirection = NIL;
+					$$->val = (PGNode *)n;
+					$$->location = @1;
+				}
+			| ColId '.' '*' opt_except_list opt_replace_list
+				{
+					PGColumnRef *n = makeNode(PGColumnRef);
+					PGAStar *star = makeNode(PGAStar);
+					n->fields = list_make1(star);
+					n->location = @1;
+					star->relation = $1;
+					star->except_list = $4;
+					star->replace_list = $5;
 
 					$$ = makeNode(PGResTarget);
 					$$->name = NULL;
@@ -3178,6 +3238,26 @@ target_el:	a_expr AS ColLabelOrString
 				}
 		;
 
+except_list: EXCLUDE '(' name_list ')'					{ $$ = $3; }
+			| EXCLUDE ColId								{ $$ = list_make1(makeString($2)); }
+		;
+
+opt_except_list: except_list						{ $$ = $1; }
+			| /*EMPTY*/								{ $$ = NULL; }
+		;
+
+replace_list_el: a_expr AS ColId					{ $$ = list_make2($1, makeString($3)); }
+		;
+
+replace_list:
+			replace_list_el							{ $$ = list_make1($1); }
+			| replace_list ',' replace_list_el		{ $$ = lappend($1, $3); }
+		;
+
+opt_replace_list: REPLACE '(' replace_list ')'		{ $$ = $3; }
+			| REPLACE replace_list_el				{ $$ = list_make1($2); }
+			| /*EMPTY*/								{ $$ = NULL; }
+		;
 
 /*****************************************************************************
  *
@@ -3198,7 +3278,7 @@ qualified_name_list:
  * which may contain subscripts, and reject that case in the C code.
  */
 qualified_name:
-			ColId
+			ColIdOrString
 				{
 					$$ = makeRangeVar(NULL, $1, @1);
 				}
@@ -3248,9 +3328,10 @@ attr_name:	ColLabel								{ $$ = $1; };
  * may contain subscripts, and reject that case in the C code.  (If we
  * ever implement SQL99-like methods, such syntax may actually become legal!)
  */
-func_name:	type_function_name
+func_name:	function_name_token
 					{ $$ = list_make1(makeString($1)); }
-			| ColId indirection
+			|
+			ColId indirection
 					{
 						$$ = check_func_name(lcons(makeString($1), $2),
 											 yyscanner);
@@ -3269,9 +3350,17 @@ AexprConst: Iconst
 				{
 					$$ = makeFloatConst($1, @1);
 				}
-			| Sconst
+			| Sconst opt_indirection
 				{
-					$$ = makeStringConst($1, @1);
+					if ($2)
+					{
+						PGAIndirection *n = makeNode(PGAIndirection);
+						n->arg = makeStringConst($1, @1);
+						n->indirection = check_indirection($2, yyscanner);
+						$$ = (PGNode *) n;
+					}
+					else
+						$$ = makeStringConst($1, @1);
 				}
 			| BCONST
 				{
@@ -3381,11 +3470,22 @@ ColIdOrString:	ColId											{ $$ = $1; }
 				| SCONST										{ $$ = $1; }
 		;
 
+
 /* Type/function identifier --- names that can be type or function names.
  */
 type_function_name:	IDENT							{ $$ = $1; }
 			| unreserved_keyword					{ $$ = pstrdup($1); }
 			| type_func_name_keyword				{ $$ = pstrdup($1); }
+		;
+
+function_name_token:	IDENT						{ $$ = $1; }
+			| unreserved_keyword					{ $$ = pstrdup($1); }
+			| func_name_keyword						{ $$ = pstrdup($1); }
+		;
+
+type_name_token:	IDENT						{ $$ = $1; }
+			| unreserved_keyword					{ $$ = pstrdup($1); }
+			| type_name_keyword						{ $$ = pstrdup($1); }
 		;
 
 any_name:	ColId						{ $$ = list_make1(makeString($1)); }
@@ -3412,9 +3512,8 @@ param_name:	type_function_name
  * This presently includes *all* Postgres keywords.
  */
 ColLabel:	IDENT									{ $$ = $1; }
+			| other_keyword							{ $$ = pstrdup($1); }
 			| unreserved_keyword					{ $$ = pstrdup($1); }
-			| col_name_keyword						{ $$ = pstrdup($1); }
-			| type_func_name_keyword				{ $$ = pstrdup($1); }
 			| reserved_keyword						{ $$ = pstrdup($1); }
 		;
 

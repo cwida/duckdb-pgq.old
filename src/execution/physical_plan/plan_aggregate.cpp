@@ -22,6 +22,9 @@ static uint32_t RequiredBitsForValue(uint32_t n) {
 }
 
 static bool CanUsePerfectHashAggregate(ClientContext &context, LogicalAggregate &op, vector<idx_t> &bits_per_group) {
+	if (op.grouping_sets.size() > 1 || !op.grouping_functions.empty()) {
+		return false;
+	}
 	idx_t perfect_hash_bits = 0;
 	if (op.group_stats.empty()) {
 		op.group_stats.resize(op.groups.size());
@@ -59,7 +62,7 @@ static bool CanUsePerfectHashAggregate(ClientContext &context, LogicalAggregate 
 				return false;
 			}
 			// we had no stats before, so we have no clue if there are null values or not
-			stats->has_null = true;
+			stats->validity_stats = make_unique<ValidityStatistics>(true);
 		}
 		auto &nstats = (NumericStatistics &)*stats;
 
@@ -145,11 +148,11 @@ unique_ptr<PhysicalOperator> PhysicalPlanGenerator::CreatePlan(LogicalAggregate 
 			}
 		}
 		if (use_simple_aggregation) {
-			groupby = make_unique_base<PhysicalOperator, PhysicalSimpleAggregate>(op.types, move(op.expressions),
-			                                                                      all_combinable);
+			groupby = make_unique_base<PhysicalOperator, PhysicalSimpleAggregate>(
+			    op.types, move(op.expressions), all_combinable, op.estimated_cardinality);
 		} else {
-			groupby =
-			    make_unique_base<PhysicalOperator, PhysicalHashAggregate>(context, op.types, move(op.expressions));
+			groupby = make_unique_base<PhysicalOperator, PhysicalHashAggregate>(context, op.types, move(op.expressions),
+			                                                                    op.estimated_cardinality);
 		}
 	} else {
 		// groups! create a GROUP BY aggregator
@@ -157,10 +160,12 @@ unique_ptr<PhysicalOperator> PhysicalPlanGenerator::CreatePlan(LogicalAggregate 
 		vector<idx_t> required_bits;
 		if (CanUsePerfectHashAggregate(context, op, required_bits)) {
 			groupby = make_unique_base<PhysicalOperator, PhysicalPerfectHashAggregate>(
-			    context, op.types, move(op.expressions), move(op.groups), move(op.group_stats), move(required_bits));
+			    context, op.types, move(op.expressions), move(op.groups), move(op.group_stats), move(required_bits),
+			    op.estimated_cardinality);
 		} else {
-			groupby = make_unique_base<PhysicalOperator, PhysicalHashAggregate>(context, op.types, move(op.expressions),
-			                                                                    move(op.groups));
+			groupby = make_unique_base<PhysicalOperator, PhysicalHashAggregate>(
+			    context, op.types, move(op.expressions), move(op.groups), move(op.grouping_sets),
+			    move(op.grouping_functions), op.estimated_cardinality);
 		}
 	}
 	groupby->children.push_back(move(plan));
@@ -174,22 +179,20 @@ PhysicalPlanGenerator::ExtractAggregateExpressions(unique_ptr<PhysicalOperator> 
 	vector<unique_ptr<Expression>> expressions;
 	vector<LogicalType> types;
 
-	for (auto &group_ : groups) {
-		auto &group = group_;
+	for (auto &group : groups) {
 		auto ref = make_unique<BoundReferenceExpression>(group->return_type, expressions.size());
 		types.push_back(group->return_type);
 		expressions.push_back(move(group));
-		group_ = move(ref);
+		group = move(ref);
 	}
 
 	for (auto &aggr : aggregates) {
 		auto &bound_aggr = (BoundAggregateExpression &)*aggr;
-		for (auto &child_ : bound_aggr.children) {
-			auto &child = child_;
+		for (auto &child : bound_aggr.children) {
 			auto ref = make_unique<BoundReferenceExpression>(child->return_type, expressions.size());
 			types.push_back(child->return_type);
 			expressions.push_back(move(child));
-			child_ = move(ref);
+			child = move(ref);
 		}
 		if (bound_aggr.filter) {
 			auto &filter = bound_aggr.filter;
@@ -202,7 +205,7 @@ PhysicalPlanGenerator::ExtractAggregateExpressions(unique_ptr<PhysicalOperator> 
 	if (expressions.empty()) {
 		return child;
 	}
-	auto projection = make_unique<PhysicalProjection>(move(types), move(expressions));
+	auto projection = make_unique<PhysicalProjection>(move(types), move(expressions), child->estimated_cardinality);
 	projection->children.push_back(move(child));
 	return move(projection);
 }

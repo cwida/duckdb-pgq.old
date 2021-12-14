@@ -3,31 +3,24 @@
 
 namespace duckdb {
 
-struct FunctionExpressionState : public ExpressionState {
-	FunctionExpressionState(Expression &expr, ExpressionExecutorState &root) : ExpressionState(expr, root) {
-	}
-
-	DataChunk arguments;
-};
-unique_ptr<ExpressionState> ExpressionExecutor::InitializeState(BoundFunctionExpression &expr,
+unique_ptr<ExpressionState> ExpressionExecutor::InitializeState(const BoundFunctionExpression &expr,
                                                                 ExpressionExecutorState &root) {
-	auto result = make_unique<FunctionExpressionState>(expr, root);
+	auto result = make_unique<ExecuteFunctionState>(expr, root);
 	for (auto &child : expr.children) {
 		result->AddChild(child.get());
 	}
 	result->Finalize();
-	if (result->types.size() > 0) {
-		result->arguments.InitializeEmpty(result->types);
+	if (expr.function.init_local_state) {
+		result->local_state = expr.function.init_local_state(expr, expr.bind_info.get());
 	}
 	return move(result);
 }
 
-void ExpressionExecutor::Execute(BoundFunctionExpression &expr, ExpressionState *state, const SelectionVector *sel,
-                                 idx_t count, Vector &result) {
-	auto &fstate = (FunctionExpressionState &)*state;
-	auto &arguments = fstate.arguments;
-	if (state->types.size() > 0) {
-		arguments.Reference(state->intermediate_chunk);
+void ExpressionExecutor::Execute(const BoundFunctionExpression &expr, ExpressionState *state,
+                                 const SelectionVector *sel, idx_t count, Vector &result) {
+	state->intermediate_chunk.Reset();
+	auto &arguments = state->intermediate_chunk;
+	if (!state->types.empty()) {
 		for (idx_t i = 0; i < expr.children.size(); i++) {
 			D_ASSERT(state->types[i] == expr.children[i]->return_type);
 			Execute(*expr.children[i], state->child_states[i].get(), sel, count, arguments.data[i]);
@@ -40,13 +33,10 @@ void ExpressionExecutor::Execute(BoundFunctionExpression &expr, ExpressionState 
 		arguments.Verify();
 	}
 	arguments.SetCardinality(count);
+	state->profiler.BeginSample();
 	expr.function.function(arguments, *state, result);
-
-	if (result.type != expr.return_type) {
-		throw TypeMismatchException(expr.return_type, result.type,
-		                            "expected function to return the former "
-		                            "but the function returned the latter");
-	}
+	state->profiler.EndSample(count);
+	D_ASSERT(result.GetType() == expr.return_type);
 }
 
 } // namespace duckdb

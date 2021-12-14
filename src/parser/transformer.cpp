@@ -6,26 +6,43 @@
 
 namespace duckdb {
 
-using namespace duckdb_libpgquery;
-
-bool Transformer::TransformParseTree(PGList *tree, vector<unique_ptr<SQLStatement>> &statements) {
+bool Transformer::TransformParseTree(duckdb_libpgquery::PGList *tree, vector<unique_ptr<SQLStatement>> &statements) {
+	int stack_check_var;
+	InitializeStackCheck(&stack_check_var);
 	for (auto entry = tree->head; entry != nullptr; entry = entry->next) {
 		SetParamCount(0);
-		auto stmt = TransformStatement((PGNode *)entry->data.ptr_value);
-		if (!stmt) {
-			statements.clear();
-			return false;
-		}
+		auto stmt = TransformStatement((duckdb_libpgquery::PGNode *)entry->data.ptr_value);
+		D_ASSERT(stmt);
 		stmt->n_param = ParamCount();
 		statements.push_back(move(stmt));
 	}
 	return true;
 }
 
-unique_ptr<SQLStatement> Transformer::TransformStatement(PGNode *stmt) {
+void Transformer::InitializeStackCheck(int *stack_check_var) {
+	this->root = stack_check_var;
+}
+
+void Transformer::StackCheck(idx_t extra_stack) {
+	if (!root) {
+		return;
+	}
+	int current_stack_var;
+	if (&current_stack_var > root) {
+		throw InternalException("Transformer::StackCheck variables are incorrectly set up");
+	}
+	idx_t stack_size = root - &current_stack_var + extra_stack;
+	if (stack_size > MAX_STACK_SIZE) {
+		throw ParserException(
+		    "Stack usage in parsing is too high: the query tree is too deep (stack usage %lld, max stack usage %lld)",
+		    stack_size, MAX_STACK_SIZE);
+	}
+}
+
+unique_ptr<SQLStatement> Transformer::TransformStatement(duckdb_libpgquery::PGNode *stmt) {
 	switch (stmt->type) {
-	case T_PGRawStmt: {
-		auto raw_stmt = (PGRawStmt *)stmt;
+	case duckdb_libpgquery::T_PGRawStmt: {
+		auto raw_stmt = (duckdb_libpgquery::PGRawStmt *)stmt;
 		auto result = TransformStatement(raw_stmt->stmt);
 		if (result) {
 			result->stmt_location = raw_stmt->stmt_location;
@@ -33,64 +50,70 @@ unique_ptr<SQLStatement> Transformer::TransformStatement(PGNode *stmt) {
 		}
 		return result;
 	}
-	case T_PGSelectStmt:
+	case duckdb_libpgquery::T_PGSelectStmt:
 		return TransformSelect(stmt);
-	case T_PGCreateStmt:
+	case duckdb_libpgquery::T_PGCreateStmt:
 		return TransformCreateTable(stmt);
-	case T_PGCreateSchemaStmt:
+	case duckdb_libpgquery::T_PGCreateSchemaStmt:
 		return TransformCreateSchema(stmt);
-	case T_PGViewStmt:
+	case duckdb_libpgquery::T_PGViewStmt:
 		return TransformCreateView(stmt);
-	case T_PGCreateSeqStmt:
+	case duckdb_libpgquery::T_PGCreateSeqStmt:
 		return TransformCreateSequence(stmt);
-	case T_PGCreatePropertyGraphStmt:
-		return TransformCreatePropertyGraph(stmt);
-	case T_PGCreateFunctionStmt:
+	case duckdb_libpgquery::T_PGCreateFunctionStmt:
 		return TransformCreateFunction(stmt);
-	case T_PGDropStmt:
+	case duckdb_libpgquery::T_PGCreatePropertyGraphStmt:
+		return TransformCreatePropertyGraph(stmt);
+	case duckdb_libpgquery::T_PGDropStmt:
 		return TransformDrop(stmt);
-	case T_PGInsertStmt:
+	case duckdb_libpgquery::T_PGInsertStmt:
 		return TransformInsert(stmt);
-	case T_PGCopyStmt:
+	case duckdb_libpgquery::T_PGCopyStmt:
 		return TransformCopy(stmt);
-	case T_PGTransactionStmt:
+	case duckdb_libpgquery::T_PGTransactionStmt:
 		return TransformTransaction(stmt);
-	case T_PGDeleteStmt:
+	case duckdb_libpgquery::T_PGDeleteStmt:
 		return TransformDelete(stmt);
-	case T_PGUpdateStmt:
+	case duckdb_libpgquery::T_PGUpdateStmt:
 		return TransformUpdate(stmt);
-	case T_PGIndexStmt:
+	case duckdb_libpgquery::T_PGIndexStmt:
 		return TransformCreateIndex(stmt);
-	case T_PGAlterTableStmt:
+	case duckdb_libpgquery::T_PGAlterTableStmt:
 		return TransformAlter(stmt);
-	case T_PGRenameStmt:
+	case duckdb_libpgquery::T_PGRenameStmt:
 		return TransformRename(stmt);
-	case T_PGPrepareStmt:
+	case duckdb_libpgquery::T_PGPrepareStmt:
 		return TransformPrepare(stmt);
-	case T_PGExecuteStmt:
+	case duckdb_libpgquery::T_PGExecuteStmt:
 		return TransformExecute(stmt);
-	case T_PGDeallocateStmt:
+	case duckdb_libpgquery::T_PGDeallocateStmt:
 		return TransformDeallocate(stmt);
-	case T_PGCreateTableAsStmt:
+	case duckdb_libpgquery::T_PGCreateTableAsStmt:
 		return TransformCreateTableAs(stmt);
-	case T_PGPragmaStmt:
+	case duckdb_libpgquery::T_PGPragmaStmt:
 		return TransformPragma(stmt);
-	case T_PGExportStmt:
+	case duckdb_libpgquery::T_PGExportStmt:
 		return TransformExport(stmt);
-	case T_PGImportStmt:
+	case duckdb_libpgquery::T_PGImportStmt:
 		return TransformImport(stmt);
-	case T_PGExplainStmt:
+	case duckdb_libpgquery::T_PGExplainStmt:
 		return TransformExplain(stmt);
-	case T_PGVacuumStmt:
+	case duckdb_libpgquery::T_PGVacuumStmt:
 		return TransformVacuum(stmt);
-	case T_PGVariableShowStmt:
+	case duckdb_libpgquery::T_PGVariableShowStmt:
 		return TransformShow(stmt);
-	case T_PGVariableShowSelectStmt:
+	case duckdb_libpgquery::T_PGVariableShowSelectStmt:
 		return TransformShowSelect(stmt);
-	case T_PGCallStmt:
+	case duckdb_libpgquery::T_PGCallStmt:
 		return TransformCall(stmt);
-	case T_PGCheckPointStmt:
+	case duckdb_libpgquery::T_PGVariableSetStmt:
+		return TransformSet(stmt);
+	case duckdb_libpgquery::T_PGCheckPointStmt:
 		return TransformCheckpoint(stmt);
+	case duckdb_libpgquery::T_PGLoadStmt:
+		return TransformLoad(stmt);
+	case duckdb_libpgquery::T_PGCreateEnumStmt:
+		return TransformCreateEnum(stmt);
 	default:
 		throw NotImplementedException(NodetypeToString(stmt->type));
 	}

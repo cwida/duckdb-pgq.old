@@ -13,38 +13,91 @@
 #include "duckdb/storage/index.hpp"
 #include "duckdb/storage/table_statistics.hpp"
 #include "duckdb/storage/block.hpp"
-#include "duckdb/storage/column_data.hpp"
 #include "duckdb/storage/table/column_segment.hpp"
-#include "duckdb/storage/table/persistent_segment.hpp"
 #include "duckdb/transaction/local_storage.hpp"
 #include "duckdb/storage/table/persistent_table_data.hpp"
+#include "duckdb/storage/table/row_group.hpp"
+#include "duckdb/common/enums/scan_options.hpp"
 
-#include <atomic>
-#include <mutex>
+#include "duckdb/common/atomic.hpp"
+#include "duckdb/common/mutex.hpp"
 
 namespace duckdb {
 class ClientContext;
 class ColumnDefinition;
 class DataTable;
+class RowGroup;
 class StorageManager;
 class TableCatalogEntry;
 class Transaction;
 class WriteAheadLog;
 class TableDataWriter;
 
-struct DataTableInfo {
-	DataTableInfo(string schema, string table) : cardinality(0), schema(move(schema)), table(move(table)) {
+class TableIndexList {
+public:
+	//! Scan the catalog set, invoking the callback method for every entry
+	template <class T>
+	void Scan(T &&callback) {
+		// lock the catalog set
+		lock_guard<mutex> lock(indexes_lock);
+		for (auto &index : indexes) {
+			if (callback(*index)) {
+				break;
+			}
+		}
 	}
 
+	void AddIndex(unique_ptr<Index> index) {
+		D_ASSERT(index);
+		lock_guard<mutex> lock(indexes_lock);
+		indexes.push_back(move(index));
+	}
+
+	void RemoveIndex(Index *index) {
+		D_ASSERT(index);
+		lock_guard<mutex> lock(indexes_lock);
+
+		for (idx_t index_idx = 0; index_idx < indexes.size(); index_idx++) {
+			auto &index_entry = indexes[index_idx];
+			if (index_entry.get() == index) {
+				indexes.erase(indexes.begin() + index_idx);
+				break;
+			}
+		}
+	}
+
+	bool Empty() {
+		lock_guard<mutex> lock(indexes_lock);
+		return indexes.empty();
+	}
+
+	idx_t Count() {
+		lock_guard<mutex> lock(indexes_lock);
+		return indexes.size();
+	}
+
+private:
+	//! Indexes associated with the current table
+	mutex indexes_lock;
+	vector<unique_ptr<Index>> indexes;
+};
+
+struct DataTableInfo {
+	DataTableInfo(DatabaseInstance &db, string schema, string table)
+	    : db(db), cardinality(0), schema(move(schema)), table(move(table)) {
+	}
+
+	//! The database instance of the table
+	DatabaseInstance &db;
 	//! The amount of elements in the table. Note that this number signifies the amount of COMMITTED entries in the
 	//! table. It can be inaccurate inside of transactions. More work is needed to properly support that.
-	std::atomic<idx_t> cardinality;
+	atomic<idx_t> cardinality;
 	// schema of the table
 	string schema;
 	// name of the table
 	string table;
-	//! Indexes associated with the current table
-	vector<unique_ptr<Index>> indexes;
+
+	TableIndexList indexes;
 
 	bool IsTemporary() {
 		return schema == TEMP_SCHEMA;
@@ -52,7 +105,10 @@ struct DataTableInfo {
 };
 
 struct ParallelTableScanState {
-	idx_t current_row;
+	RowGroup *current_row_group;
+	idx_t vector_index;
+	idx_t max_row;
+	LocalScanState local_state;
 	bool transaction_local_data;
 };
 
@@ -60,23 +116,27 @@ struct ParallelTableScanState {
 class DataTable {
 public:
 	//! Constructs a new data table from an (optional) set of persistent segments
-	DataTable(DatabaseInstance &db, string schema, string table, vector<LogicalType> types,
-	          unique_ptr<PersistentTableData> data = nullptr);
+	DataTable(DatabaseInstance &db, const string &schema, const string &table,
+	          vector<ColumnDefinition> column_definitions_p, unique_ptr<PersistentTableData> data = nullptr);
 	//! Constructs a DataTable as a delta on an existing data table with a newly added column
 	DataTable(ClientContext &context, DataTable &parent, ColumnDefinition &new_column, Expression *default_value);
 	//! Constructs a DataTable as a delta on an existing data table but with one column removed
 	DataTable(ClientContext &context, DataTable &parent, idx_t removed_column);
 	//! Constructs a DataTable as a delta on an existing data table but with one column changed type
-	DataTable(ClientContext &context, DataTable &parent, idx_t changed_idx, LogicalType target_type,
+	DataTable(ClientContext &context, DataTable &parent, idx_t changed_idx, const LogicalType &target_type,
 	          vector<column_t> bound_columns, Expression &cast_expr);
 
 	shared_ptr<DataTableInfo> info;
-	//! Types managed by data table
-	vector<LogicalType> types;
+
+	vector<ColumnDefinition> column_definitions;
+
 	//! A reference to the database instance
 	DatabaseInstance &db;
 
 public:
+	//! Returns a list of types of the table
+	vector<LogicalType> GetTypes();
+
 	void InitializeScan(TableScanState &state, const vector<column_t> &column_ids,
 	                    TableFilterSet *table_filter = nullptr);
 	void InitializeScan(Transaction &transaction, TableScanState &state, const vector<column_t> &column_ids,
@@ -84,7 +144,7 @@ public:
 
 	//! Returns the maximum amount of threads that should be assigned to scan this data table
 	idx_t MaxThreads(ClientContext &context);
-	void InitializeParallelScan(ParallelTableScanState &state);
+	void InitializeParallelScan(ClientContext &context, ParallelTableScanState &state);
 	bool NextParallelScan(ClientContext &context, ParallelTableScanState &state, TableScanState &scan_state,
 	                      const vector<column_t> &column_ids);
 
@@ -95,19 +155,30 @@ public:
 	void Scan(Transaction &transaction, DataChunk &result, TableScanState &state, vector<column_t> &column_ids);
 
 	//! Fetch data from the specific row identifiers from the base table
-	void Fetch(Transaction &transaction, DataChunk &result, vector<column_t> &column_ids, Vector &row_ids,
+	void Fetch(Transaction &transaction, DataChunk &result, const vector<column_t> &column_ids, Vector &row_ids,
 	           idx_t fetch_count, ColumnFetchState &state);
 
 	//! Append a DataChunk to the table. Throws an exception if the columns don't match the tables' columns.
 	void Append(TableCatalogEntry &table, ClientContext &context, DataChunk &chunk);
 	//! Delete the entries with the specified row identifier from the table
-	void Delete(TableCatalogEntry &table, ClientContext &context, Vector &row_ids, idx_t count);
+	idx_t Delete(TableCatalogEntry &table, ClientContext &context, Vector &row_ids, idx_t count);
 	//! Update the entries with the specified row identifier from the table
-	void Update(TableCatalogEntry &table, ClientContext &context, Vector &row_ids, vector<column_t> &column_ids,
+	void Update(TableCatalogEntry &table, ClientContext &context, Vector &row_ids, const vector<column_t> &column_ids,
 	            DataChunk &data);
+	//! Update a single (sub-)column along a column path
+	//! The column_path vector is a *path* towards a column within the table
+	//! i.e. if we have a table with a single column S STRUCT(A INT, B INT)
+	//! and we update the validity mask of "S.B"
+	//! the column path is:
+	//! 0 (first column of table)
+	//! -> 1 (second subcolumn of struct)
+	//! -> 0 (first subcolumn of INT)
+	//! This method should only be used from the WAL replay. It does not verify update constraints.
+	void UpdateColumn(TableCatalogEntry &table, ClientContext &context, Vector &row_ids,
+	                  const vector<column_t> &column_path, DataChunk &updates);
 
 	//! Add an index to the DataTable
-	void AddIndex(unique_ptr<Index> index, vector<unique_ptr<Expression>> &expressions);
+	void AddIndex(unique_ptr<Index> index, const vector<unique_ptr<Expression>> &expressions);
 
 	//! Begin appending structs to this table, obtaining necessary locks, etc
 	void InitializeAppend(Transaction &transaction, TableAppendState &state, idx_t append_count);
@@ -122,7 +193,7 @@ public:
 	void RevertAppend(idx_t start_row, idx_t count);
 	void RevertAppendInternal(idx_t start_row, idx_t count);
 
-	void ScanTableSegment(idx_t start_row, idx_t count, std::function<void(DataChunk &chunk)> function);
+	void ScanTableSegment(idx_t start_row, idx_t count, const std::function<void(DataChunk &chunk)> &function);
 
 	//! Append a chunk with the row ids [row_start, ..., row_start + chunk.size()] to all indexes of the table, returns
 	//! whether or not the append succeeded
@@ -141,44 +212,47 @@ public:
 	unique_ptr<BaseStatistics> GetStatistics(ClientContext &context, column_t column_id);
 
 	//! Checkpoint the table to the specified table data writer
-	void Checkpoint(TableDataWriter &writer);
-	void CheckpointDeletes(TableDataWriter &writer);
+	BlockPointer Checkpoint(TableDataWriter &writer);
 	void CommitDropTable();
 	void CommitDropColumn(idx_t index);
+
+	idx_t GetTotalRows();
+
+	//! Appends an empty row_group to the table
+	void AppendRowGroup(idx_t start_row);
+
+	vector<vector<Value>> GetStorageInfo();
 
 private:
 	//! Verify constraints with a chunk from the Append containing all columns of the table
 	void VerifyAppendConstraints(TableCatalogEntry &table, DataChunk &chunk);
 	//! Verify constraints with a chunk from the Update containing only the specified column_ids
-	void VerifyUpdateConstraints(TableCatalogEntry &table, DataChunk &chunk, vector<column_t> &column_ids);
+	void VerifyUpdateConstraints(TableCatalogEntry &table, DataChunk &chunk, const vector<column_t> &column_ids);
 
-	void InitializeScanWithOffset(TableScanState &state, const vector<column_t> &column_ids,
-	                              TableFilterSet *table_filters, idx_t start_row, idx_t end_row);
-	bool CheckZonemap(TableScanState &state, TableFilterSet *table_filters, idx_t &current_row);
-	bool ScanBaseTable(Transaction &transaction, DataChunk &result, TableScanState &state,
-	                   const vector<column_t> &column_ids, idx_t &current_row, idx_t max_row);
-	bool ScanCreateIndex(CreateIndexScanState &state, const vector<column_t> &column_ids, DataChunk &result,
-	                     idx_t &current_row, idx_t max_row);
-
-	//! Figure out which of the row ids to use for the given transaction by looking at inserted/deleted data. Returns
-	//! the amount of rows to use and places the row_ids in the result_rows array.
-	idx_t FetchRows(Transaction &transaction, Vector &row_identifiers, idx_t fetch_count, row_t result_rows[]);
+	void InitializeScanWithOffset(TableScanState &state, const vector<column_t> &column_ids, idx_t start_row,
+	                              idx_t end_row);
+	bool InitializeScanInRowGroup(TableScanState &state, const vector<column_t> &column_ids,
+	                              TableFilterSet *table_filters, RowGroup *row_group, idx_t vector_index,
+	                              idx_t max_row);
+	bool ScanBaseTable(Transaction &transaction, DataChunk &result, TableScanState &state);
 
 	//! The CreateIndexScan is a special scan that is used to create an index on the table, it keeps locks on the table
 	void InitializeCreateIndexScan(CreateIndexScanState &state, const vector<column_t> &column_ids);
-	void CreateIndexScan(CreateIndexScanState &structure, const vector<column_t> &column_ids, DataChunk &result);
+	bool ScanCreateIndex(CreateIndexScanState &state, DataChunk &result, TableScanType type);
 
 private:
 	//! Lock for appending entries to the table
-	std::mutex append_lock;
-	//! The segment tree holding the persistent versions
-	shared_ptr<SegmentTree> versions;
+	mutex append_lock;
 	//! The number of rows in the table
-	idx_t total_rows;
-	//! The physical columns of the table
-	vector<shared_ptr<ColumnData>> columns;
+	atomic<idx_t> total_rows;
+	//! The segment trees holding the various row_groups of the table
+	shared_ptr<SegmentTree> row_groups;
+	//! Column statistics
+	vector<unique_ptr<BaseStatistics>> column_stats;
+	//! The statistics lock
+	mutex stats_lock;
 	//! Whether or not the data table is the root DataTable for this table; the root DataTable is the newest version
 	//! that can be appended to
-	bool is_root;
+	atomic<bool> is_root;
 };
 } // namespace duckdb

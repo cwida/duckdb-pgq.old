@@ -52,9 +52,10 @@ public:
 	//! Fetches a DataChunk of normalized (flat) vectors from the query result.
 	//! Returns nullptr if there are no more results to fetch.
 	DUCKDB_API virtual unique_ptr<DataChunk> Fetch();
-	//! Fetches a DataChunk from the query result. The vector types
+	//! Fetches a DataChunk from the query result. The vectors are not normalized and hence any vector types can be
+	//! returned.
 	DUCKDB_API virtual unique_ptr<DataChunk> FetchRaw() = 0;
-	// Converts the QueryResult to a string
+	//! Converts the QueryResult to a string
 	DUCKDB_API virtual string ToString() = 0;
 	//! Prints the QueryResult to the console
 	DUCKDB_API void Print();
@@ -64,6 +65,19 @@ public:
 
 	DUCKDB_API idx_t ColumnCount() {
 		return types.size();
+	}
+
+	DUCKDB_API bool TryFetch(unique_ptr<DataChunk> &result, string &error) {
+		try {
+			result = Fetch();
+			return success;
+		} catch (std::exception &ex) {
+			error = ex.what();
+			return false;
+		} catch (...) {
+			error = "Unknown error in Fetch";
+			return false;
+		}
 	}
 
 	DUCKDB_API void ToArrowSchema(ArrowSchema *out_array);
@@ -76,7 +90,7 @@ private:
 	class QueryResultIterator;
 	class QueryResultRow {
 	public:
-		QueryResultRow(QueryResultIterator &iterator) : iterator(iterator), row(0) {
+		explicit QueryResultRow(QueryResultIterator &iterator) : iterator(iterator), row(0) {
 		}
 
 		QueryResultIterator &iterator;
@@ -90,7 +104,7 @@ private:
 	//! The row-based query result iterator. Invoking the
 	class QueryResultIterator {
 	public:
-		QueryResultIterator(QueryResult *result) : current_row(*this), result(result), row_idx(0) {
+		explicit QueryResultIterator(QueryResult *result) : current_row(*this), result(result), row_idx(0) {
 			if (result) {
 				result->iterator_chunk = result->Fetch();
 			}

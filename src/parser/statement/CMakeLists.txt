@@ -11,10 +11,12 @@ add_library_unity(
   explain_statement.cpp
   export_statement.cpp
   insert_statement.cpp
+  load_statement.cpp
   pragma_statement.cpp
   prepare_statement.cpp
   relation_statement.cpp
   select_statement.cpp
+  set_statement.cpp
   show_statement.cpp
   transaction_statement.cpp
   update_statement.cpp

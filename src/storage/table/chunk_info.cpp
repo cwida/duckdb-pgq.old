@@ -4,23 +4,39 @@
 
 namespace duckdb {
 
-static bool UseVersion(transaction_t start_time, transaction_t transaction_id, transaction_t id) {
-	return id < start_time || id == transaction_id;
-}
+struct TransactionVersionOperator {
+	static bool UseInsertedVersion(transaction_t start_time, transaction_t transaction_id, transaction_t id) {
+		return id < start_time || id == transaction_id;
+	}
+
+	static bool UseDeletedVersion(transaction_t start_time, transaction_t transaction_id, transaction_t id) {
+		return !UseInsertedVersion(start_time, transaction_id, id);
+	}
+};
+
+struct CommittedVersionOperator {
+	static bool UseInsertedVersion(transaction_t start_time, transaction_t transaction_id, transaction_t id) {
+		return true;
+	}
+
+	static bool UseDeletedVersion(transaction_t min_start_time, transaction_t min_transaction_id, transaction_t id) {
+		return (id >= min_start_time && id < TRANSACTION_ID_START) || (id >= min_transaction_id);
+	}
+};
 
 static bool UseVersion(Transaction &transaction, transaction_t id) {
-	return UseVersion(transaction.start_time, transaction.transaction_id, id);
+	return TransactionVersionOperator::UseInsertedVersion(transaction.start_time, transaction.transaction_id, id);
 }
 
-unique_ptr<ChunkInfo> ChunkInfo::Deserialize(MorselInfo &morsel, Deserializer &source) {
+unique_ptr<ChunkInfo> ChunkInfo::Deserialize(Deserializer &source) {
 	auto type = source.Read<ChunkInfoType>();
 	switch (type) {
 	case ChunkInfoType::EMPTY_INFO:
 		return nullptr;
 	case ChunkInfoType::CONSTANT_INFO:
-		return ChunkConstantInfo::Deserialize(morsel, source);
+		return ChunkConstantInfo::Deserialize(source);
 	case ChunkInfoType::VECTOR_INFO:
-		return ChunkVectorInfo::Deserialize(morsel, source);
+		return ChunkVectorInfo::Deserialize(source);
 	default:
 		throw SerializationException("Could not deserialize Chunk Info Type: unrecognized type");
 	}
@@ -29,15 +45,28 @@ unique_ptr<ChunkInfo> ChunkInfo::Deserialize(MorselInfo &morsel, Deserializer &s
 //===--------------------------------------------------------------------===//
 // Constant info
 //===--------------------------------------------------------------------===//
-ChunkConstantInfo::ChunkConstantInfo(idx_t start, MorselInfo &morsel)
-    : ChunkInfo(start, morsel, ChunkInfoType::CONSTANT_INFO), insert_id(0), delete_id(NOT_DELETED_ID) {
+ChunkConstantInfo::ChunkConstantInfo(idx_t start)
+    : ChunkInfo(start, ChunkInfoType::CONSTANT_INFO), insert_id(0), delete_id(NOT_DELETED_ID) {
 }
 
-idx_t ChunkConstantInfo::GetSelVector(Transaction &transaction, SelectionVector &sel_vector, idx_t max_count) {
-	if (UseVersion(transaction, insert_id) && !UseVersion(transaction, delete_id)) {
+template <class OP>
+idx_t ChunkConstantInfo::TemplatedGetSelVector(transaction_t start_time, transaction_t transaction_id,
+                                               SelectionVector &sel_vector, idx_t max_count) {
+	if (OP::UseInsertedVersion(start_time, transaction_id, insert_id) &&
+	    OP::UseDeletedVersion(start_time, transaction_id, delete_id)) {
 		return max_count;
 	}
 	return 0;
+}
+
+idx_t ChunkConstantInfo::GetSelVector(Transaction &transaction, SelectionVector &sel_vector, idx_t max_count) {
+	return TemplatedGetSelVector<TransactionVersionOperator>(transaction.start_time, transaction.transaction_id,
+	                                                         sel_vector, max_count);
+}
+
+idx_t ChunkConstantInfo::GetCommittedSelVector(transaction_t min_start_id, transaction_t min_transaction_id,
+                                               SelectionVector &sel_vector, idx_t max_count) {
+	return TemplatedGetSelVector<CommittedVersionOperator>(min_start_id, min_transaction_id, sel_vector, max_count);
 }
 
 bool ChunkConstantInfo::Fetch(Transaction &transaction, row_t row) {
@@ -60,10 +89,10 @@ void ChunkConstantInfo::Serialize(Serializer &serializer) {
 	serializer.Write<idx_t>(start);
 }
 
-unique_ptr<ChunkInfo> ChunkConstantInfo::Deserialize(MorselInfo &morsel, Deserializer &source) {
+unique_ptr<ChunkInfo> ChunkConstantInfo::Deserialize(Deserializer &source) {
 	auto start = source.Read<idx_t>();
 
-	auto info = make_unique<ChunkConstantInfo>(start, morsel);
+	auto info = make_unique<ChunkConstantInfo>(start);
 	info->insert_id = 0;
 	info->delete_id = 0;
 	return move(info);
@@ -72,50 +101,47 @@ unique_ptr<ChunkInfo> ChunkConstantInfo::Deserialize(MorselInfo &morsel, Deseria
 //===--------------------------------------------------------------------===//
 // Vector info
 //===--------------------------------------------------------------------===//
-ChunkVectorInfo::ChunkVectorInfo(idx_t start, MorselInfo &morsel)
-    : ChunkInfo(start, morsel, ChunkInfoType::VECTOR_INFO), insert_id(0), same_inserted_id(true), any_deleted(false) {
+ChunkVectorInfo::ChunkVectorInfo(idx_t start)
+    : ChunkInfo(start, ChunkInfoType::VECTOR_INFO), insert_id(0), same_inserted_id(true), any_deleted(false) {
 	for (idx_t i = 0; i < STANDARD_VECTOR_SIZE; i++) {
 		inserted[i] = 0;
 		deleted[i] = NOT_DELETED_ID;
 	}
 }
 
-idx_t ChunkVectorInfo::GetSelVector(Transaction &transaction, SelectionVector &sel_vector, idx_t max_count) {
-	return GetSelVector(transaction.start_time, transaction.transaction_id, sel_vector, max_count);
-}
-
-idx_t ChunkVectorInfo::GetSelVector(transaction_t start_time, transaction_t transaction_id, SelectionVector &sel_vector,
-                                    idx_t max_count) {
+template <class OP>
+idx_t ChunkVectorInfo::TemplatedGetSelVector(transaction_t start_time, transaction_t transaction_id,
+                                             SelectionVector &sel_vector, idx_t max_count) {
 	idx_t count = 0;
 	if (same_inserted_id && !any_deleted) {
 		// all tuples have the same inserted id: and no tuples were deleted
-		if (UseVersion(start_time, transaction_id, insert_id)) {
+		if (OP::UseInsertedVersion(start_time, transaction_id, insert_id)) {
 			return max_count;
 		} else {
 			return 0;
 		}
 	} else if (same_inserted_id) {
-		if (!UseVersion(start_time, transaction_id, insert_id)) {
+		if (!OP::UseInsertedVersion(start_time, transaction_id, insert_id)) {
 			return 0;
 		}
 		// have to check deleted flag
 		for (idx_t i = 0; i < max_count; i++) {
-			if (!UseVersion(start_time, transaction_id, deleted[i])) {
+			if (OP::UseDeletedVersion(start_time, transaction_id, deleted[i])) {
 				sel_vector.set_index(count++, i);
 			}
 		}
 	} else if (!any_deleted) {
 		// have to check inserted flag
 		for (idx_t i = 0; i < max_count; i++) {
-			if (UseVersion(start_time, transaction_id, inserted[i])) {
+			if (OP::UseInsertedVersion(start_time, transaction_id, inserted[i])) {
 				sel_vector.set_index(count++, i);
 			}
 		}
 	} else {
 		// have to check both flags
 		for (idx_t i = 0; i < max_count; i++) {
-			if (UseVersion(start_time, transaction_id, inserted[i]) &&
-			    !UseVersion(start_time, transaction_id, deleted[i])) {
+			if (OP::UseInsertedVersion(start_time, transaction_id, inserted[i]) &&
+			    OP::UseDeletedVersion(start_time, transaction_id, deleted[i])) {
 				sel_vector.set_index(count++, i);
 			}
 		}
@@ -123,15 +149,33 @@ idx_t ChunkVectorInfo::GetSelVector(transaction_t start_time, transaction_t tran
 	return count;
 }
 
+idx_t ChunkVectorInfo::GetSelVector(transaction_t start_time, transaction_t transaction_id, SelectionVector &sel_vector,
+                                    idx_t max_count) {
+	return TemplatedGetSelVector<TransactionVersionOperator>(start_time, transaction_id, sel_vector, max_count);
+}
+
+idx_t ChunkVectorInfo::GetCommittedSelVector(transaction_t min_start_id, transaction_t min_transaction_id,
+                                             SelectionVector &sel_vector, idx_t max_count) {
+	return TemplatedGetSelVector<CommittedVersionOperator>(min_start_id, min_transaction_id, sel_vector, max_count);
+}
+
+idx_t ChunkVectorInfo::GetSelVector(Transaction &transaction, SelectionVector &sel_vector, idx_t max_count) {
+	return GetSelVector(transaction.start_time, transaction.transaction_id, sel_vector, max_count);
+}
+
 bool ChunkVectorInfo::Fetch(Transaction &transaction, row_t row) {
 	return UseVersion(transaction, inserted[row]) && !UseVersion(transaction, deleted[row]);
 }
 
-void ChunkVectorInfo::Delete(Transaction &transaction, row_t rows[], idx_t count) {
+idx_t ChunkVectorInfo::Delete(Transaction &transaction, row_t rows[], idx_t count) {
 	any_deleted = true;
 
-	// first check the chunk for conflicts
+	idx_t deleted_tuples = 0;
 	for (idx_t i = 0; i < count; i++) {
+		if (deleted[rows[i]] == transaction.transaction_id) {
+			continue;
+		}
+		// first check the chunk for conflicts
 		if (deleted[rows[i]] != NOT_DELETED_ID) {
 			// tuple was already deleted by another transaction
 			throw TransactionException("Conflict on tuple deletion!");
@@ -139,11 +183,11 @@ void ChunkVectorInfo::Delete(Transaction &transaction, row_t rows[], idx_t count
 		if (inserted[rows[i]] >= TRANSACTION_ID_START) {
 			throw TransactionException("Deleting non-committed tuples is not supported (for now...)");
 		}
-	}
-	// after verifying that there are no conflicts we mark the tuples as deleted
-	for (idx_t i = 0; i < count; i++) {
+		// after verifying that there are no conflicts we mark the tuple as deleted
 		deleted[rows[i]] = transaction.transaction_id;
+		deleted_tuples++;
 	}
+	return deleted_tuples;
 }
 
 void ChunkVectorInfo::CommitDelete(transaction_t commit_id, row_t rows[], idx_t count) {
@@ -202,10 +246,10 @@ void ChunkVectorInfo::Serialize(Serializer &serializer) {
 	serializer.WriteData((data_ptr_t)deleted_tuples, sizeof(bool) * STANDARD_VECTOR_SIZE);
 }
 
-unique_ptr<ChunkInfo> ChunkVectorInfo::Deserialize(MorselInfo &morsel, Deserializer &source) {
+unique_ptr<ChunkInfo> ChunkVectorInfo::Deserialize(Deserializer &source) {
 	auto start = source.Read<idx_t>();
 
-	auto result = make_unique<ChunkVectorInfo>(start, morsel);
+	auto result = make_unique<ChunkVectorInfo>(start);
 	result->any_deleted = true;
 	bool deleted_tuples[STANDARD_VECTOR_SIZE];
 	source.ReadData((data_ptr_t)deleted_tuples, sizeof(bool) * STANDARD_VECTOR_SIZE);

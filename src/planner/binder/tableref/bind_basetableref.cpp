@@ -9,6 +9,9 @@
 #include "duckdb/planner/operator/logical_get.hpp"
 #include "duckdb/parser/statement/select_statement.hpp"
 #include "duckdb/function/table/table_scan.hpp"
+#include "duckdb/common/string_util.hpp"
+#include "duckdb/parser/tableref/table_function_ref.hpp"
+#include "duckdb/main/config.hpp"
 
 namespace duckdb {
 
@@ -58,8 +61,24 @@ unique_ptr<BoundTableRef> Binder::Bind(BaseTableRef &ref) {
 	}
 	// not a CTE
 	// extract a table or view from the catalog
-	auto table_or_view = Catalog::GetCatalog(context).GetEntry(context, CatalogType::TABLE_ENTRY, ref.schema_name,
-	                                                           ref.table_name, false, error_context);
+	auto table_or_view =
+	    Catalog::GetCatalog(context).GetEntry(context, CatalogType::TABLE_ENTRY, ref.schema_name, ref.table_name,
+	                                          ref.schema_name.empty() ? true : false, error_context);
+	if (!table_or_view) {
+		// table could not be found: try to bind a replacement scan
+		auto &config = DBConfig::GetConfig(context);
+		for (auto &scan : config.replacement_scans) {
+			auto replacement_function = scan.function(ref.table_name, scan.data);
+			if (replacement_function) {
+				replacement_function->alias = ref.alias.empty() ? ref.table_name : ref.alias;
+				replacement_function->column_name_alias = ref.column_name_alias;
+				return Bind(*replacement_function);
+			}
+		}
+		// could not find an alternative: bind again to get the error
+		table_or_view = Catalog::GetCatalog(context).GetEntry(context, CatalogType::TABLE_ENTRY, ref.schema_name,
+		                                                      ref.table_name, false, error_context);
+	}
 	switch (table_or_view->type) {
 	case CatalogType::TABLE_ENTRY: {
 		// base table: create the BoundBaseTableRef node
@@ -79,7 +98,7 @@ unique_ptr<BoundTableRef> Binder::Bind(BaseTableRef &ref) {
 
 		auto logical_get =
 		    make_unique<LogicalGet>(table_index, scan_function, move(bind_data), table_types, table_names);
-		bind_context.AddBaseTable(table_index, alias, move(table_names), move(table_types), *logical_get);
+		bind_context.AddBaseTable(table_index, alias, table_names, table_types, *logical_get);
 		return make_unique_base<BoundTableRef, BoundBaseTableRef>(table, move(logical_get));
 	}
 	case CatalogType::VIEW_ENTRY: {
@@ -89,13 +108,14 @@ unique_ptr<BoundTableRef> Binder::Bind(BaseTableRef &ref) {
 		// defined for this binder so there are no collisions between the CTEs defined
 		// for the view and for the current query
 		bool inherit_ctes = false;
-		Binder view_binder(context, this, inherit_ctes);
+		auto view_binder = Binder::CreateBinder(context, this, inherit_ctes);
+		view_binder->can_contain_nulls = true;
 		SubqueryRef subquery(unique_ptr_cast<SQLStatement, SelectStatement>(view_catalog_entry->query->Copy()));
 		subquery.alias = ref.alias.empty() ? ref.table_name : ref.alias;
 		subquery.column_name_alias =
 		    BindContext::AliasColumnNames(subquery.alias, view_catalog_entry->aliases, ref.column_name_alias);
 		// bind the child subquery
-		auto bound_child = view_binder.Bind(subquery);
+		auto bound_child = view_binder->Bind(subquery);
 		D_ASSERT(bound_child->type == TableReferenceType::SUBQUERY);
 		// verify that the types and names match up with the expected types and names
 		auto &bound_subquery = (BoundSubqueryRef &)*bound_child;

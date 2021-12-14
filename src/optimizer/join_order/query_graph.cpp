@@ -9,6 +9,7 @@ namespace duckdb {
 
 using QueryEdge = QueryGraph::QueryEdge;
 
+// LCOV_EXCL_START
 static string QueryEdgeToString(const QueryEdge *info, vector<idx_t> prefix) {
 	string result = "";
 	string source = "[";
@@ -30,6 +31,11 @@ static string QueryEdgeToString(const QueryEdge *info, vector<idx_t> prefix) {
 string QueryGraph::ToString() const {
 	return QueryEdgeToString(&root, {});
 }
+
+void QueryGraph::Print() {
+	Printer::Print(ToString());
+}
+// LCOV_EXCL_STOP
 
 QueryEdge *QueryGraph::GetQueryEdge(JoinRelationSet *left) {
 	D_ASSERT(left && left->count > 0);
@@ -71,7 +77,7 @@ void QueryGraph::CreateEdge(JoinRelationSet *left, JoinRelationSet *right, Filte
 	info->neighbors.push_back(move(n));
 }
 
-void QueryGraph::EnumerateNeighbors(JoinRelationSet *node, std::function<bool(NeighborInfo *)> callback) {
+void QueryGraph::EnumerateNeighbors(JoinRelationSet *node, const std::function<bool(NeighborInfo *)> &callback) {
 	for (idx_t j = 0; j < node->count; j++) {
 		QueryEdge *info = &root;
 		for (idx_t i = j; i < node->count; i++) {
@@ -120,10 +126,6 @@ NeighborInfo *QueryGraph::GetConnection(JoinRelationSet *node, JoinRelationSet *
 		return false;
 	});
 	return connection;
-}
-
-void QueryGraph::Print() {
-	Printer::Print(ToString());
 }
 
 } // namespace duckdb

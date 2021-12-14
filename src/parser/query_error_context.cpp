@@ -3,7 +3,7 @@
 #include "duckdb/common/string_util.hpp"
 #include "duckdb/common/to_string.hpp"
 
-#include "utf8proc_wrapper.h"
+#include "utf8proc_wrapper.hpp"
 
 namespace duckdb {
 
@@ -39,23 +39,23 @@ string QueryErrorContext::Format(const string &query, const string &error_messag
 	idx_t len = end_pos - start_pos;
 	vector<idx_t> render_widths;
 	vector<idx_t> positions;
-	if (utf8proc_is_valid(buf, len)) {
+	if (Utf8Proc::IsValid(buf, len)) {
 		// for unicode awareness, we traverse the graphemes of the current line and keep track of their render widths
 		// and of their position in the string
 		for (idx_t cpos = 0; cpos < len;) {
-			auto char_render_width = utf8proc_render_width(buf, len, cpos);
+			auto char_render_width = Utf8Proc::RenderWidth(buf, len, cpos);
 			positions.push_back(cpos);
 			render_widths.push_back(char_render_width);
-			cpos = utf8proc_next_grapheme_cluster(buf, len, cpos);
+			cpos = Utf8Proc::NextGraphemeCluster(buf, len, cpos);
 		}
-	} else {
+	} else { // LCOV_EXCL_START
 		// invalid utf-8, we can't do much at this point
 		// we just assume every character is a character, and every character has a render width of 1
 		for (idx_t cpos = 0; cpos < len; cpos++) {
 			positions.push_back(cpos);
 			render_widths.push_back(1);
 		}
-	}
+	} // LCOV_EXCL_STOP
 	// now we want to find the (unicode aware) start and end position
 	idx_t epos = 0;
 	// start by finding the error location inside the array
@@ -109,8 +109,8 @@ string QueryErrorContext::Format(const string &query, const string &error_messag
 	return result;
 }
 
-string QueryErrorContext::FormatErrorRecursive(string msg, vector<ExceptionFormatValue> &values) {
-	string error_message = ExceptionFormatValue::Format(msg, values);
+string QueryErrorContext::FormatErrorRecursive(const string &msg, vector<ExceptionFormatValue> &values) {
+	string error_message = values.empty() ? msg : ExceptionFormatValue::Format(msg, values);
 	if (!statement || query_location >= statement->query.size()) {
 		// no statement provided or query location out of range
 		return error_message;

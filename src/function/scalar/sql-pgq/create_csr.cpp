@@ -35,7 +35,7 @@ struct CsrBindData : public FunctionData {
 
 static void csr_initialize_vertex_or_edge(ClientContext &context, int32_t id, int64_t v_size, int64_t e_size = 0,
                                           bool is_vertex = true) {
-	Vector result;
+	// Vector result;
 	// auto csr = ((u_int64_t) id) < context.csr_list.size() ? context.csr_list[id] : make_unique<Csr>();
 	auto csr = ((u_int64_t)id) < context.csr_list.size() ? move(context.csr_list[id]) : make_unique<Csr>();
 	// unique_pte here ?
@@ -105,7 +105,7 @@ static void create_csr_vertex_function(DataChunk &args, ExpressionState &state, 
 	}
 	auto csr = move(info.context.csr_list[info.id]);
 
-	BinaryExecutor::Execute<int64_t, int64_t, int64_t, true>(args.data[2], args.data[3], result, args.size(),
+	BinaryExecutor::Execute<int64_t, int64_t, int64_t>(args.data[2], args.data[3], result, args.size(),
 	                                                         [&](int64_t src, int64_t cnt) {
 		                                                         int64_t edge_count = 0;
 
@@ -147,7 +147,7 @@ static void create_csr_edge_function(DataChunk &args, ExpressionState &state, Ve
 
 	auto csr = move(info.context.csr_list[info.id]);
 
-	BinaryExecutor::Execute<int64_t, int64_t, int32_t, true>(args.data[3], args.data[4], result, args.size(),
+	BinaryExecutor::Execute<int64_t, int64_t, int32_t>(args.data[3], args.data[4], result, args.size(),
 	                                                         [&](int64_t src, int64_t dst) {
 		                                                         auto pos = ++csr->v[src + 1];
 		                                                         csr->e[(int64_t)pos - 1] = dst;

@@ -7,7 +7,7 @@
 namespace duckdb {
 
 ConstantExpression::ConstantExpression(Value val)
-    : ParsedExpression(ExpressionType::VALUE_CONSTANT, ExpressionClass::CONSTANT), value(val) {
+    : ParsedExpression(ExpressionType::VALUE_CONSTANT, ExpressionClass::CONSTANT), value(move(val)) {
 }
 
 string ConstantExpression::ToString() const {
@@ -15,7 +15,7 @@ string ConstantExpression::ToString() const {
 }
 
 bool ConstantExpression::Equals(const ConstantExpression *a, const ConstantExpression *b) {
-	return a->value == b->value;
+	return !ValueOperations::DistinctFrom(a->value, b->value);
 }
 
 hash_t ConstantExpression::Hash() const {
@@ -35,7 +35,7 @@ void ConstantExpression::Serialize(Serializer &serializer) {
 
 unique_ptr<ParsedExpression> ConstantExpression::Deserialize(ExpressionType type, Deserializer &source) {
 	Value value = Value::Deserialize(source);
-	return make_unique<ConstantExpression>(value);
+	return make_unique<ConstantExpression>(move(value));
 }
 
 } // namespace duckdb

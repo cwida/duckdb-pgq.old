@@ -39,13 +39,16 @@ unique_ptr<QueryNode> AggregateRelation::GetQueryNode() {
 	}
 	D_ASSERT(result->type == QueryNodeType::SELECT_NODE);
 	auto &select_node = (SelectNode &)*result;
-	if (groups.size() > 0) {
+	if (!groups.empty()) {
 		// explicit groups provided: use standard handling
 		select_node.aggregate_handling = AggregateHandling::STANDARD_HANDLING;
-		select_node.groups.clear();
-		for (auto &group : groups) {
-			select_node.groups.push_back(group->Copy());
+		select_node.groups.group_expressions.clear();
+		GroupingSet grouping_set;
+		for (idx_t i = 0; i < groups.size(); i++) {
+			select_node.groups.group_expressions.push_back(groups[i]->Copy());
+			grouping_set.insert(i);
 		}
+		select_node.groups.grouping_sets.push_back(move(grouping_set));
 	} else {
 		// no groups provided: automatically figure out groups (if any)
 		select_node.aggregate_handling = AggregateHandling::FORCE_AGGREGATES;

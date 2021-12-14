@@ -89,7 +89,7 @@ idx_t ContainsGeneric(const unsigned char *haystack, idx_t haystack_size, const 
 				return base_offset + offset;
 			}
 		}
-		if (offset > haystack_size - needle_size) {
+		if (offset >= haystack_size - needle_size) {
 			return INVALID_INDEX;
 		}
 		sums_diff -= haystack[offset];
@@ -155,7 +155,7 @@ ScalarFunction ContainsFun::GetFunction() {
 	return ScalarFunction("contains",                                   // name of the function
 	                      {LogicalType::VARCHAR, LogicalType::VARCHAR}, // argument list
 	                      LogicalType::BOOLEAN,                         // return type
-	                      ScalarFunction::BinaryFunction<string_t, string_t, bool, ContainsOperator, true>);
+	                      ScalarFunction::BinaryFunction<string_t, string_t, bool, ContainsOperator>);
 }
 
 void ContainsFun::RegisterFunction(BuiltinFunctions &set) {

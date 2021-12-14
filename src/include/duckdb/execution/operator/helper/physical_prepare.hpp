@@ -16,8 +16,8 @@ namespace duckdb {
 
 class PhysicalPrepare : public PhysicalOperator {
 public:
-	PhysicalPrepare(string name, shared_ptr<PreparedStatementData> prepared)
-	    : PhysicalOperator(PhysicalOperatorType::PREPARE, {LogicalType::BOOLEAN}), name(name),
+	PhysicalPrepare(string name, shared_ptr<PreparedStatementData> prepared, idx_t estimated_cardinality)
+	    : PhysicalOperator(PhysicalOperatorType::PREPARE, {LogicalType::BOOLEAN}, estimated_cardinality), name(name),
 	      prepared(move(prepared)) {
 	}
 
@@ -25,7 +25,9 @@ public:
 	shared_ptr<PreparedStatementData> prepared;
 
 public:
-	void GetChunkInternal(ExecutionContext &context, DataChunk &chunk, PhysicalOperatorState *state) override;
+	// Source interface
+	void GetData(ExecutionContext &context, DataChunk &chunk, GlobalSourceState &gstate,
+	             LocalSourceState &lstate) const override;
 };
 
 } // namespace duckdb

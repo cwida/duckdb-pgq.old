@@ -33,7 +33,7 @@ public:
 	}
 	void ResetBindings() {
 		this->bound_aggregate = false;
-		this->bound_columns = false;
+		this->bound_columns.clear();
 	}
 
 protected:
@@ -51,6 +51,7 @@ protected:
 	BoundGroupInformation &info;
 
 protected:
+	BindResult BindGroupingFunction(OperatorExpression &op, idx_t depth) override;
 	BindResult BindWindow(WindowExpression &expr, idx_t depth);
 
 	idx_t TryBindGroup(ParsedExpression &expr, idx_t depth);
