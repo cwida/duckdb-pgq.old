@@ -27,15 +27,15 @@
 #include "duckdb/parser/expression/constant_expression.hpp"
 #include "duckdb/parser/expression/cast_expression.hpp"
 // #include "duckdb/planner/expression_binder.hpp"
-// #include "duckdb/parser/expression_map.hpp"
+#include "duckdb/parser/expression_map.hpp"
 // #include "duckdb/parser/parsed_expression.hpp"
 // #include "duckdb/parser/transform/helpers/transform_groupby.hpp"
 
 namespace duckdb {
 
-// struct GroupingExpressionMap {
-// 	expression_map_t<idx_t> map;
-// };
+struct GroupingExpressionMap {
+	expression_map_t<idx_t> map;
+};
 
 static unique_ptr<BaseTableRef> TransformFromTable(string alias, string table_name) {
 	auto result = make_unique<BaseTableRef>();
@@ -44,6 +44,29 @@ static unique_ptr<BaseTableRef> TransformFromTable(string alias, string table_na
 	result->table_name = table_name;
 	// RVO exception --> look more ??
 	return result;
+}
+
+static GroupingSet VectorToGroupingSet(vector<idx_t> &indexes) {
+	GroupingSet result;
+	for (idx_t i = 0; i < indexes.size(); i++) {
+		result.insert(indexes[i]);
+	}
+	return result;
+}
+
+static void AddGroupByExpression(unique_ptr<ParsedExpression> expression, GroupingExpressionMap &map,
+                                       GroupByNode &result, vector<idx_t> &result_set) {
+	
+	auto entry = map.map.find(expression.get());
+	idx_t result_idx;
+	if (entry == map.map.end()) {
+		result_idx = result.group_expressions.size();
+		map.map[expression.get()] = result_idx;
+		result.group_expressions.push_back(move(expression));
+	} else {
+		result_idx = entry->second;
+	}
+	result_set.push_back(result_idx);
 }
 
 /*
@@ -276,14 +299,15 @@ unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
 					inner_select_node->select_list.push_back(move(inner_count_function));
 					// vector<unique_ptr<ParsedExpression>> inner_group_by;
 					auto c_rowid_colref_1 = make_unique<ColumnRefExpression>("rowid", "customer"); //c label
-					// GroupByNode gnode;
-					// vector<idx_t> indexes;
+					GroupByNode gnode;
+					vector<idx_t> indexes;
 
 					// inner_select_node->groups.push_back(move(c_rowid_colref_1));
-					// GroupingExpressionMap map;
+					GroupingExpressionMap map;
 
-					// AddGroupByExpression(move(c_rowid_colref_1), &map, inner_select_node->groups, indexes);
-					// inner_select_node->groups.grouping_sets.push_back(VectorToGroupingSet(indexes))
+					AddGroupByExpression(move(c_rowid_colref_1), map, inner_select_node->groups, indexes);
+					// inner_select_node->groups.grouping_sets = move(indexes);
+					inner_select_node->groups.grouping_sets.push_back(VectorToGroupingSet(indexes));
 					//  = inner_select_list;
 					auto inner_join_ref = make_unique<JoinRef>();
 					inner_join_ref->type = JoinType::LEFT;
@@ -374,7 +398,7 @@ unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
 					cte_col_ref->alias = "csr";
 					cte_select_node->select_list.push_back(move(src_cid_col_ref));
 					cte_select_node->select_list.push_back(move(dst_cid_col_ref));
-					cte_select_node->select_list.push_back(move(cte_col_ref));
+					// cte_select_node->select_list.push_back(move(cte_col_ref));
 
 					auto cte_ref = make_unique<BaseTableRef>();
 					cte_ref->schema_name = DEFAULT_SCHEMA;
@@ -408,10 +432,10 @@ unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
 					reachability_children.push_back(move(cte_where_src_row));
 					reachability_children.push_back(move(cte_where_dst_row));
 
-					auto reachability_constant = make_unique<ConstantExpression>(Value::INTEGER((int32_t)1));
+					// auto reachability_constant = make_unique<ConstantExpression>(Value::INTEGER((int32_t)1));
 					auto reachability_function = make_unique<FunctionExpression>("reachability", move(reachability_children));
 					cte_conditions.push_back(
-		    			make_unique<ComparisonExpression>(ExpressionType::COMPARE_EQUAL, move(reachability_function), move(reachability_constant)));
+		    			make_unique<ComparisonExpression>(ExpressionType::COMPARE_EQUAL, move(reachability_function), move(cte_col_ref)));
 					
 					unique_ptr<ParsedExpression> cte_and_expression;
 					for (auto &condition : cte_conditions) {

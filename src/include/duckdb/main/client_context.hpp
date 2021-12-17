@@ -125,6 +125,8 @@ public:
 	bool initialized_e = false;
 	vector<unique_ptr<Csr>> csr_list;
 	std::mutex csr_lock;
+
+
 	const unique_ptr<CatalogSearchPath> catalog_search_path;
 
 	unique_ptr<FileOpener> file_opener;
@@ -238,6 +240,8 @@ private:
 	unique_ptr<ClientContextLock> LockContext();
 
 	bool UpdateFunctionInfoFromEntry(ScalarFunctionCatalogEntry *existing_function, CreateScalarFunctionInfo *new_info);
+
+	void CleanupCSR();
 
 private:
 	//! The currently opened StreamQueryResult (if any)
