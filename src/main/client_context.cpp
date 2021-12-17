@@ -490,9 +490,9 @@ unique_ptr<QueryResult> ClientContext::RunStatementOrPreparedStatement(ClientCon
 			return make_unique<MaterializedQueryResult>(error);
 		}
 	}
-	if(initialized_v) {
-		CleanupCSR();
-	}
+	// if(initialized_v) {
+	// 	CleanupCSR();
+	// }
 	return result;
 }
 

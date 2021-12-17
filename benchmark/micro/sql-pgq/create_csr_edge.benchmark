@@ -7,8 +7,9 @@ group sql-pgq
 
 init
 PRAGMA threads=2;
-PRAGMA enable_profiling='json';
-PRAGMA profile_output='graph/create_edge_2.json';
+
+#PRAGMA enable_profiling='json';
+#PRAGMA profile_output='graph/create_edge_2.json';
 
 
 load benchmark/micro/sql-pgq/create_csr.sql

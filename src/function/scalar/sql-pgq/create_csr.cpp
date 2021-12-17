@@ -37,7 +37,7 @@ static void csr_initialize_vertex_or_edge(ClientContext &context, int32_t id, in
                                           bool is_vertex = true) {
 	// Vector result;
 	// auto csr = ((u_int64_t) id) < context.csr_list.size() ? context.csr_list[id] : make_unique<Csr>();
-	auto csr = ((u_int64_t)id) < context.csr_list.size() ? move(context.csr_list[id]) : make_unique<Csr>();
+	// auto csr = ((u_int64_t)id) < context.csr_list.size() ? move(context.csr_list[id]) : make_unique<Csr>();
 	// unique_pte here ?
 	if (is_vertex) {
 		lock_guard<mutex> csr_init_lock(context.csr_lock);
@@ -46,6 +46,7 @@ static void csr_initialize_vertex_or_edge(ClientContext &context, int32_t id, in
 		}
 
 		try {
+			auto csr = make_unique<Csr>();
 			// extra 2 spaces required for CSR padding
 			// data contains a vector of elements so will need an anonymous function to apply the
 			// the first element id is repeated across, can I access the value directly?
@@ -73,7 +74,7 @@ static void csr_initialize_vertex_or_edge(ClientContext &context, int32_t id, in
 		}
 		try {
 			// csr->e = new std::atomic<int32_t>[e_size + 2];
-			csr->e.resize(e_size, 0);
+			context.csr_list[id]->e.resize(e_size, 0);
 
 		} catch (std::bad_alloc const &) {
 			throw Exception("Unable to initialise vector of size for csr edge table representation");
@@ -81,13 +82,13 @@ static void csr_initialize_vertex_or_edge(ClientContext &context, int32_t id, in
 
 		// 	//create running sum
 		for (auto i = 1; i < v_size + 2; i++) {
-			csr->v[i] += csr->v[i - 1];
+			context.csr_list[id]->v[i] += context.csr_list[id]->v[i - 1];
 		}
 		context.initialized_e = true;
-		if (((u_int64_t)id) < context.csr_list.size())
-			context.csr_list[id] = move(csr);
-		else
-			context.csr_list.push_back(move(csr));
+		// if (((u_int64_t)id) < context.csr_list.size())
+		// 	context.csr_list[id] = move(csr);
+		// else
+		// 	context.csr_list.push_back(move(csr));
 
 		return;
 	}
@@ -103,7 +104,7 @@ static void create_csr_vertex_function(DataChunk &args, ExpressionState &state, 
 		csr_initialize_vertex_or_edge(info.context, info.id, input_size, 0, true);
 		// csr_initialize_vertex_or_edge(args, state, true);
 	}
-	auto csr = move(info.context.csr_list[info.id]);
+	// auto csr = move(info.context.csr_list[info.id]);
 
 	BinaryExecutor::Execute<int64_t, int64_t, int64_t>(args.data[2], args.data[3], result, args.size(),
 	                                                         [&](int64_t src, int64_t cnt) {
@@ -111,12 +112,12 @@ static void create_csr_vertex_function(DataChunk &args, ExpressionState &state, 
 
 		                                                         // for(idx_t i = 0; i < src.size(); i++) {
 		                                                         // *csr.v[src[i+2]] = 1;
-		                                                         csr->v[src + 2] = cnt;
+		                                                         info.context.csr_list[info.id]->v[src + 2] = cnt;
 
 		                                                         edge_count = edge_count + cnt;
 		                                                         return edge_count;
 	                                                         });
-	info.context.csr_list[info.id] = move(csr);
+	// info.context.csr_list[info.id] = move(csr);
 	return;
 }
 
@@ -145,16 +146,16 @@ static void create_csr_edge_function(DataChunk &args, ExpressionState &state, Ve
 		csr_initialize_vertex_or_edge(info.context, info.id, vertex_size, edge_size, false);
 	}
 
-	auto csr = move(info.context.csr_list[info.id]);
+	// auto csr = move(info.context.csr_list[info.id]);
 
 	BinaryExecutor::Execute<int64_t, int64_t, int32_t>(args.data[3], args.data[4], result, args.size(),
 	                                                         [&](int64_t src, int64_t dst) {
-		                                                         auto pos = ++csr->v[src + 1];
-		                                                         csr->e[(int64_t)pos - 1] = dst;
+		                                                         auto pos = ++info.context.csr_list[info.id]->v[src + 1];
+		                                                         info.context.csr_list[info.id]->e[(int64_t)pos - 1] = dst;
 		                                                         return 1;
 	                                                         });
 
-	info.context.csr_list[info.id] = move(csr);
+	// info.context.csr_list[info.id] = move(csr);
 	return;
 }
 

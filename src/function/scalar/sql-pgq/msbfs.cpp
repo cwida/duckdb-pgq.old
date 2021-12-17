@@ -46,8 +46,8 @@ struct MsbfsBindData : public FunctionData {
 static int16_t initialise_bfs(idx_t curr_batch, idx_t size, int64_t *src_data, vector<std::bitset<LANE_LIMIT>> &seen,
 		vector<std::bitset<LANE_LIMIT>> &visit,
 		vector<std::bitset<LANE_LIMIT>> &visit_next,
-		unordered_map<int64_t, pair<int8_t, vector<int64_t>>> &lane_map) {
-	int32_t lanes = 0;
+		unordered_map<int64_t, pair<int16_t, vector<int64_t>>> &lane_map) {
+	int16_t lanes = 0;
 	int16_t curr_batch_size = 0;
 	for(idx_t i =  curr_batch; i < size && lanes < LANE_LIMIT  ; i++) {
 		auto entry = lane_map.find(src_data[i]);
@@ -73,14 +73,14 @@ static bool bfs_without_array(bool exit_early, int32_t id, int64_t input_size, M
 		// 	continue;
 		if (!visit[i].any())
 			continue;
-		auto csr = move(info.context.csr_list[id]);
+		// auto csr = move(info.context.csr_list[id]);
 		// if(i > csr->v)
-		for (auto index = (long)csr->v[i]; index < (long)csr->v[i + 1]; index++) {
-			auto n = csr->e[index];
+		for (auto index = (long)info.context.csr_list[id]->v[i]; index < (long)info.context.csr_list[id]->v[i + 1]; index++) {
+			auto n = info.context.csr_list[id]->e[index];
 			visit_next[n] = visit_next[n] | visit[i];
 			
 		}
-		info.context.csr_list[id] = move(csr);
+		// info.context.csr_list[id] = move(csr);
 	}
 	
 	for (int64_t i = 0; i < input_size ; i++) {
@@ -125,7 +125,9 @@ static void msbfs_function(DataChunk &args, ExpressionState &state, Vector &resu
 		vector<std::bitset<LANE_LIMIT>> seen(input_size);
 		vector<std::bitset<LANE_LIMIT>> visit(input_size);
 		vector<std::bitset<LANE_LIMIT>> visit_next(input_size);
-		unordered_map<int64_t, pair<int8_t, vector<int64_t>>> lane_map;
+		
+		//src_value ->  (bfs_num, vector of indices)
+		unordered_map<int64_t, pair<int16_t, vector<int64_t>>> lane_map;
 	 
 	auto curr_batch_size = initialise_bfs(result_size, args.size(), src_data, seen, visit, visit_next, lane_map);
 	
