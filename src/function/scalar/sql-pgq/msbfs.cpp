@@ -43,6 +43,60 @@ struct MsbfsBindData : public FunctionData {
 //     return 1 == ( (num >> bit) & 1);
 // }
 
+static int16_t initialise_bfs(idx_t curr_batch, idx_t size, int64_t *src_data, vector<std::bitset<LANE_LIMIT>> &seen,
+		vector<std::bitset<LANE_LIMIT>> &visit,
+		vector<std::bitset<LANE_LIMIT>> &visit_next,
+		unordered_map<int64_t, pair<int8_t, vector<int64_t>>> &lane_map) {
+	int32_t lanes = 0;
+	int16_t curr_batch_size = 0;
+	for(idx_t i =  curr_batch; i < size && lanes < LANE_LIMIT  ; i++) {
+		auto entry = lane_map.find(src_data[i]);
+		if(entry == lane_map.end()) {
+			lane_map[src_data[i]].first = lanes;
+			seen[lanes] = std::bitset<LANE_LIMIT>();
+			seen[lanes][i] = 1;
+			visit[lanes] = std::bitset<LANE_LIMIT>();
+			visit[lanes][i] = 1;
+			lanes++;
+		}
+			lane_map[src_data[i]].second.push_back(i);
+			curr_batch_size++;
+	}
+	return curr_batch_size;
+}
+
+static bool bfs_without_array(bool exit_early, int32_t id, int64_t input_size, MsbfsBindData &info, vector<std::bitset<LANE_LIMIT>> &seen, 
+		vector<std::bitset<LANE_LIMIT>> &visit,
+		vector<std::bitset<LANE_LIMIT>> &visit_next ) { 
+	for (int64_t i = 0; i < input_size - 1; i++) {
+		// if (!visit[i])
+		// 	continue;
+		if (!visit[i].any())
+			continue;
+		auto csr = move(info.context.csr_list[id]);
+		// if(i > csr->v)
+		for (auto index = (long)csr->v[i]; index < (long)csr->v[i + 1]; index++) {
+			auto n = csr->e[index];
+			visit_next[n] = visit_next[n] | visit[i];
+			
+		}
+		info.context.csr_list[id] = move(csr);
+	}
+	
+	for (int64_t i = 0; i < input_size ; i++) {
+		// if (!visit_next[i])
+		// 	continue;
+		if (visit_next[i].none())
+			continue;
+		visit_next[i] = visit_next[i] & ~seen[i];
+		seen[i] = seen[i] | visit_next[i];
+		if(exit_early == true && visit_next[i].any() )
+			exit_early = false;
+			
+	}
+	return exit_early;
+}
+
 static void msbfs_function(DataChunk &args, ExpressionState &state, Vector &result) {
 	// D_ASSERT(args.ColumnCount() == 0);
 	auto &func_expr = (BoundFunctionExpression &)state.expr;
@@ -61,69 +115,27 @@ static void msbfs_function(DataChunk &args, ExpressionState &state, Vector &resu
 	auto target_data = (int64_t *)vdata_target.data;
 	// const int32_t bfs = info.num_bfs;
 	
-	int8_t result_size = 0;
-	idx_t curr_batch = 0;
+	idx_t result_size = 0;
+	// idx_t curr_batch = 0;
 	result.SetVectorType(VectorType::FLAT_VECTOR);
 	auto result_data = FlatVector::GetData<bool>(result);
 
-	while (curr_batch < args.size()) {
-		int32_t lanes = 0;
+	while (result_size < args.size()) {
+		// int32_t lanes = 0;
 		vector<std::bitset<LANE_LIMIT>> seen(input_size);
 		vector<std::bitset<LANE_LIMIT>> visit(input_size);
 		vector<std::bitset<LANE_LIMIT>> visit_next(input_size);
 		unordered_map<int64_t, pair<int8_t, vector<int64_t>>> lane_map;
 	 
-	for(idx_t i =  curr_batch; i <  args.size() && lanes < LANE_LIMIT  ; i++) {
-		auto entry = lane_map.find(src_data[i]);
-		if(entry == lane_map.end()) {
-			lane_map[src_data[i]].first = lanes;
-			seen[lanes] = std::bitset<LANE_LIMIT>();
-			seen[lanes][i] = 1;
-			visit[lanes] = std::bitset<LANE_LIMIT>();
-			visit[lanes][i] = 1;
-			lanes++;
-		}
-			lane_map[src_data[i]].second.push_back(i);
-			result_size++;
-	}
+	auto curr_batch_size = initialise_bfs(result_size, args.size(), src_data, seen, visit, visit_next, lane_map);
 	
-	int64_t d = 1;
 	int mode = 0;
+	bool exit_early = false;
 	
-	while (d > 0 ) {
-		// init = false;
-		d = 0;
-	
+	while (exit_early == false ) {
+		exit_early =true;
 		if(mode == 2 || mode == 0) {
-
-			// visit_count = 0;
-			for (int64_t i = 0; i < input_size - 1; i++) {
-				// if (!visit[i])
-				// 	continue;
-				if (!visit[i].any())
-					continue;
-				auto csr = move(info.context.csr_list[0]);
-				// if(i > csr->v)
-				for (auto index = (long)csr->v[i]; index < (long)csr->v[i + 1]; index++) {
-					auto n = csr->e[index];
-					visit_next[n] = visit_next[n] | visit[i];
-					
-				}
-				info.context.csr_list[0] = move(csr);
-			}
-			
-			for (int64_t i = 0; i < input_size ; i++) {
-				// if (!visit_next[i])
-				// 	continue;
-				if (visit_next[i].none())
-					continue;
-				visit_next[i] = visit_next[i] & ~seen[i];
-				seen[i] = seen[i] | visit_next[i];
-				if(d == 0 && visit_next[i].any() )
-					d = 1;
-					
-			}
-
+			exit_early = bfs_without_array(exit_early, 0, input_size, info, seen, visit, visit_next);
 			visit = visit_next;
 			for (auto i = 0; i < input_size; i++) {
 				visit_next[i] = 0;
@@ -149,7 +161,7 @@ static void msbfs_function(DataChunk &args, ExpressionState &state, Vector &resu
 				result_data[index] = false;
 		}
 	}
-	curr_batch = curr_batch + result_size;
+	result_size = result_size + curr_batch_size;
 	}
 	// local struct -> bitset (how many bits it contains), 
 				// dynamically move between different ; can
