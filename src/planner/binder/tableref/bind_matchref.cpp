@@ -6,6 +6,7 @@
 #include "duckdb/parser/tableref/crossproductref.hpp"
 #include "duckdb/planner/bound_tableref.hpp"
 #include "duckdb/parser/tableref/joinref.hpp"
+#include "duckdb/parser/tableref/subqueryref.hpp"
 // #include "duckdb/parser/transformer.hpp"
 
 #include "duckdb/catalog/catalog_entry/property_graph_catalog_entry.hpp"
@@ -190,6 +191,240 @@ static unique_ptr<JoinRef> GetJoinRef(string edge_table, string vertex_table) {
 	return first_join_ref;
 }
 
+static unique_ptr<FunctionExpression> CreateCSRVertexFunction(const string name) {
+	auto vertex_id_constant = make_unique<ConstantExpression>(Value::INTEGER((int32_t)0));
+	auto cast_inner_select = move(GetCountTable(name));
+	auto sub_dense_colref = make_unique<ColumnRefExpression>("dense_id", "sub");
+	auto sub_cnt_colref = make_unique<ColumnRefExpression>("cnt", "sub");
+	auto count_subquery_expr = make_unique<SubqueryExpression>();
+	count_subquery_expr->subquery_type = SubqueryType::SCALAR;
+	count_subquery_expr->subquery = move(cast_inner_select);
+	vector<unique_ptr<ParsedExpression>> csr_vertex_children;
+	csr_vertex_children.push_back(move(vertex_id_constant));
+	csr_vertex_children.push_back(move(count_subquery_expr));
+	csr_vertex_children.push_back(move(sub_dense_colref));
+	csr_vertex_children.push_back(move(sub_cnt_colref));
+	return make_unique<FunctionExpression>("create_csr_vertex", move(csr_vertex_children));
+
+}
+
+static unique_ptr<FunctionExpression> CreateSumFunction(const string name){
+	auto create_vertex_function = CreateCSRVertexFunction(name);
+	vector<unique_ptr<ParsedExpression>> sum_children;
+	sum_children.push_back(move(create_vertex_function));
+	return make_unique<FunctionExpression>("sum", move(sum_children));
+}
+
+static unique_ptr<SelectStatement> CreateInnerSelectStatement() {
+	auto inner_select_statment = make_unique<SelectStatement>();
+	auto inner_select_node = make_unique<SelectNode>();
+	auto c_rowid_colref = make_unique<ColumnRefExpression>("rowid", "customer"); 
+	//c will be label -> get TablefromLabel
+	c_rowid_colref->alias = "dense_id";
+	
+	auto t_fromid_colref = make_unique<ColumnRefExpression>("from_id", "transfers"); //t label
+	vector<unique_ptr<ParsedExpression>> inner_count_children;
+	inner_count_children.push_back(move(t_fromid_colref));
+	auto inner_count_function = make_unique<FunctionExpression>("count", move(inner_count_children));
+	inner_count_function->alias = "cnt";
+	inner_select_node->select_list.push_back(move(c_rowid_colref));
+	inner_select_node->select_list.push_back(move(inner_count_function));
+	// vector<unique_ptr<ParsedExpression>> inner_group_by;
+	auto c_rowid_colref_1 = make_unique<ColumnRefExpression>("rowid", "customer"); //c label
+	GroupByNode gnode;
+	vector<idx_t> indexes;
+
+	// inner_select_node->groups.push_back(move(c_rowid_colref_1));
+	GroupingExpressionMap map;
+
+	AddGroupByExpression(move(c_rowid_colref_1), map, inner_select_node->groups, indexes);
+						// inner_select_node->groups = inner_group_by;
+
+	// inner_select_node->groups.grouping_sets = move(indexes);
+	inner_select_node->groups.grouping_sets.push_back(VectorToGroupingSet(indexes));
+	//  = inner_select_list;
+	auto inner_join_ref = make_unique<JoinRef>();
+	inner_join_ref->type = JoinType::LEFT;
+	auto left_base_ref = make_unique<BaseTableRef>();
+	left_base_ref->table_name = "customer";
+	auto right_base_ref = make_unique<BaseTableRef>();
+	right_base_ref->table_name = "transfers";
+	inner_join_ref->left = move(left_base_ref);
+	inner_join_ref->right = move(right_base_ref);
+	// quals for ON
+	auto t_join_colref = make_unique<ColumnRefExpression>("from_id", "transfers"); //t label
+	auto c_join_colref = make_unique<ColumnRefExpression>("cid", "customer"); //c label
+	// alias column names vector look
+	inner_join_ref->condition = make_unique<ComparisonExpression>(ExpressionType::COMPARE_EQUAL, move(t_join_colref), move(c_join_colref));
+	// TransformBinaryOperator("=", t_join_colref, c_join_colref);
+	inner_select_node->from_table = move(inner_join_ref);
+	inner_select_statment->node = move(inner_select_node);
+	return inner_select_statment;
+					
+}
+
+
+static unique_ptr<CastExpression> CreateCastExpression() { 
+	auto cast_subquery_expr = make_unique<SubqueryExpression>();
+	auto cast_select_node = make_unique<SelectNode>();
+	
+	
+	
+	// auto inner_from_subquery = make_unique<SubqueryExpression>();
+	auto inner_select_statement = CreateInnerSelectStatement();
+	auto inner_from_subquery = make_unique<SubqueryRef>(move(inner_select_statement), "sub");
+	// inner_from_subquery->column_name_alias = "sub";
+	// inner_from_subquery->subquery = move(inner_select_statment);
+
+	cast_select_node->from_table = move(inner_from_subquery);
+	auto sum_function = CreateSumFunction("customer");
+	cast_select_node->select_list.push_back(move(sum_function));
+	auto cast_select_stmt = make_unique<SelectStatement>();
+	cast_select_stmt->node = move(cast_select_node);
+	cast_subquery_expr->subquery = move(cast_select_stmt);
+	cast_subquery_expr->subquery_type = SubqueryType::SCALAR;
+
+	return make_unique<CastExpression>(LogicalType::BIGINT, move(cast_subquery_expr));
+}
+
+static unique_ptr<FunctionExpression> CreateCsrEdgeFunction() {
+
+	//will be another variable in client context
+	auto edge_id_constant = make_unique<ConstantExpression>(Value::INTEGER((int32_t)0));
+	auto subquery_expr = make_unique<SubqueryExpression>();
+	
+	// subquery_expr->subquery = move(GetCountTable(previous_vertex_entry->name));
+	subquery_expr->subquery = move(GetCountTable("customer"));
+	subquery_expr->subquery_type = SubqueryType::SCALAR;
+	
+
+	auto cast_expression = CreateCastExpression();
+						
+	auto src_rowid_colref = make_unique<ColumnRefExpression>("rowid", "src" );
+	// src_rowid_colref->alias = "src_row";
+	auto dst_rowid_colref = make_unique<ColumnRefExpression>("rowid", "dst");
+	// dst_rowid_colref->alias = "dst_row";
+	// auto 
+
+	
+	vector<unique_ptr<ParsedExpression>> csr_edge_children;
+	csr_edge_children.push_back(move(edge_id_constant));
+	csr_edge_children.push_back(move(subquery_expr));
+	csr_edge_children.push_back(move(cast_expression));
+	csr_edge_children.push_back(move(src_rowid_colref));
+	csr_edge_children.push_back(move(dst_rowid_colref));
+
+	return make_unique<FunctionExpression>("create_csr_edge", move(csr_edge_children));
+}
+
+static unique_ptr<FunctionExpression> CreateReachabilityFunction() {
+	vector<unique_ptr<ParsedExpression>> reachability_children;
+	auto cte_where_src_row = make_unique<ColumnRefExpression>("src_row", "cte1");
+	auto cte_where_dst_row = make_unique<ColumnRefExpression>("dst_row", "cte1");
+	auto reachability_subquery_expr = make_unique<SubqueryExpression>();
+	reachability_subquery_expr->subquery = move(GetCountTable("customer"));
+	reachability_subquery_expr->subquery_type = SubqueryType::SCALAR;
+	
+	auto reachability_id_constant = make_unique<ConstantExpression>(Value::INTEGER((int32_t)0));
+	reachability_children.push_back(move(reachability_id_constant));
+	reachability_children.push_back(move(reachability_subquery_expr));
+	reachability_children.push_back(move(cte_where_src_row));
+	reachability_children.push_back(move(cte_where_dst_row));
+
+	return make_unique<FunctionExpression>("reachability", move(reachability_children));
+
+}
+
+static unique_ptr<SelectStatement> CreateOuterSelectStatement() {
+	
+	auto outer_select_statment = make_unique<SelectStatement>();
+
+	auto outer_select_node = make_unique<SelectNode>();
+					
+	auto create_csr_edge_function = CreateCsrEdgeFunction();
+	create_csr_edge_function->alias = "temp";
+	
+	auto outer_src_rowid = make_unique<ColumnRefExpression>("rowid", "src" );
+	outer_src_rowid->alias = "src_row";
+	auto outer_dst_rowid = make_unique<ColumnRefExpression>("rowid", "dst");
+	outer_dst_rowid->alias = "dst_row";
+	// vector<unique_ptr<ParsedExpression>> min_children;
+	// min_children.push_back(move(create_csr_edge_function));
+
+	// auto min_function = make_unique<FunctionExpression>("min", min_children);
+
+	outer_select_node->select_list.push_back(move(create_csr_edge_function));
+	outer_select_node->select_list.push_back(move(outer_src_rowid));
+	outer_select_node->select_list.push_back(move(outer_dst_rowid));
+	outer_select_node->from_table = move(GetJoinRef("src", "dst"));
+	
+	// auto outer_subquery_exp = make_unique<SubqueryExpression>();
+	outer_select_statment->node = move(outer_select_node);
+	return outer_select_statment;
+}
+
+static unique_ptr<SelectStatement> CreateCTESelectStatement() {
+					
+	auto info = make_unique<CommonTableExpressionInfo>();
+	auto cte_select_statement = make_unique<SelectStatement>();
+
+	info->query = move(CreateOuterSelectStatement());
+	
+	// unique_ptr<QueryNode> node = make_unique<SelectNode>();
+	auto cte_select_node = make_unique<SelectNode>();
+	// auto cte_select_node = (SelectNode *)node.get();
+	cte_select_node->cte_map["cte1"] = move(info);
+
+	auto src_cid_col_ref = make_unique<ColumnRefExpression>("cid", "src");
+	src_cid_col_ref->alias = "c1id";
+	auto dst_cid_col_ref = make_unique<ColumnRefExpression>("cid", "dst");
+	dst_cid_col_ref->alias = "c2id";
+	auto cte_col_ref = make_unique<ColumnRefExpression>("temp", "cte1");
+	cte_col_ref->alias = "csr";
+	cte_select_node->select_list.push_back(move(src_cid_col_ref));
+	cte_select_node->select_list.push_back(move(dst_cid_col_ref));
+	// cte_select_node->select_list.push_back(move(cte_col_ref));
+
+	auto cte_ref = make_unique<BaseTableRef>();
+	cte_ref->schema_name = DEFAULT_SCHEMA;
+	cte_ref->table_name = "cte1";
+	auto cross_ref = make_unique<CrossProductRef>();
+	cross_ref->left = move(cte_ref);
+	cross_ref->right = move(GetJoinRef("src", "dst"));
+	cte_select_node->from_table = move(cross_ref);
+
+	vector<unique_ptr<ParsedExpression>> cte_conditions;
+	auto src_row_id = make_unique<ColumnRefExpression>("rowid", "src");
+	auto cte_src_row = make_unique<ColumnRefExpression>("src_row", "cte1");
+	
+	auto dst_row_id = make_unique<ColumnRefExpression>("rowid", "dst");
+	auto cte_dst_row = make_unique<ColumnRefExpression>("dst_row", "cte1");
+	cte_conditions.push_back(
+		make_unique<ComparisonExpression>(ExpressionType::COMPARE_EQUAL, move(src_row_id), move(cte_src_row)));
+	cte_conditions.push_back(
+		make_unique<ComparisonExpression>(ExpressionType::COMPARE_EQUAL, move(dst_row_id), move(cte_dst_row)));
+	
+		
+	// auto reachability_constant = make_unique<ConstantExpression>(Value::INTEGER((int32_t)1));
+	auto reachability_function = CreateReachabilityFunction();
+	cte_conditions.push_back(
+		make_unique<ComparisonExpression>(ExpressionType::COMPARE_EQUAL, move(reachability_function), move(cte_col_ref)));
+	
+	unique_ptr<ParsedExpression> cte_and_expression;
+	for (auto &condition : cte_conditions) {
+		if (cte_and_expression) {
+			cte_and_expression = make_unique<ConjunctionExpression>(ExpressionType::CONJUNCTION_AND, move(cte_and_expression),
+																move(condition));
+		} else {
+			cte_and_expression = move(condition);
+		}
+	}
+	cte_select_node->where_clause = move(cte_and_expression);
+	cte_select_statement->node = move(cte_select_node);
+	return cte_select_statement;
+}
+
+
 unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
 	auto pg_table =
 	    Catalog::GetCatalog(context).GetEntry<PropertyGraphCatalogEntry>(context, DEFAULT_SCHEMA, ref.pg_name, true);
@@ -208,7 +443,6 @@ unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
 	auto select_node = make_unique<SelectNode>();
 	auto subquery = make_unique<SelectStatement>();
 	bool flag = false;
-	auto outer_select_statment = make_unique<SelectStatement>();
 	auto cte_select_statement = make_unique<SelectStatement>();
 
 	if (ref.param_list.size() < 1) {
@@ -253,201 +487,7 @@ unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
 				case MatchStarPattern::ALL: {
 					flag = true;
 					
-					//will be another variable in client context
-					auto edge_id_constant = make_unique<ConstantExpression>(Value::INTEGER((int32_t)0));
-					auto subquery_expr = make_unique<SubqueryExpression>();
-					
-					subquery_expr->subquery = move(GetCountTable(previous_vertex_entry->name));
-					subquery_expr->subquery_type = SubqueryType::SCALAR;
-
-					auto cast_subquery_expr = make_unique<SubqueryExpression>();
-					auto cast_select_node = make_unique<SelectNode>();
-					
-					
-					
-					auto vertex_id_constant = make_unique<ConstantExpression>(Value::INTEGER((int32_t)0));
-					auto cast_inner_select = move(GetCountTable(previous_vertex_entry->name));
-					auto sub_dense_colref = make_unique<ColumnRefExpression>("dense_id", "sub");
-					auto sub_cnt_colref = make_unique<ColumnRefExpression>("cnt", "sub");
-					auto count_subquery_expr = make_unique<SubqueryExpression>();
-					count_subquery_expr->subquery_type = SubqueryType::SCALAR;
-					count_subquery_expr->subquery = move(cast_inner_select);
-					vector<unique_ptr<ParsedExpression>> csr_vertex_children;
-					csr_vertex_children.push_back(move(vertex_id_constant));
-					csr_vertex_children.push_back(move(count_subquery_expr));
-					csr_vertex_children.push_back(move(sub_dense_colref));
-					csr_vertex_children.push_back(move(sub_cnt_colref));
-					auto create_vertex_function = make_unique<FunctionExpression>("create_csr_vertex", move(csr_vertex_children));
-
-					vector<unique_ptr<ParsedExpression>> sum_children;
-					sum_children.push_back(move(create_vertex_function));
-					auto sum_function = make_unique<FunctionExpression>("sum", move(sum_children));
-					// auto inner_from_subquery = make_unique<SubqueryExpression>();
-					
-					auto inner_select_statment = make_unique<SelectStatement>();
-					auto inner_select_node = make_unique<SelectNode>();
-					auto c_rowid_colref = make_unique<ColumnRefExpression>("rowid", "customer"); 
-					//c will be label -> get TablefromLabel
-					c_rowid_colref->alias = "dense_id";
-					
-					auto t_fromid_colref = make_unique<ColumnRefExpression>("from_id", "transfers"); //t label
-					vector<unique_ptr<ParsedExpression>> inner_count_children;
-					inner_count_children.push_back(move(t_fromid_colref));
-					auto inner_count_function = make_unique<FunctionExpression>("count", move(inner_count_children));
-					inner_count_function->alias = "cnt";
-					inner_select_node->select_list.push_back(move(c_rowid_colref));
-					inner_select_node->select_list.push_back(move(inner_count_function));
-					// vector<unique_ptr<ParsedExpression>> inner_group_by;
-					auto c_rowid_colref_1 = make_unique<ColumnRefExpression>("rowid", "customer"); //c label
-					GroupByNode gnode;
-					vector<idx_t> indexes;
-
-					// inner_select_node->groups.push_back(move(c_rowid_colref_1));
-					GroupingExpressionMap map;
-
-					AddGroupByExpression(move(c_rowid_colref_1), map, inner_select_node->groups, indexes);
-					// inner_select_node->groups.grouping_sets = move(indexes);
-					inner_select_node->groups.grouping_sets.push_back(VectorToGroupingSet(indexes));
-					//  = inner_select_list;
-					auto inner_join_ref = make_unique<JoinRef>();
-					inner_join_ref->type = JoinType::LEFT;
-					auto left_base_ref = make_unique<BaseTableRef>();
-					left_base_ref->table_name = "customer";
-					auto right_base_ref = make_unique<BaseTableRef>();
-					right_base_ref->table_name = "transfers";
-					inner_join_ref->left = move(left_base_ref);
-					inner_join_ref->right = move(right_base_ref);
-					// quals for ON
-					auto t_join_colref = make_unique<ColumnRefExpression>("from_id", "transfers"); //t label
-					auto c_join_colref = make_unique<ColumnRefExpression>("cid", "customer"); //c label
-					// alias column names vector look
-					inner_join_ref->condition = make_unique<ComparisonExpression>(ExpressionType::COMPARE_EQUAL, move(t_join_colref), move(c_join_colref));
-					// TransformBinaryOperator("=", t_join_colref, c_join_colref);
-					inner_select_node->from_table = move(inner_join_ref);
-					inner_select_statment->node = move(inner_select_node);
-					auto inner_from_subquery = make_unique<SubqueryRef>(move(inner_select_statment), "sub");
-					// inner_from_subquery->column_name_alias = "sub";
-					// inner_from_subquery->subquery = move(inner_select_statment);
-
-					cast_select_node->from_table = move(inner_from_subquery);
-					
-					cast_select_node->select_list.push_back(move(sum_function));
-					auto cast_select_stmt = make_unique<SelectStatement>();
-					cast_select_stmt->node = move(cast_select_node);
-					cast_subquery_expr->subquery = move(cast_select_stmt);
-					cast_subquery_expr->subquery_type = SubqueryType::SCALAR;
-
-					// inner_select_node->groups = inner_group_by;
-					
-					auto src_rowid_colref = make_unique<ColumnRefExpression>("rowid", "src" );
-					// src_rowid_colref->alias = "src_row";
-					auto dst_rowid_colref = make_unique<ColumnRefExpression>("rowid", "dst");
-					// dst_rowid_colref->alias = "dst_row";
-					// auto 
-					auto cast_expression =  make_unique<CastExpression>(LogicalType::BIGINT, move(cast_subquery_expr));
-					vector<unique_ptr<ParsedExpression>> csr_edge_children;
-					csr_edge_children.push_back(move(edge_id_constant));
-					csr_edge_children.push_back(move(subquery_expr));
-					csr_edge_children.push_back(move(cast_expression));
-					csr_edge_children.push_back(move(src_rowid_colref));
-					csr_edge_children.push_back(move(dst_rowid_colref));
-
-					auto outer_select_node = make_unique<SelectNode>();
-					
-					auto create_csr_edge_function = make_unique<FunctionExpression>("create_csr_edge", move(csr_edge_children));
-					create_csr_edge_function->alias = "temp";
-					auto outer_src_rowid = make_unique<ColumnRefExpression>("rowid", "src" );
-					outer_src_rowid->alias = "src_row";
-					auto outer_dst_rowid = make_unique<ColumnRefExpression>("rowid", "dst");
-					outer_dst_rowid->alias = "dst_row";
-					// vector<unique_ptr<ParsedExpression>> min_children;
-					// min_children.push_back(move(create_csr_edge_function));
-
-					// auto min_function = make_unique<FunctionExpression>("min", min_children);
-
-					outer_select_node->select_list.push_back(move(create_csr_edge_function));
-					outer_select_node->select_list.push_back(move(outer_src_rowid));
-					outer_select_node->select_list.push_back(move(outer_dst_rowid));
-					outer_select_node->from_table = move(GetJoinRef("src", "dst"));
-					
-					// auto outer_subquery_exp = make_unique<SubqueryExpression>();
-					outer_select_statment->node = move(outer_select_node);
-
-					//unsure??
-					// auto main_select_statement = make_unique<SelectStatement>();
-					// auto main_select_node = make_unique<SelectNode>();
-					
-					auto info = make_unique<CommonTableExpressionInfo>();
-					info->query = move(outer_select_statment);
-					// main_select_node->cte_map["cte1"] = move(info);
-
-					
-		// if (stmt->withClause) {
-			// TransformCTE(reinterpret_cast<PGWithClause *>(stmt->withClause), *node);
-		// }	
-					// unique_ptr<QueryNode> node = make_unique<SelectNode>();
-					auto cte_select_node = make_unique<SelectNode>();
-					// auto cte_select_node = (SelectNode *)node.get();
-					cte_select_node->cte_map["cte1"] = move(info);
-
-					auto src_cid_col_ref = make_unique<ColumnRefExpression>("cid", "src");
-					src_cid_col_ref->alias = "c1id";
-					auto dst_cid_col_ref = make_unique<ColumnRefExpression>("cid", "dst");
-					dst_cid_col_ref->alias = "c2id";
-					auto cte_col_ref = make_unique<ColumnRefExpression>("temp", "cte1");
-					cte_col_ref->alias = "csr";
-					cte_select_node->select_list.push_back(move(src_cid_col_ref));
-					cte_select_node->select_list.push_back(move(dst_cid_col_ref));
-					// cte_select_node->select_list.push_back(move(cte_col_ref));
-
-					auto cte_ref = make_unique<BaseTableRef>();
-					cte_ref->schema_name = DEFAULT_SCHEMA;
-					cte_ref->table_name = "cte1";
-					auto cross_ref = make_unique<CrossProductRef>();
-					cross_ref->left = move(cte_ref);
-					cross_ref->right = move(GetJoinRef("src", "dst"));
-					cte_select_node->from_table = move(cross_ref);
-
-					vector<unique_ptr<ParsedExpression>> cte_conditions;
-					auto src_row_id = make_unique<ColumnRefExpression>("rowid", "src");
-					auto cte_src_row = make_unique<ColumnRefExpression>("src_row", "cte1");
-					
-					auto dst_row_id = make_unique<ColumnRefExpression>("rowid", "dst");
-					auto cte_dst_row = make_unique<ColumnRefExpression>("dst_row", "cte1");
-					cte_conditions.push_back(
-		    			make_unique<ComparisonExpression>(ExpressionType::COMPARE_EQUAL, move(src_row_id), move(cte_src_row)));
-					cte_conditions.push_back(
-		    			make_unique<ComparisonExpression>(ExpressionType::COMPARE_EQUAL, move(dst_row_id), move(cte_dst_row)));
-					
-					vector<unique_ptr<ParsedExpression>> reachability_children;
-					auto cte_where_src_row = make_unique<ColumnRefExpression>("src_row", "cte1");
-					auto cte_where_dst_row = make_unique<ColumnRefExpression>("dst_row", "cte1");
-					auto reachability_subquery_expr = make_unique<SubqueryExpression>();
-					reachability_subquery_expr->subquery = move(GetCountTable("customer"));
-					reachability_subquery_expr->subquery_type = SubqueryType::SCALAR;
-					
-					auto reachability_id_constant = make_unique<ConstantExpression>(Value::INTEGER((int32_t)0));
-					reachability_children.push_back(move(reachability_id_constant));
-					reachability_children.push_back(move(reachability_subquery_expr));
-					reachability_children.push_back(move(cte_where_src_row));
-					reachability_children.push_back(move(cte_where_dst_row));
-
-					// auto reachability_constant = make_unique<ConstantExpression>(Value::INTEGER((int32_t)1));
-					auto reachability_function = make_unique<FunctionExpression>("reachability", move(reachability_children));
-					cte_conditions.push_back(
-		    			make_unique<ComparisonExpression>(ExpressionType::COMPARE_EQUAL, move(reachability_function), move(cte_col_ref)));
-					
-					unique_ptr<ParsedExpression> cte_and_expression;
-					for (auto &condition : cte_conditions) {
-						if (cte_and_expression) {
-							cte_and_expression = make_unique<ConjunctionExpression>(ExpressionType::CONJUNCTION_AND, move(cte_and_expression),
-																				move(condition));
-						} else {
-							cte_and_expression = move(condition);
-						}
-					}
-					cte_select_node->where_clause = move(cte_and_expression);
-					cte_select_statement->node = move(cte_select_node);
+					cte_select_statement = CreateCTESelectStatement();
 					// outer_subquery_exp->subquery = move(outer_select_statment);
 					break;
 					// select_inner->from_table = make_unique<BaseTableRef>()

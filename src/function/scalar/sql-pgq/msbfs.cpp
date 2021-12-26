@@ -53,10 +53,10 @@ static int16_t initialise_bfs(idx_t curr_batch, idx_t size, int64_t *src_data, v
 		auto entry = lane_map.find(src_data[i]);
 		if(entry == lane_map.end()) {
 			lane_map[src_data[i]].first = lanes;
-			seen[lanes] = std::bitset<LANE_LIMIT>();
-			seen[lanes][i] = 1;
-			visit[lanes] = std::bitset<LANE_LIMIT>();
-			visit[lanes][i] = 1;
+			seen[src_data[i]] = std::bitset<LANE_LIMIT>();
+			seen[src_data[i]][lanes] = 1;
+			visit[src_data[i]] = std::bitset<LANE_LIMIT>();
+			visit[src_data[i]][lanes] = 1;
 			lanes++;
 		}
 			lane_map[src_data[i]].second.push_back(i);
@@ -75,6 +75,7 @@ static bool bfs_without_array(bool exit_early, int32_t id, int64_t input_size, M
 			continue;
 		// auto csr = move(info.context.csr_list[id]);
 		// if(i > csr->v)
+		D_ASSERT(info.context.csr_list[id]);
 		for (auto index = (long)info.context.csr_list[id]->v[i]; index < (long)info.context.csr_list[id]->v[i + 1]; index++) {
 			auto n = info.context.csr_list[id]->e[index];
 			visit_next[n] = visit_next[n] | visit[i];
