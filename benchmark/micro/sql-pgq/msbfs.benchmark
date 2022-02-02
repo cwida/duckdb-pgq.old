@@ -6,9 +6,9 @@ name MSBFS
 group sql-pgq
 
 init
-PRAGMA threads=2;
+PRAGMA threads=4;
 
-load benchmark/micro/sql-pgq/msbfs.sql
+load benchmark/micro/sql-pgq/snb.sql
 
 run
 SELECT max(reachability(id, v_size, src, dst)) FROM src_dest ;
