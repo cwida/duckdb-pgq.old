@@ -255,7 +255,7 @@ private:
 	void AddUsingBindingSet(unique_ptr<UsingColumnSet> set);
 	string RetrieveUsingBinding(Binder &current_binder, UsingColumnSet *current_set, const string &column_name,
 	                            const string &join_side, UsingColumnSet *new_set);
-	PropertyGraphTable *FindLabel(PropertyGraphCatalogEntry *pg_table, string &label_name);
+	PropertyGraphTable *GetPropertyGraphEntry(PropertyGraphCatalogEntry *pg_table, string &label_name);
 	unique_ptr<ParsedExpression> CreateExpression(vector<string> &vertex_columns, vector<string> &edge_columns,
 	                                              string &vertex_table_name, string &edge_table_name);
 	unique_ptr<ParsedExpression> AndExpression(vector<unique_ptr<ParsedExpression>> conditions);

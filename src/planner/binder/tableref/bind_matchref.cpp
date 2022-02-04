@@ -73,7 +73,7 @@ static void AddGroupByExpression(unique_ptr<ParsedExpression> expression, Groupi
 /*
 Returning the table name with the associated label. If label does not exist then throw an exception.
 */
-PropertyGraphTable *Binder::FindLabel(PropertyGraphCatalogEntry *pg_table, string &label_name) {
+PropertyGraphTable *Binder::GetPropertyGraphEntry(PropertyGraphCatalogEntry *pg_table, string &label_name) {
 
 	auto entry = pg_table->label_map_1.find(label_name);
 
@@ -129,6 +129,10 @@ bool Binder::CheckAliasUsage(unordered_map<string, std::tuple<string, bool, stri
 	return false;
 }
 
+/*
+Returns the label of an alias if it has already been seen before. 
+Exception is thrown if alias does not have an associated label
+*/
 static string GetLabel(unordered_map<string, std::tuple<string, bool, string>> &alias_table_map, string &alias) {
 	auto entry = alias_table_map.find(alias);
 	if (entry == alias_table_map.end()) {
@@ -147,7 +151,7 @@ static unique_ptr<SelectStatement> GetCountTable(string name) {
 
 	// auto statement = make_unique<SelectNode>();
 	select_inner->from_table = move(ref);
-	auto colref = make_unique<ColumnRefExpression>("cid", "customer");
+	auto colref = make_unique<ColumnRefExpression>("personid", "person");
 	vector<unique_ptr<ParsedExpression>> children;
 	children.push_back(move(colref));
 	auto count_function = make_unique<FunctionExpression>("count", move(children));
@@ -168,24 +172,24 @@ static unique_ptr<JoinRef> GetJoinRef(string edge_table, string vertex_table) {
 	// 
 	// first_join_ref->right = 
 	auto edge_base_ref = make_unique<BaseTableRef>();
-	edge_base_ref->table_name = "transfers";
-	edge_base_ref->alias = "t";
+	edge_base_ref->table_name = "Person_knows_Person";
+	edge_base_ref->alias = "pkp";
 	auto src_base_ref = make_unique<BaseTableRef>();
-	src_base_ref->table_name = "customer";
+	src_base_ref->table_name = "person";
 	src_base_ref->alias = "src";
 	second_join_ref->left = move(edge_base_ref);
 	second_join_ref->right = move(src_base_ref);
-	auto t_from_ref = make_unique<ColumnRefExpression>("from_id", "t");
-	auto src_cid_ref = make_unique<ColumnRefExpression>("cid", "src");
+	auto t_from_ref = make_unique<ColumnRefExpression>("person1id", "pkp");
+	auto src_cid_ref = make_unique<ColumnRefExpression>("personid", "src");
 	second_join_ref->condition = make_unique<ComparisonExpression>(ExpressionType::COMPARE_EQUAL, move(t_from_ref), move(src_cid_ref));
 	auto dst_base_ref = make_unique<BaseTableRef>();
-	dst_base_ref->table_name = "customer";
+	dst_base_ref->table_name = "person";
 	dst_base_ref->alias = "dst";
 	first_join_ref->left = move(second_join_ref);
 	first_join_ref->right = move(dst_base_ref);
 
-	auto t_to_ref = make_unique<ColumnRefExpression>("to_id", "t");
-	auto dst_cid_ref = make_unique<ColumnRefExpression>("cid", "dst");
+	auto t_to_ref = make_unique<ColumnRefExpression>("person2id", "pkp");
+	auto dst_cid_ref = make_unique<ColumnRefExpression>("personid", "dst");
 
 	first_join_ref->condition = make_unique<ComparisonExpression>(ExpressionType::COMPARE_EQUAL, move(t_to_ref), move(dst_cid_ref));
 	return first_join_ref;
@@ -218,11 +222,11 @@ static unique_ptr<FunctionExpression> CreateSumFunction(const string name){
 static unique_ptr<SelectStatement> CreateInnerSelectStatement() {
 	auto inner_select_statment = make_unique<SelectStatement>();
 	auto inner_select_node = make_unique<SelectNode>();
-	auto c_rowid_colref = make_unique<ColumnRefExpression>("rowid", "customer"); 
+	auto c_rowid_colref = make_unique<ColumnRefExpression>("rowid", "person"); 
 	//c will be label -> get TablefromLabel
 	c_rowid_colref->alias = "dense_id";
 	
-	auto t_fromid_colref = make_unique<ColumnRefExpression>("from_id", "transfers"); //t label
+	auto t_fromid_colref = make_unique<ColumnRefExpression>("person1id", "person_knows_person"); //t label
 	vector<unique_ptr<ParsedExpression>> inner_count_children;
 	inner_count_children.push_back(move(t_fromid_colref));
 	auto inner_count_function = make_unique<FunctionExpression>("count", move(inner_count_children));
@@ -230,7 +234,7 @@ static unique_ptr<SelectStatement> CreateInnerSelectStatement() {
 	inner_select_node->select_list.push_back(move(c_rowid_colref));
 	inner_select_node->select_list.push_back(move(inner_count_function));
 	// vector<unique_ptr<ParsedExpression>> inner_group_by;
-	auto c_rowid_colref_1 = make_unique<ColumnRefExpression>("rowid", "customer"); //c label
+	auto c_rowid_colref_1 = make_unique<ColumnRefExpression>("rowid", "person"); //c label
 	GroupByNode gnode;
 	vector<idx_t> indexes;
 
@@ -246,14 +250,14 @@ static unique_ptr<SelectStatement> CreateInnerSelectStatement() {
 	auto inner_join_ref = make_unique<JoinRef>();
 	inner_join_ref->type = JoinType::LEFT;
 	auto left_base_ref = make_unique<BaseTableRef>();
-	left_base_ref->table_name = "customer";
+	left_base_ref->table_name = "person";
 	auto right_base_ref = make_unique<BaseTableRef>();
-	right_base_ref->table_name = "transfers";
+	right_base_ref->table_name = "person_knows_person";
 	inner_join_ref->left = move(left_base_ref);
 	inner_join_ref->right = move(right_base_ref);
 	// quals for ON
-	auto t_join_colref = make_unique<ColumnRefExpression>("from_id", "transfers"); //t label
-	auto c_join_colref = make_unique<ColumnRefExpression>("cid", "customer"); //c label
+	auto t_join_colref = make_unique<ColumnRefExpression>("person1id", "person_knows_person"); //t label
+	auto c_join_colref = make_unique<ColumnRefExpression>("personid", "person"); //c label
 	// alias column names vector look
 	inner_join_ref->condition = make_unique<ComparisonExpression>(ExpressionType::COMPARE_EQUAL, move(t_join_colref), move(c_join_colref));
 	// TransformBinaryOperator("=", t_join_colref, c_join_colref);
@@ -277,7 +281,7 @@ static unique_ptr<CastExpression> CreateCastExpression() {
 	// inner_from_subquery->subquery = move(inner_select_statment);
 
 	cast_select_node->from_table = move(inner_from_subquery);
-	auto sum_function = CreateSumFunction("customer");
+	auto sum_function = CreateSumFunction("person");
 	cast_select_node->select_list.push_back(move(sum_function));
 	auto cast_select_stmt = make_unique<SelectStatement>();
 	cast_select_stmt->node = move(cast_select_node);
@@ -294,7 +298,7 @@ static unique_ptr<FunctionExpression> CreateCsrEdgeFunction() {
 	auto subquery_expr = make_unique<SubqueryExpression>();
 	
 	// subquery_expr->subquery = move(GetCountTable(previous_vertex_entry->name));
-	subquery_expr->subquery = move(GetCountTable("customer"));
+	subquery_expr->subquery = move(GetCountTable("person"));
 	subquery_expr->subquery_type = SubqueryType::SCALAR;
 	
 
@@ -319,10 +323,12 @@ static unique_ptr<FunctionExpression> CreateCsrEdgeFunction() {
 
 static unique_ptr<FunctionExpression> CreateReachabilityFunction() {
 	vector<unique_ptr<ParsedExpression>> reachability_children;
-	auto cte_where_src_row = make_unique<ColumnRefExpression>("src_row", "cte1");
-	auto cte_where_dst_row = make_unique<ColumnRefExpression>("dst_row", "cte1");
+	// auto cte_where_src_row = make_unique<ColumnRefExpression>("src_row", "cte1");
+	// auto cte_where_dst_row = make_unique<ColumnRefExpression>("dst_row", "cte1");
+	auto cte_where_src_row = make_unique<ColumnRefExpression>("rowid", "src");
+	auto cte_where_dst_row = make_unique<ColumnRefExpression>("rowid", "dst");
 	auto reachability_subquery_expr = make_unique<SubqueryExpression>();
-	reachability_subquery_expr->subquery = move(GetCountTable("customer"));
+	reachability_subquery_expr->subquery = move(GetCountTable("person"));
 	reachability_subquery_expr->subquery_type = SubqueryType::SCALAR;
 	
 	auto reachability_id_constant = make_unique<ConstantExpression>(Value::INTEGER((int32_t)0));
@@ -335,27 +341,27 @@ static unique_ptr<FunctionExpression> CreateReachabilityFunction() {
 
 }
 
-static unique_ptr<SelectStatement> CreateOuterSelectStatement() {
+static unique_ptr<SelectStatement> CreateOuterSelectStatement(PropertyGraphTable *vertex_entry, PropertyGraphTable *edge_entry) {
 	
 	auto outer_select_statment = make_unique<SelectStatement>();
 
 	auto outer_select_node = make_unique<SelectNode>();
 					
 	auto create_csr_edge_function = CreateCsrEdgeFunction();
-	create_csr_edge_function->alias = "temp";
 	
-	auto outer_src_rowid = make_unique<ColumnRefExpression>("rowid", "src" );
-	outer_src_rowid->alias = "src_row";
-	auto outer_dst_rowid = make_unique<ColumnRefExpression>("rowid", "dst");
-	outer_dst_rowid->alias = "dst_row";
-	// vector<unique_ptr<ParsedExpression>> min_children;
-	// min_children.push_back(move(create_csr_edge_function));
+	
+	// auto outer_src_rowid = make_unique<ColumnRefExpression>("rowid", "src" );
+	// outer_src_rowid->alias = "src_row";
+	// auto outer_dst_rowid = make_unique<ColumnRefExpression>("rowid", "dst");
+	// outer_dst_rowid->alias = "dst_row";
+	vector<unique_ptr<ParsedExpression>> min_children;
+	min_children.push_back(move(create_csr_edge_function));
 
-	// auto min_function = make_unique<FunctionExpression>("min", min_children);
-
-	outer_select_node->select_list.push_back(move(create_csr_edge_function));
-	outer_select_node->select_list.push_back(move(outer_src_rowid));
-	outer_select_node->select_list.push_back(move(outer_dst_rowid));
+	auto min_function = make_unique<FunctionExpression>("min", move(min_children));
+	min_function->alias = "temp";
+	outer_select_node->select_list.push_back(move(min_function));
+	// outer_select_node->select_list.push_back(move(outer_src_rowid));
+	// outer_select_node->select_list.push_back(move(outer_dst_rowid));
 	outer_select_node->from_table = move(GetJoinRef("src", "dst"));
 	
 	// auto outer_subquery_exp = make_unique<SubqueryExpression>();
@@ -363,21 +369,25 @@ static unique_ptr<SelectStatement> CreateOuterSelectStatement() {
 	return outer_select_statment;
 }
 
-static unique_ptr<SelectStatement> CreateCTESelectStatement() {
+static unique_ptr<SelectStatement> CreateCTESelectStatement(PropertyGraphTable *previous_vertex, PropertyGraphTable *edge_entry, PropertyGraphTable *vertex_entry, unordered_map<string, string> &label_column_map) {
 					
 	auto info = make_unique<CommonTableExpressionInfo>();
 	auto cte_select_statement = make_unique<SelectStatement>();
 
-	info->query = move(CreateOuterSelectStatement());
+	if(previous_vertex->name != vertex_entry->name) {
+		throw BinderException("We currently only support CSR creation for the same vertex tables.");
+	}
+	// vertex_entry->
+	info->query = move(CreateOuterSelectStatement(vertex_entry, edge_entry));
 	
-	// unique_ptr<QueryNode> node = make_unique<SelectNode>();
 	auto cte_select_node = make_unique<SelectNode>();
-	// auto cte_select_node = (SelectNode *)node.get();
+	//TODO: handle multiple
 	cte_select_node->cte_map["cte1"] = move(info);
 
-	auto src_cid_col_ref = make_unique<ColumnRefExpression>("cid", "src");
+	auto src_cid_col_ref = make_unique<ColumnRefExpression>("personid", "src");
+	// src_cid_col_ref->alias = label_column_map[previous_vertex->];
 	src_cid_col_ref->alias = "c1id";
-	auto dst_cid_col_ref = make_unique<ColumnRefExpression>("cid", "dst");
+	auto dst_cid_col_ref = make_unique<ColumnRefExpression>("personid", "dst");
 	dst_cid_col_ref->alias = "c2id";
 	auto cte_col_ref = make_unique<ColumnRefExpression>("temp", "cte1");
 	cte_col_ref->alias = "csr";
@@ -388,38 +398,50 @@ static unique_ptr<SelectStatement> CreateCTESelectStatement() {
 	auto cte_ref = make_unique<BaseTableRef>();
 	cte_ref->schema_name = DEFAULT_SCHEMA;
 	cte_ref->table_name = "cte1";
+	auto outer_cross_ref = make_unique<CrossProductRef>();
+	outer_cross_ref->left = move(cte_ref);
+	auto src_base_ref = make_unique<BaseTableRef>();
+	src_base_ref->table_name = "person";
+	src_base_ref->alias = "src";
+	outer_cross_ref->right = move(src_base_ref);
+
+		// cross_ref->right = move(GetJoinRef("src", "dst"));
+	auto dst_base_ref = make_unique<BaseTableRef>();
+	dst_base_ref->table_name = "person";
+	dst_base_ref->alias = "dst";
 	auto cross_ref = make_unique<CrossProductRef>();
-	cross_ref->left = move(cte_ref);
-	cross_ref->right = move(GetJoinRef("src", "dst"));
+	cross_ref->left = move(outer_cross_ref);
+	cross_ref->right = move(dst_base_ref);
 	cte_select_node->from_table = move(cross_ref);
 
 	vector<unique_ptr<ParsedExpression>> cte_conditions;
-	auto src_row_id = make_unique<ColumnRefExpression>("rowid", "src");
-	auto cte_src_row = make_unique<ColumnRefExpression>("src_row", "cte1");
+	// auto src_row_id = make_unique<ColumnRefExpression>("rowid", "src");
+	// auto cte_src_row = make_unique<ColumnRefExpression>("src_row", "cte1");
 	
-	auto dst_row_id = make_unique<ColumnRefExpression>("rowid", "dst");
-	auto cte_dst_row = make_unique<ColumnRefExpression>("dst_row", "cte1");
-	cte_conditions.push_back(
-		make_unique<ComparisonExpression>(ExpressionType::COMPARE_EQUAL, move(src_row_id), move(cte_src_row)));
-	cte_conditions.push_back(
-		make_unique<ComparisonExpression>(ExpressionType::COMPARE_EQUAL, move(dst_row_id), move(cte_dst_row)));
+	// auto dst_row_id = make_unique<ColumnRefExpression>("rowid", "dst");
+	// auto cte_dst_row = make_unique<ColumnRefExpression>("dst_row", "cte1");
+	// cte_conditions.push_back(
+	// 	make_unique<ComparisonExpression>(ExpressionType::COMPARE_EQUAL, move(src_row_id), move(cte_src_row)));
+	// cte_conditions.push_back(
+	// 	make_unique<ComparisonExpression>(ExpressionType::COMPARE_EQUAL, move(dst_row_id), move(cte_dst_row)));
 	
 		
 	// auto reachability_constant = make_unique<ConstantExpression>(Value::INTEGER((int32_t)1));
 	auto reachability_function = CreateReachabilityFunction();
-	cte_conditions.push_back(
-		make_unique<ComparisonExpression>(ExpressionType::COMPARE_EQUAL, move(reachability_function), move(cte_col_ref)));
+	auto cte_where_expression = 
+		make_unique<ComparisonExpression>(ExpressionType::COMPARE_EQUAL, move(reachability_function), move(cte_col_ref));
 	
-	unique_ptr<ParsedExpression> cte_and_expression;
-	for (auto &condition : cte_conditions) {
-		if (cte_and_expression) {
-			cte_and_expression = make_unique<ConjunctionExpression>(ExpressionType::CONJUNCTION_AND, move(cte_and_expression),
-																move(condition));
-		} else {
-			cte_and_expression = move(condition);
-		}
-	}
-	cte_select_node->where_clause = move(cte_and_expression);
+	// unique_ptr<ParsedExpression> cte_and_expression;
+	// for (auto &condition : cte_conditions) {
+	// 	if (cte_and_expression) {
+	// 		cte_and_expression = make_unique<ConjunctionExpression>(ExpressionType::CONJUNCTION_AND, move(cte_and_expression),
+	// 															move(condition));
+	// 	} else {
+	// 		cte_and_expression = move(condition);
+	// 	}
+	// }
+	// unique_ptr<ParsedExpression> cte_where_expression;
+	cte_select_node->where_clause = move(cte_where_expression);
 	cte_select_statement->node = move(cte_select_node);
 	return cte_select_statement;
 }
@@ -437,8 +459,10 @@ unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
 	vector<vector<string>> edge_columns;
 	vector<string> edge_aliases;
 	unordered_set<unique_ptr<BaseTableRef>> from_tables;
+	//mapping alias to tuple (table name, is_vertex_table, label)
 	unordered_map<string, std::tuple<string, bool, string>> alias_table_map;
 	vector<unique_ptr<ParsedExpression>> conditions;
+	unordered_map<string, string> label_column_map;
 
 	auto select_node = make_unique<SelectNode>();
 	auto subquery = make_unique<SelectStatement>();
@@ -452,10 +476,19 @@ unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
 	}
 	auto previous_vertex_pattern = move(ref.param_list[0]);
 
+	
+	for (idx_t i = 0; i < ref.columns.size(); i++) {
+		// label_column_map[]
+		// auto &expr_ref = *ref.columns;
+		// ref.columns[i]->alias;
+		label_column_map[((ColumnRefExpression &) *ref.columns[i]).table_name] = ref.columns[i]->alias;
+		// (ColumnRefExpression &)ref.columns[i]
+	}
+
 	// if(!previous_vertex_pattern->label_name){
 	// 	throw BinderException("First vertex label cannot be empty");
 	// }
-	auto previous_vertex_entry = FindLabel(pg_table, previous_vertex_pattern->label_name);
+	auto previous_vertex_entry = GetPropertyGraphEntry(pg_table, previous_vertex_pattern->label_name);
 	auto table = TransformFromTable(previous_vertex_pattern->alias_name, previous_vertex_entry->name);
 
 	alias_table_map[previous_vertex_pattern->alias_name] = std::make_tuple(
@@ -472,8 +505,8 @@ unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
 		auto vertex_label = (vertex_pattern->label_name != "") ? vertex_pattern->label_name
 		                                                       : GetLabel(alias_table_map, vertex_pattern->alias_name);
 
-		auto edge_entry = FindLabel(pg_table, edge_label);
-		auto vertex_entry = FindLabel(pg_table, vertex_label);
+		auto edge_entry = GetPropertyGraphEntry(pg_table, edge_label);
+		auto vertex_entry = GetPropertyGraphEntry(pg_table, vertex_label);
 
 		auto edge_alias_usage = CheckAliasUsage(alias_table_map, edge_pattern->alias_name, edge_entry->name,
 		                                        edge_pattern->is_vertex_pattern, edge_label);
@@ -487,7 +520,7 @@ unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
 				case MatchStarPattern::ALL: {
 					flag = true;
 					
-					cte_select_statement = CreateCTESelectStatement();
+					cte_select_statement = CreateCTESelectStatement(previous_vertex_entry, edge_entry, vertex_entry, label_column_map);
 					// outer_subquery_exp->subquery = move(outer_select_statment);
 					break;
 					// select_inner->from_table = make_unique<BaseTableRef>()
@@ -558,20 +591,7 @@ unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
 	}
 	unique_ptr<TableRef> cur_root;
 
-	// 	for (auto &table : from_tables) {
-	//     auto tmp = make_unique<BaseTableRef>();
-	//     tmp->alias = table->alias;
-	//     tmp->table_name = table->table_name;
 
-	//     if (!cur_root) {
-	//         cur_root = move(tmp);
-	//     } else {
-	//         auto new_root = make_unique<CrossProductRef>();
-	//         new_root.get()->left = move(cur_root);
-	//         new_root.get()->right = move(tmp);
-	//         cur_root = move(new_root);
-	//     }
-	// }
 	if(flag){
 		auto result = make_unique<SubqueryRef>(move(cte_select_statement), ref.name);
 		return Bind(*result);
