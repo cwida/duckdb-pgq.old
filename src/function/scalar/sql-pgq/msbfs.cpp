@@ -67,7 +67,7 @@ static int16_t initialise_bfs(idx_t curr_batch, idx_t size, int64_t *src_data, v
 
 static bool bfs_without_array(bool exit_early, int32_t id, int64_t input_size, MsbfsBindData &info, vector<std::bitset<LANE_LIMIT>> &seen, 
 		vector<std::bitset<LANE_LIMIT>> &visit,
-		vector<std::bitset<LANE_LIMIT>> &visit_next ) { 
+		vector<std::bitset<LANE_LIMIT>> &visit_next, vector<int64_t> &visit_list) { 
 	for (int64_t i = 0; i < input_size; i++) {
 		if (!visit[i].any())
 			continue;
@@ -88,10 +88,80 @@ static bool bfs_without_array(bool exit_early, int32_t id, int64_t input_size, M
 		seen[i] = seen[i] | visit_next[i];
 		if(exit_early == true && visit_next[i].any() )
 			exit_early = false;
+		if(visit_next[i].any()){
+			visit_list.push_back(i);
+		}
 			
 	}
 	return exit_early;
 }
+
+static pair<bool, size_t> bfs_temp_state(bool exit_early, int32_t id, int64_t input_size, MsbfsBindData &info, vector<std::bitset<LANE_LIMIT>> &seen, 
+		vector<std::bitset<LANE_LIMIT>> &visit,
+		vector<std::bitset<LANE_LIMIT>> &visit_next) { 
+	size_t num_nodes_to_visit = 0;
+	for (int64_t i = 0; i < input_size; i++) {
+		if (!visit[i].any())
+			continue;
+		
+		D_ASSERT(info.context.csr_list[id]);
+		for (auto index = (long)info.context.csr_list[id]->v[i]; index < (long)info.context.csr_list[id]->v[i + 1]; index++) {
+			auto n = info.context.csr_list[id]->e[index];
+			visit_next[n] = visit_next[n] | visit[i];
+			
+		}
+		
+	}
+	
+	for (int64_t i = 0; i < input_size ; i++) {
+		if (visit_next[i].none())
+			continue;
+		visit_next[i] = visit_next[i] & ~seen[i];
+		seen[i] = seen[i] | visit_next[i];
+		if(exit_early == true && visit_next[i].any() )
+			exit_early = false;
+		if(visit_next[i].any()){
+			num_nodes_to_visit++;
+		}
+			
+	}
+	return pair<bool, size_t>(exit_early, num_nodes_to_visit);
+}
+
+
+
+static bool bfs_with_array(bool exit_early, int32_t id, MsbfsBindData &info, vector<std::bitset<LANE_LIMIT>> &seen, 
+		vector<std::bitset<LANE_LIMIT>> &visit,
+		vector<std::bitset<LANE_LIMIT>> &visit_next, vector<int64_t> &visit_list) { 
+	vector<int64_t> neighbours_list;
+	for (int64_t i : visit_list) {
+		if (!visit[i].any())
+			continue;
+		
+		D_ASSERT(info.context.csr_list[id]);
+		for (auto index = (long)info.context.csr_list[id]->v[i]; index < (long)info.context.csr_list[id]->v[i + 1]; index++) {
+			auto n = info.context.csr_list[id]->e[index];
+			visit_next[n] = visit_next[n] | visit[i];
+			neighbours_list.push_back(n);
+		}
+	}
+	visit_list.clear();
+	for (int64_t i: neighbours_list) {
+		if (visit_next[i].none())
+			continue;
+		visit_next[i] = visit_next[i] & ~seen[i];
+		seen[i] = seen[i] | visit_next[i];
+		if(exit_early == true && visit_next[i].any() )
+			exit_early = false;
+		if(visit_next[i].any()){
+			visit_list.push_back(i);
+		}
+			
+	}
+	return exit_early;
+}
+
+
 
 static void msbfs_function(DataChunk &args, ExpressionState &state, Vector &result) {
 	// D_ASSERT(args.ColumnCount() == 0);
@@ -112,10 +182,13 @@ static void msbfs_function(DataChunk &args, ExpressionState &state, Vector &resu
 	// const int32_t bfs = info.num_bfs;
 	
 	idx_t result_size = 0;
+	vector<int64_t> visit_list;
+	size_t visit_limit = input_size / VISIT_SIZE_DIVISOR;
+	size_t num_nodes_to_visit = 0;
 	// idx_t curr_batch = 0;
 	result.SetVectorType(VectorType::FLAT_VECTOR);
 	auto result_data = FlatVector::GetData<bool>(result);
-
+	
 	while (result_size < args.size()) {
 		// int32_t lanes = 0;
 		vector<std::bitset<LANE_LIMIT>> seen(input_size);
@@ -132,12 +205,31 @@ static void msbfs_function(DataChunk &args, ExpressionState &state, Vector &resu
 	
 	while (exit_early == false ) {
 		exit_early =true;
-		if(mode == 2 || mode == 0) {
-			exit_early = bfs_without_array(exit_early, 0, input_size, info, seen, visit, visit_next);
-			visit = visit_next;
-			for (auto i = 0; i < input_size; i++) {
-				visit_next[i] = 0;
-			}
+		if(mode == 0 && visit_list.size() > 0) {
+			mode = 1;
+		}
+		if(mode == 1 && visit_list.size() > visit_limit) {
+			mode = 2;
+		}
+		if(mode == 2 && num_nodes_to_visit < visit_limit) {
+			mode = 0;
+		}
+		if(mode == 1) {
+			exit_early = bfs_with_array(exit_early, 0, info, seen, visit, visit_next, visit_list);
+		}
+		if(mode == 0) {
+			exit_early = bfs_without_array(exit_early, 0, input_size, info, seen, visit, visit_next, visit_list);
+			
+		}
+		if(mode == 2) {
+			auto return_pair = bfs_temp_state(exit_early, 0, input_size, info, seen, visit, visit_next);
+			exit_early = return_pair.first;
+			num_nodes_to_visit = return_pair.second;
+		}
+
+		visit = visit_next;
+		for (auto i = 0; i < input_size; i++) {
+			visit_next[i] = 0;
 		}
 		// check target
 		// visit_list with n's to keep track (iniitally 64 nodes to visit but looping till input_size)

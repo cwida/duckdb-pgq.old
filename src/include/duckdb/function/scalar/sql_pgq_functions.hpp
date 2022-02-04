@@ -13,7 +13,8 @@
 
 namespace duckdb {
 
-	#define LANE_LIMIT 512
+#define LANE_LIMIT 64
+#define VISIT_SIZE_DIVISOR 2
 
 struct CreateCsrFun {
 	static void RegisterFunction(BuiltinFunctions &set);

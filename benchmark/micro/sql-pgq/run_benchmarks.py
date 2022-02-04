@@ -11,6 +11,7 @@ SQL_FILE = "create_csr_vertex.sql"
 TEST_FILE = "test_write.hpp"
 
 DEFINE_STRING = "#define LANE_LIMIT "
+DIVISOR_STRING = "#define VISIT_SIZE_DIVISOR "
 THREAD_STRING = "PRAGMA threads="
 SF_STRING = "data/ldbc-snb/social-network-sf"
 
@@ -24,22 +25,23 @@ OUTPUT_DIR = os.path.join(BENCHMARK_DIR, "results")
 
 msbfs_file = "msbfs.benchmark"
 
-Mode = Enum('Mode', 'THREAD LANE SF')
+Mode = Enum('Mode', 'THREAD LANE SF MSBFS')
 
-def replace_string(mode, in_file, lane, thread_count, sf_count):
+def replace_string(mode, in_file, lane, thread_count, sf_count, divisor):
 	write_lines = list()
 	print(mode)
 	# new_line = create_line(mode, lane_count, thread_count, vertex_count)
 	for lines in in_file.readlines():
 		if(mode == Mode.LANE):
-		# 	test_string = DEFINE_STRING
-		# 	new_string = DEFINE_STRING + str(lane) + "\n"
-		# elif(mode.THREAD):
-		# 	test_string = THREAD_STRING
-		# 	new_string =
 			if DEFINE_STRING in lines:
 				new_lane = DEFINE_STRING + str(lane) + "\n"
 				write_lines.append(new_lane)
+			else:
+				write_lines.append(copy.deepcopy(lines))
+		elif(mode == Mode.MSBFS):
+			if DIVISOR_STRING in lines:
+				new_divisor = DIVISOR_STRING + str(divisor) + "\n"
+				write_lines.append(new_divisor)
 			else:
 				write_lines.append(copy.deepcopy(lines))
 		elif(mode == Mode.THREAD):
@@ -66,7 +68,7 @@ def replace_string(mode, in_file, lane, thread_count, sf_count):
 
 	# return write_lines
 
-def read_and_replace(mode, thread_file = '', sf_file = '', lane = 64, thread_count = 1, sf_count = 0.1):
+def read_and_replace(mode, thread_file = '', sf_file = '', lane = 64, thread_count = 1, sf_count = 0.1, divisor = 2):
 	if(mode == Mode.THREAD):
 		input_file = thread_file
 		output_file = thread_file
@@ -76,11 +78,14 @@ def read_and_replace(mode, thread_file = '', sf_file = '', lane = 64, thread_cou
 	elif(mode == Mode.SF):
 		input_file = sf_file
 		output_file = sf_file
+	elif(mode == Mode.MSBFS):
+		input_file = LANE_FILE
+		output_file = LANE_FILE
 	else:
 		print("Unknown mode")
 		exit(0)
 	with open(input_file, 'r') as in_file:
-		write_lines = replace_string(mode, in_file, lane, thread_count, sf_count)
+		write_lines = replace_string(mode, in_file, lane, thread_count, sf_count, divisor)
 			
 	print(write_lines)
 	with open(output_file, 'w') as out_file:
@@ -117,7 +122,7 @@ def run_benchmark( bc_file, output_dir, output_file):
 	# 	print(text)
 
 
-thread_values = [1, 2, 4]
+thread_values = [1, 2, 4, 8, 12, 16]
 # thread_values = [2]
 vertex_count = 1000
 def thread_benchmark(sf):
@@ -155,14 +160,31 @@ def lane_benchmark(sf):
 			thread_file = os.path.join(BENCHMARK_DIR, msbfs_file)
 			read_and_replace(Mode.THREAD, thread_file=thread_file, thread_count=thread_count)
 			run_benchmark(thread_file, output_dir, msbfs_file.split(".")[0] + '_' + str(lane) + '_' + str(vertex_count)  + '_' + str(edge_count) + '_' + str(thread_count) + ".out")
-		
 
-# sf_values = [0.1, 0.3, 1, 3, 10, 30, 100]
-sf_values = [0.1, 0.3]
+
+def msbfs_variant_benchmark(sf):
+	msbfs_divisors = [1, 2, 3, 4]
+	# msbfs_divisors = [2]
+	edge_count = 1000000
+	output_dir = os.path.join(OUTPUT_DIR, "msbfs")
+	output_dir = os.path.join(output_dir,  str(sf))
+	for divisor in msbfs_divisors:
+		read_and_replace(Mode.MSBFS, divisor=divisor)
+		run_make()
+		for thread_count in thread_values:
+			thread_file = os.path.join(BENCHMARK_DIR, msbfs_file)
+			read_and_replace(Mode.THREAD, thread_file=thread_file, thread_count=thread_count)
+			run_benchmark(thread_file, output_dir, msbfs_file.split(".")[0] + '_' + str(divisor) + '_' + str(vertex_count)  + '_' + str(edge_count) + '_' + str(thread_count) + ".out")
+
+
+sf_values = [0.1, 0.3, 1, 3, 10]
+# sf_values = [0.1, 0.3]
 sf_files = ["snb.sql", "create_csr.sql"]
 for sf in sf_values:
 	for f in sf_files:
 		sf_file = os.path.join(BENCHMARK_DIR, f)
 		read_and_replace(Mode.SF, sf_count=sf, sf_file=sf_file)
-	thread_benchmark(sf)
+	
+	# thread_benchmark(sf)
 	# lane_benchmark(sf)
+	msbfs_variant_benchmark(sf)
