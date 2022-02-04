@@ -53,9 +53,9 @@ static int16_t initialise_bfs(idx_t curr_batch, idx_t size, int64_t *src_data, v
 		auto entry = lane_map.find(src_data[i]);
 		if(entry == lane_map.end()) {
 			lane_map[src_data[i]].first = lanes;
-			seen[src_data[i]] = std::bitset<LANE_LIMIT>();
+			// seen[src_data[i]] = std::bitset<LANE_LIMIT>();
 			seen[src_data[i]][lanes] = 1;
-			visit[src_data[i]] = std::bitset<LANE_LIMIT>();
+			// visit[src_data[i]] = std::bitset<LANE_LIMIT>();
 			visit[src_data[i]][lanes] = 1;
 			lanes++;
 		}
@@ -68,25 +68,20 @@ static int16_t initialise_bfs(idx_t curr_batch, idx_t size, int64_t *src_data, v
 static bool bfs_without_array(bool exit_early, int32_t id, int64_t input_size, MsbfsBindData &info, vector<std::bitset<LANE_LIMIT>> &seen, 
 		vector<std::bitset<LANE_LIMIT>> &visit,
 		vector<std::bitset<LANE_LIMIT>> &visit_next ) { 
-	for (int64_t i = 0; i < input_size - 1; i++) {
-		// if (!visit[i])
-		// 	continue;
+	for (int64_t i = 0; i < input_size; i++) {
 		if (!visit[i].any())
 			continue;
-		// auto csr = move(info.context.csr_list[id]);
-		// if(i > csr->v)
+		
 		D_ASSERT(info.context.csr_list[id]);
 		for (auto index = (long)info.context.csr_list[id]->v[i]; index < (long)info.context.csr_list[id]->v[i + 1]; index++) {
 			auto n = info.context.csr_list[id]->e[index];
 			visit_next[n] = visit_next[n] | visit[i];
 			
 		}
-		// info.context.csr_list[id] = move(csr);
+		
 	}
 	
 	for (int64_t i = 0; i < input_size ; i++) {
-		// if (!visit_next[i])
-		// 	continue;
 		if (visit_next[i].none())
 			continue;
 		visit_next[i] = visit_next[i] & ~seen[i];
@@ -127,7 +122,7 @@ static void msbfs_function(DataChunk &args, ExpressionState &state, Vector &resu
 		vector<std::bitset<LANE_LIMIT>> visit(input_size);
 		vector<std::bitset<LANE_LIMIT>> visit_next(input_size);
 		
-		//src_value ->  (bfs_num, vector of indices)
+		//mapping of src_value ->  (bfs_num/lane, vector of indices in src_data)
 		unordered_map<int64_t, pair<int16_t, vector<int64_t>>> lane_map;
 	 
 	auto curr_batch_size = initialise_bfs(result_size, args.size(), src_data, seen, visit, visit_next, lane_map);

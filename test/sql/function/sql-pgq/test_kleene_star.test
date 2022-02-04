@@ -38,11 +38,21 @@ statement ok
 select c1id, c2id 
 from GRAPH_TABLE (aml, MATCH (c1 IS CUSTOMER)-[t1 IS TRANSFERS]->(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
 
-query II
+query II rowsort
 select gt.c1id, gt.c2id
 from GRAPH_TABLE (aml, MATCH (c1 IS CUSTOMER)-[t1 IS TRANSFERS*]-(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
 ----
-173	478
+173	173			
 173	297
-478	297
+173	478
+173	869
+297	297
 297	869
+478	297
+478	478
+478	869
+869	869
+# 173	478
+# 173	297
+# 478	297
+# 297	869
