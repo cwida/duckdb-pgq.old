@@ -142,6 +142,7 @@ static string GetLabel(unordered_map<string, std::tuple<string, bool, string>> &
 	}
 }
 
+//! max c.rowid() + 1 instead to handle deletes
 static unique_ptr<SelectStatement> GetCountTable(string name) {
 	auto select_count = make_unique<SelectStatement>();
 	auto select_inner = make_unique<SelectNode>();
@@ -521,6 +522,7 @@ unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
 					flag = true;
 					
 					cte_select_statement = CreateCTESelectStatement(previous_vertex_entry, edge_entry, vertex_entry, label_column_map);
+					//! Insert into from_tables and call continue with an alias. check if this can be use with BaseTableRef.
 					// outer_subquery_exp->subquery = move(outer_select_statment);
 					break;
 					// select_inner->from_table = make_unique<BaseTableRef>()
