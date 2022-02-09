@@ -173,10 +173,11 @@ static unique_ptr<FunctionData> create_csr_edge_bind(ClientContext &context, Sca
 }
 
 void CreateCsrFun::RegisterFunction(BuiltinFunctions &set) {
-
+	//params -> id, size, src/dense_id, cnt
 	set.AddFunction(ScalarFunction(
 	    "create_csr_vertex", {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT},
 	    LogicalType::BIGINT, create_csr_vertex_function, false, create_csr_vertex_bind));
+	//params -> id, v_size, num_edges, src_rowid, dst_rowid
 	set.AddFunction(ScalarFunction(
 	    "create_csr_edge",
 	    {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT},

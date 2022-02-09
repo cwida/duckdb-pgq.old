@@ -1,0 +1,35 @@
+# name: benchmark/micro/sql-pgq/full_query.benchmark
+# description: MSBFS 
+# group: [sql-pgq]
+
+name MSBFS
+group sql-pgq
+
+init
+PRAGMA threads=1;
+
+load benchmark/micro/sql-pgq/full_query.sql
+
+run
+WITH cte1 AS (
+SELECT min(CREATE_CSR_EDGE(0, (SELECT count(p.personid) as vcount FROM Person p), 
+CAST ((SELECT sum(CREATE_CSR_VERTEX(0, (SELECT count(p.personid) as vcount FROM Person p), 
+sub.dense_id , sub.cnt )) AS numEdges
+FROM (
+    SELECT p.rowid as dense_id, count(pkp.person1id) as cnt
+    FROM Person p  
+    LEFT JOIN  Person_knows_Person pkp ON pkp.person1id = p.personid
+    GROUP BY p.rowid
+) sub) AS BIGINT) , src.rowid, dst.rowid)) as temp, (SELECT count(p.personid) FROM Person p) as vcount 
+FROM 
+  Person_knows_Person pkp 
+  JOIN Person src ON pkp.person1id = src.personid
+  JOIN Person dst ON pkp.person2id = dst.personid
+)
+SELECT min(src.rowid)
+FROM cte1, Person_Subset_l src, Person_Subset_r dst 
+WHERE  
+( reachability(0, false, cte1.vcount, src.rid, dst.rid) = cte1.temp);
+
+result I
+0

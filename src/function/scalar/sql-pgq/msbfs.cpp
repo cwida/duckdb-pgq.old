@@ -45,24 +45,31 @@ struct MsbfsBindData : public FunctionData {
 //     return 1 == ( (num >> bit) & 1);
 // }
 
-static int16_t initialise_bfs(idx_t curr_batch, idx_t size, int64_t *src_data, vector<std::bitset<LANE_LIMIT>> &seen,
+static int16_t initialise_bfs(idx_t curr_batch, idx_t size, int64_t *src_data, const SelectionVector *src_sel,  
+ValidityMask src_validity, vector<std::bitset<LANE_LIMIT>> &seen,
 		vector<std::bitset<LANE_LIMIT>> &visit,
 		vector<std::bitset<LANE_LIMIT>> &visit_next,
 		unordered_map<int64_t, pair<int16_t, vector<int64_t>>> &lane_map) {
+			// 
 	int16_t lanes = 0;
 	int16_t curr_batch_size = 0;
+	
 	for(idx_t i =  curr_batch; i < size && lanes < LANE_LIMIT  ; i++) {
-		auto entry = lane_map.find(src_data[i]);
-		if(entry == lane_map.end()) {
-			lane_map[src_data[i]].first = lanes;
-			// seen[src_data[i]] = std::bitset<LANE_LIMIT>();
-			seen[src_data[i]][lanes] = 1;
-			// visit[src_data[i]] = std::bitset<LANE_LIMIT>();
-			visit[src_data[i]][lanes] = 1;
-			lanes++;
+		auto src_index = src_sel->get_index(i);
+		
+		if (src_validity.RowIsValid(src_index)) { 
+			auto entry = lane_map.find(src_data[src_index]);
+			if(entry == lane_map.end()) {
+				lane_map[src_data[src_index]].first = lanes;
+				// seen[src_data[i]] = std::bitset<LANE_LIMIT>();
+				seen[src_data[src_index]][lanes] = 1;
+				// visit[src_data[i]] = std::bitset<LANE_LIMIT>();
+				visit[src_data[src_index]][lanes] = 1;
+				lanes++;
+			}
+				lane_map[src_data[src_index]].second.push_back(i);
+				curr_batch_size++;
 		}
-			lane_map[src_data[i]].second.push_back(i);
-			curr_batch_size++;
 	}
 	return curr_batch_size;
 }
@@ -227,6 +234,7 @@ static void msbfs_function(DataChunk &args, ExpressionState &state, Vector &resu
 
 	VectorData vdata_src, vdata_target;
 	src.Orrify(args.size(), vdata_src);
+	
 	auto src_data = (int64_t *)vdata_src.data;
 
 	auto &target = args.data[4];
@@ -258,11 +266,11 @@ static void msbfs_function(DataChunk &args, ExpressionState &state, Vector &resu
 		//mapping of src_value ->  (bfs_num/lane, vector of indices in src_data)
 		unordered_map<int64_t, pair<int16_t, vector<int64_t>>> lane_map;
 	 
-	auto curr_batch_size = initialise_bfs(result_size, args.size(), src_data, seen, visit, visit_next, lane_map);
+	auto curr_batch_size = initialise_bfs(result_size, args.size(), src_data, vdata_src.sel,vdata_src.validity, seen, visit, visit_next, lane_map);
 	
 	int mode = 0;
 	bool exit_early = false;
-	int i = 0;
+	// int i = 0;
 	while (exit_early == false ) {
 		// log_file << "Iter" << endl;
 		exit_early =true;
@@ -314,7 +322,8 @@ static void msbfs_function(DataChunk &args, ExpressionState &state, Vector &resu
 		auto bfs_num = iter.second.first;
 		auto pos = iter.second.second;
 		for(auto index: pos) {
-			if(seen[target_data[index]][bfs_num] && seen[value][bfs_num]) {
+			auto target_index = vdata_target.sel->get_index(index);
+			if(seen[target_data[target_index]][bfs_num] && seen[value][bfs_num]) {
 			// if(is_bit_set(seen[target_data[index]], bfs_num) & is_bit_set(seen[value], bfs_num) ) {
 				result_data[index] = true;
 			}
