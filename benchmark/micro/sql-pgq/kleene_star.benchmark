@@ -1,0 +1,19 @@
+# name: benchmark/micro/sql-pgq/kleene_star.benchmark
+# description: MSBFS 
+# group: [sql-pgq]
+
+name MSBFS
+group sql-pgq
+
+init
+PRAGMA threads=4;
+
+load benchmark/micro/sql-pgq/kleene_star.sql
+
+run
+select min(gt.c1id)
+from GRAPH_TABLE (aml1, MATCH (p1 IS PERSON)-[pkp IS Person_knows_Person*]->(p2 IS Person) COLUMNS (p1.personid AS p1id, p2.personid AS p2id)) gt
+
+result I
+14
+

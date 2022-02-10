@@ -6,9 +6,9 @@ name MSBFS
 group sql-pgq
 
 init
-PRAGMA threads=1;
+PRAGMA threads=2;
 
-load benchmark/micro/sql-pgq/full_query.sql
+load benchmark/micro/sql-pgq/fullquery.sql
 
 run
 WITH cte1 AS (
@@ -33,3 +33,4 @@ WHERE
 
 result I
 0
+

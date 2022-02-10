@@ -252,11 +252,12 @@ static void msbfs_function(DataChunk &args, ExpressionState &state, Vector &resu
 	// CycleCounter profiler;
 	// FILE f1;
 	ofstream log_file;
-	log_file.open("timings-test.txt");
+	log_file.open("timings-test.txt", std::ios_base::app);
 	// std::stringstream ss;
-	Profiler<system_clock> phase_profiler;
+	Profiler<system_clock> phase_profiler, outer_profiler;
 	
-	log_file << "New" << endl;
+	log_file << "Args size " << std::to_string(args.size()) <<endl ;
+	outer_profiler.Start();
 	while (result_size < args.size()) {
 		// int32_t lanes = 0;
 		vector<std::bitset<LANE_LIMIT>> seen(input_size);
@@ -300,7 +301,7 @@ static void msbfs_function(DataChunk &args, ExpressionState &state, Vector &resu
 			exit_early = bfs_without_array(exit_early, id, input_size, info, seen, visit, visit_next);
 			// profiler.EndSample(args.size());
 			phase_profiler.End();
-			log_file << std::to_string(phase_profiler.Elapsed()) << endl;
+			log_file << "BFS function time " << std::to_string(phase_profiler.Elapsed()) << endl;
 			// LogOutput(log_file, std::to_string(phase_profiler.Elapsed()));
 			// fprintf(log_file, "%ld", ));
 			
@@ -333,6 +334,8 @@ static void msbfs_function(DataChunk &args, ExpressionState &state, Vector &resu
 	}
 	result_size = result_size + curr_batch_size;
 	}
+	outer_profiler.End();
+	log_file << "Entire program time " << std::to_string(outer_profiler.Elapsed()) << endl;
 	// local struct -> bitset (how many bits it contains), 
 				// dynamically move between different ; can
 				// 3 modes to benchmark - separate visit list ( keep track of number of nodes to visit) 

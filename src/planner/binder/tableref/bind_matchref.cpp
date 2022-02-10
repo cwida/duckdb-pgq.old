@@ -328,13 +328,16 @@ static unique_ptr<FunctionExpression> CreateReachabilityFunction() {
 	// auto cte_where_dst_row = make_unique<ColumnRefExpression>("dst_row", "cte1");
 	auto cte_where_src_row = make_unique<ColumnRefExpression>("rowid", "src");
 	auto cte_where_dst_row = make_unique<ColumnRefExpression>("rowid", "dst");
-	auto reachability_subquery_expr = make_unique<SubqueryExpression>();
-	reachability_subquery_expr->subquery = move(GetCountTable("person"));
-	reachability_subquery_expr->subquery_type = SubqueryType::SCALAR;
+	auto cte_vcount = make_unique<ColumnRefExpression>("vcount", "cte1");
+	// auto reachability_subquery_expr = make_unique<SubqueryExpression>();
+	// reachability_subquery_expr->subquery = move(GetCountTable("person"));
+	// reachability_subquery_expr->subquery_type = SubqueryType::SCALAR;
 	
 	auto reachability_id_constant = make_unique<ConstantExpression>(Value::INTEGER((int32_t)0));
+	auto reachability_is_variant = make_unique<ConstantExpression>(Value::BOOLEAN(false));
 	reachability_children.push_back(move(reachability_id_constant));
-	reachability_children.push_back(move(reachability_subquery_expr));
+	reachability_children.push_back(move(reachability_is_variant));
+	reachability_children.push_back(move(cte_vcount));
 	reachability_children.push_back(move(cte_where_src_row));
 	reachability_children.push_back(move(cte_where_dst_row));
 
@@ -360,7 +363,13 @@ static unique_ptr<SelectStatement> CreateOuterSelectStatement(PropertyGraphTable
 
 	auto min_function = make_unique<FunctionExpression>("min", move(min_children));
 	min_function->alias = "temp";
+	auto vcount_subquery = make_unique<SubqueryExpression>();
+	vcount_subquery->subquery_type = SubqueryType::SCALAR;
+
+	vcount_subquery->subquery = move(GetCountTable("person"));
+	vcount_subquery->alias = "vcount";
 	outer_select_node->select_list.push_back(move(min_function));
+	outer_select_node->select_list.push_back(move(vcount_subquery));
 	// outer_select_node->select_list.push_back(move(outer_src_rowid));
 	// outer_select_node->select_list.push_back(move(outer_dst_rowid));
 	outer_select_node->from_table = move(GetJoinRef("src", "dst"));

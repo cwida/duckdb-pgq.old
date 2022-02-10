@@ -23,6 +23,8 @@ BENCHMARK_DIR = "benchmark/micro/sql-pgq/"
 
 OUTPUT_DIR = os.path.join(BENCHMARK_DIR, "results")
 
+LOG_TIME_FILE = "timings-test.txt"
+
 msbfs_file = "msbfs.benchmark"
 
 Mode = Enum('Mode', 'THREAD LANE SF MSBFS')
@@ -128,43 +130,58 @@ vertex_count = 1000
 def thread_benchmark(sf):
 	
 	# thread_files = [ "create_csr_edge.benchmark"]
-	thread_files = ["create_csr_vertex.benchmark", "create_csr_edge.benchmark"]
+	# thread_files = ["create_csr_vertex.benchmark", "create_csr_edge.benchmark"]
 	# thread_files = [ msbfs_file]
+	thread_files = ["fullquery.benchmark"]
+	f = open('timings-test.txt', 'a')
+	f.write("sf " + str(sf) + "########\n")
+	# f.close()
 	
 	lane_count = 64
-	edge_mapping = {"vertex":1000000, "edge":1000000, "msbfs":1000000}
+	edge_mapping = {"vertex":1000000, "edge":1000000, "msbfs":1000000, "fullquery":1000000}
 	# msbfs.benchmark
 	output_dir = os.path.join(OUTPUT_DIR, "thread")
 	output_dir = os.path.join(output_dir,  str(sf))
 	for file in thread_files:
 		for thread_count in thread_values:
+			f.write("Thread values " + str(thread_count) + "\n")
 			thread_file = os.path.join(BENCHMARK_DIR, file)
 			read_and_replace(Mode.THREAD, thread_file=thread_file, thread_count=thread_count)
 			output_base = file.split(".")[0].split("_")[-1]
 			edge_count = edge_mapping[output_base]
 			run_benchmark(thread_file, output_dir, output_base +  '_' + str(lane_count) + '_' +  str(vertex_count) + '_' + str(edge_count) + '_' + str(thread_count) + ".out")
+	f.close()
 
 
 
 def lane_benchmark(sf):
-	# lane_values = [8, 16, 32, 64, 128, 256, 512]
+	lane_values = [8, 16, 32, 64, 128, 256, 512]
 	# lane_values = [16, 64, 256]
-	lane_values = [64]
+	# lane_values = [256]
+	# f = open('timings-test.txt', 'a')
+	f = open('timings-test.txt', 'a')
+	f.write("sf " + str(sf) + "########\n")
 	edge_count = 1000000
 	output_dir = os.path.join(OUTPUT_DIR, "lane")
 	output_dir = os.path.join(output_dir,  str(sf))
+	file = "fullquery.benchmark"
 	for lane in lane_values:
 		read_and_replace(Mode.LANE, lane=lane)
 		run_make()
 		for thread_count in thread_values:
-			thread_file = os.path.join(BENCHMARK_DIR, msbfs_file)
+			# thread_file = os.path.join(BENCHMARK_DIR, msbfs_file)
+			f.write("Lane " + str(lane) + " Thread " + str(thread_count) + "\n")
+			thread_file = os.path.join(BENCHMARK_DIR, file)			
 			read_and_replace(Mode.THREAD, thread_file=thread_file, thread_count=thread_count)
-			run_benchmark(thread_file, output_dir, msbfs_file.split(".")[0] + '_' + str(lane) + '_' + str(vertex_count)  + '_' + str(edge_count) + '_' + str(thread_count) + ".out")
+			run_benchmark(thread_file, output_dir, file.split(".")[0] + '_' + str(lane) + '_' + str(vertex_count)  + '_' + str(edge_count) + '_' + str(thread_count) + ".out")
+	f.close()
 
 
 def msbfs_variant_benchmark(sf):
 	msbfs_divisors = [1, 2, 3, 4]
 	# msbfs_divisors = [2]
+	f = open('my_file.txt', 'a')
+	f.write("########\n")
 	edge_count = 1000000
 	output_dir = os.path.join(OUTPUT_DIR, "msbfs")
 	output_dir = os.path.join(output_dir,  str(sf))
@@ -177,14 +194,25 @@ def msbfs_variant_benchmark(sf):
 			run_benchmark(thread_file, output_dir, msbfs_file.split(".")[0] + '_' + str(divisor) + '_' + str(vertex_count)  + '_' + str(edge_count) + '_' + str(thread_count) + ".out")
 
 
-sf_values = [0.1, 0.3, 1, 3, 10]
-# sf_values = [0.1, 0.3]
-sf_files = ["snb.sql", "create_csr.sql"]
+# sf_values = [0.1, 0.3, 1, 3, 10, 30]
+sf_values = [0.1, 0.3]
+sf_files = ["snb.sql", "create_csr.sql", "fullquery.sql"]
 for sf in sf_values:
 	for f in sf_files:
 		sf_file = os.path.join(BENCHMARK_DIR, f)
 		read_and_replace(Mode.SF, sf_count=sf, sf_file=sf_file)
 	
-	# thread_benchmark(sf)
-	# lane_benchmark(sf)
-	msbfs_variant_benchmark(sf)
+	thread_benchmark(sf)
+	lane_benchmark(sf)
+	# msbfs_variant_benchmark(sf)
+
+
+# WITH cte AS 
+# (
+# 	SELECT count(p.personid) AS vcount FROM Person p 
+# )
+# SELECT count(src.rowid)
+# FROM cte, Person_Subset_l src, Person_Subset_r dst 
+# WHERE  
+# ( reachability(0, false, cte.vcount, src.rid, dst.rid) = 1);
+
