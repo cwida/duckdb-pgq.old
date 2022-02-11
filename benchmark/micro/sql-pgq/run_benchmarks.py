@@ -1,3 +1,4 @@
+from ast import Mod
 import os
 import copy
 import subprocess
@@ -27,9 +28,11 @@ LOG_TIME_FILE = "timings-test.txt"
 
 msbfs_file = "msbfs.benchmark"
 
-Mode = Enum('Mode', 'THREAD LANE SF MSBFS')
+FULLQUERY_FILE = os.path.join(BENCHMARK_DIR, "fullquery.benchmark")
 
-def replace_string(mode, in_file, lane, thread_count, sf_count, divisor):
+Mode = Enum('Mode', 'THREAD LANE SF MSBFS TIMING')
+
+def replace_string(mode, in_file, lane, thread_count, sf_count, divisor, timing_file_name):
 	write_lines = list()
 	print(mode)
 	# new_line = create_line(mode, lane_count, thread_count, vertex_count)
@@ -62,6 +65,16 @@ def replace_string(mode, in_file, lane, thread_count, sf_count, divisor):
 				write_lines.append(new_sql)
 			else:
 				write_lines.append(copy.deepcopy(lines))
+		elif(mode == Mode.TIMING):
+			if "sf" in lines:
+				sf_pos = lines.find("sf")
+				closing_paren_pos = lines.find(")")
+				new_line = lines[:sf_pos] + timing_file_name + "\'" + lines[closing_paren_pos:] + "\n"
+				write_lines.append(new_line)
+			else:
+				write_lines.append(copy.deepcopy(lines))
+
+
 		else:
 			Exception("Unknown Mode")
 	return write_lines
@@ -70,7 +83,7 @@ def replace_string(mode, in_file, lane, thread_count, sf_count, divisor):
 
 	# return write_lines
 
-def read_and_replace(mode, thread_file = '', sf_file = '', lane = 64, thread_count = 1, sf_count = 0.1, divisor = 2):
+def read_and_replace(mode, thread_file = '', sf_file = '', timing_file_name = '', lane = 64, thread_count = 1, sf_count = 0.1, divisor = 2):
 	if(mode == Mode.THREAD):
 		input_file = thread_file
 		output_file = thread_file
@@ -83,11 +96,14 @@ def read_and_replace(mode, thread_file = '', sf_file = '', lane = 64, thread_cou
 	elif(mode == Mode.MSBFS):
 		input_file = LANE_FILE
 		output_file = LANE_FILE
+	elif(mode == Mode.TIMING):
+		input_file = FULLQUERY_FILE
+		output_file = FULLQUERY_FILE
 	else:
 		print("Unknown mode")
 		exit(0)
 	with open(input_file, 'r') as in_file:
-		write_lines = replace_string(mode, in_file, lane, thread_count, sf_count, divisor)
+		write_lines = replace_string(mode, in_file, lane, thread_count, sf_count, divisor, timing_file_name)
 			
 	print(write_lines)
 	with open(output_file, 'w') as out_file:
@@ -127,6 +143,7 @@ def run_benchmark( bc_file, output_dir, output_file):
 thread_values = [1, 2, 4, 8, 12, 16]
 # thread_values = [2]
 vertex_count = 1000
+variant = 10
 def thread_benchmark(sf):
 	
 	# thread_files = [ "create_csr_edge.benchmark"]
@@ -144,9 +161,12 @@ def thread_benchmark(sf):
 	output_dir = os.path.join(output_dir,  str(sf))
 	for file in thread_files:
 		for thread_count in thread_values:
-			f.write("Thread values " + str(thread_count) + "\n")
+			# f.write("Thread values " + str(thread_count) + "\n")
+			
 			thread_file = os.path.join(BENCHMARK_DIR, file)
 			read_and_replace(Mode.THREAD, thread_file=thread_file, thread_count=thread_count)
+			name = "sf" + str(sf) + "_" + "lane" + str(lane_count) + "_" + "thread" + str(thread_count) + "_variant" + str(variant) + ".out"
+			read_and_replace(Mode.TIMING, timing_file_name=name)
 			output_base = file.split(".")[0].split("_")[-1]
 			edge_count = edge_mapping[output_base]
 			run_benchmark(thread_file, output_dir, output_base +  '_' + str(lane_count) + '_' +  str(vertex_count) + '_' + str(edge_count) + '_' + str(thread_count) + ".out")
@@ -165,12 +185,15 @@ def lane_benchmark(sf):
 	output_dir = os.path.join(OUTPUT_DIR, "lane")
 	output_dir = os.path.join(output_dir,  str(sf))
 	file = "fullquery.benchmark"
+	# variant = 5
 	for lane in lane_values:
 		read_and_replace(Mode.LANE, lane=lane)
 		run_make()
 		for thread_count in thread_values:
 			# thread_file = os.path.join(BENCHMARK_DIR, msbfs_file)
-			f.write("Lane " + str(lane) + " Thread " + str(thread_count) + "\n")
+			# f.write("Lane " + str(lane) + " Thread " + str(thread_count) + "\n")
+			name = "sf" + str(sf) + "_" + "lane" + str(lane) + "_" + "thread" + str(thread_count) + "_variant" + str(variant) +".out"
+			read_and_replace(Mode.TIMING, timing_file_name=name)
 			thread_file = os.path.join(BENCHMARK_DIR, file)			
 			read_and_replace(Mode.THREAD, thread_file=thread_file, thread_count=thread_count)
 			run_benchmark(thread_file, output_dir, file.split(".")[0] + '_' + str(lane) + '_' + str(vertex_count)  + '_' + str(edge_count) + '_' + str(thread_count) + ".out")
@@ -194,13 +217,15 @@ def msbfs_variant_benchmark(sf):
 			run_benchmark(thread_file, output_dir, msbfs_file.split(".")[0] + '_' + str(divisor) + '_' + str(vertex_count)  + '_' + str(edge_count) + '_' + str(thread_count) + ".out")
 
 
-# sf_values = [0.1, 0.3, 1, 3, 10, 30]
-sf_values = [0.1, 0.3]
+sf_values = [0.1, 0.3, 1, 3, 10, 30]
+# sf_values = [0.1, 0.3]
 sf_files = ["snb.sql", "create_csr.sql", "fullquery.sql"]
+
 for sf in sf_values:
 	for f in sf_files:
 		sf_file = os.path.join(BENCHMARK_DIR, f)
 		read_and_replace(Mode.SF, sf_count=sf, sf_file=sf_file)
+		
 	
 	thread_benchmark(sf)
 	lane_benchmark(sf)

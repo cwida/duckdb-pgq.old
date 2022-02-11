@@ -28,9 +28,15 @@ FROM
 )
 SELECT min(src.rowid)
 FROM cte1, Person_Subset_l src, Person_Subset_r dst 
-WHERE  
-( reachability(0, false, cte1.vcount, src.rid, dst.rid) = cte1.temp);
+WHERE  reach(0, false, cte1.vcount, src.rid, dst.rid, 'sf0.3_lane256_thread2_variant10.out') = cte1.temp
+
+
+
+
+
+
+
+
 
 result I
 0
-

@@ -144,7 +144,7 @@ FROM
 SELECT src.cid AS c1id, dst.cid AS c2id
 FROM cte1, Customer src, Customer dst 
 WHERE  
-( reachability(0, false, cte1.vcount, src.rowid, dst.rowid) = cte1.temp);
+( reach(0, false, cte1.vcount, src.rowid, dst.rowid, 'cust-msbfs.txt') = cte1.temp);
 ----
 173	173
 173	202

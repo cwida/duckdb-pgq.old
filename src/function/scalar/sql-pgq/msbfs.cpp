@@ -10,11 +10,18 @@
 
 namespace duckdb {
 
+typedef enum MsbfsModes {
+	NO_ARRAY,
+	ARRAY,
+	INTERMEDIATE
+} MsbfsModes;
+
 struct MsbfsBindData : public FunctionData {
 	ClientContext &context;
+	string file_name;
 	// int32_t num_bfs;
 
-	MsbfsBindData(ClientContext &context) : context(context) {
+	MsbfsBindData(ClientContext &context, string &file_name) : context(context), file_name(file_name) {
 	}
 
 
@@ -23,7 +30,7 @@ struct MsbfsBindData : public FunctionData {
 	}
 
 	unique_ptr<FunctionData> Copy() override {
-		return make_unique<MsbfsBindData>(context);
+		return make_unique<MsbfsBindData>(context, file_name);
 	}
 };
 
@@ -241,7 +248,10 @@ static void msbfs_function(DataChunk &args, ExpressionState &state, Vector &resu
 	target.Orrify(args.size(), vdata_target);
 	auto target_data = (int64_t *)vdata_target.data;
 	// const int32_t bfs = info.num_bfs;
-	
+	string file_name = "timings-test.txt";
+	// if(args.data[5].){
+		file_name = args.data[5].GetValue(0).GetValue<string>();
+	// }
 	idx_t result_size = 0;
 	vector<int64_t> visit_list;
 	size_t visit_limit = input_size / VISIT_SIZE_DIVISOR;
@@ -252,7 +262,7 @@ static void msbfs_function(DataChunk &args, ExpressionState &state, Vector &resu
 	// CycleCounter profiler;
 	// FILE f1;
 	ofstream log_file;
-	log_file.open("timings-test.txt", std::ios_base::app);
+	log_file.open(info.file_name, std::ios_base::app);
 	// std::stringstream ss;
 	Profiler<system_clock> phase_profiler, outer_profiler;
 	
@@ -378,13 +388,26 @@ static void msbfs_function(DataChunk &args, ExpressionState &state, Vector &resu
 
 static unique_ptr<FunctionData> msbfs_bind(ClientContext &context, ScalarFunction &bound_function,
                                            vector<unique_ptr<Expression>> &arguments) {
-	return make_unique<MsbfsBindData>(context);
+	string file_name;
+	if(arguments.size() == 6) {
+	// if(args.data[5].){
+		file_name = ExpressionExecutor::EvaluateScalar(*arguments[5]).GetValue<string>();
+		// file_name = arguments[5].GetValue(0).GetValue<string>()
+
+	}
+	else {
+		file_name = "timings-test.txt";
+	}
+	return make_unique<MsbfsBindData>(context, file_name);
 }
 
 void MsBfsFun::RegisterFunction(BuiltinFunctions &set) {
 	// params ->id, is_variant, v_size, source, target
 	set.AddFunction(ScalarFunction(
 	    "reachability", {LogicalType::INTEGER, LogicalType::BOOLEAN, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT},
+	    LogicalType::BOOLEAN, msbfs_function, false, msbfs_bind));
+	set.AddFunction(ScalarFunction(
+	    "reach", {LogicalType::INTEGER, LogicalType::BOOLEAN, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::VARCHAR},
 	    LogicalType::BOOLEAN, msbfs_function, false, msbfs_bind));
 }
 
