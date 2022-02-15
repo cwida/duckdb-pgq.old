@@ -220,13 +220,6 @@ static int find_mode(int mode, size_t visit_list_len, size_t visit_limit, size_t
 	return mode;
 }
 
-// static void LogOutput(ofstream log_file, string message) {
-// 	if (log_file.good()) {
-// 		log_file << message << endl;
-// 		log_file.flush();
-// 	}
-// }
-
 
 static void msbfs_function(DataChunk &args, ExpressionState &state, Vector &result) {
 	// D_ASSERT(args.ColumnCount() == 0);
@@ -262,12 +255,12 @@ static void msbfs_function(DataChunk &args, ExpressionState &state, Vector &resu
 	// CycleCounter profiler;
 	// FILE f1;
 	ofstream log_file;
-	log_file.open(info.file_name, std::ios_base::app);
-	// std::stringstream ss;
-	Profiler<system_clock> phase_profiler, outer_profiler;
+	Profiler<system_clock> phase_profiler, outer_profiler, init_profiler;
 	
+	log_file.open(info.file_name, std::ios_base::app);
 	log_file << "Args size " << std::to_string(args.size()) <<endl ;
 	outer_profiler.Start();
+
 	while (result_size < args.size()) {
 		// int32_t lanes = 0;
 		vector<std::bitset<LANE_LIMIT>> seen(input_size);
@@ -276,73 +269,75 @@ static void msbfs_function(DataChunk &args, ExpressionState &state, Vector &resu
 		
 		//mapping of src_value ->  (bfs_num/lane, vector of indices in src_data)
 		unordered_map<int64_t, pair<int16_t, vector<int64_t>>> lane_map;
-	 
-	auto curr_batch_size = initialise_bfs(result_size, args.size(), src_data, vdata_src.sel,vdata_src.validity, seen, visit, visit_next, lane_map);
-	
-	int mode = 0;
-	bool exit_early = false;
-	// int i = 0;
-	while (exit_early == false ) {
-		// log_file << "Iter" << endl;
-		exit_early =true;
-		if(is_variant) {
-			mode = find_mode(mode, visit_list.size(), visit_limit, num_nodes_to_visit);
-			switch (mode)
-			{
-			case 1:
-				exit_early = bfs_with_array_variant(exit_early, id, info, seen, visit, visit_next, visit_list);
-				break;
-			case 0:
-				exit_early = bfs_without_array_variant(exit_early, id, input_size, info, seen, visit, visit_next, visit_list);
-				break;
-			case 2: {
-				auto return_pair = bfs_temp_state_variant(exit_early, id, input_size, info, seen, visit, visit_next);
-				exit_early = return_pair.first;
-				num_nodes_to_visit = return_pair.second;
-				break;
+		init_profiler.Start();
+		auto curr_batch_size = initialise_bfs(result_size, args.size(), src_data, vdata_src.sel,vdata_src.validity, seen, visit, visit_next, lane_map);
+		init_profiler.End();
+		log_file << "Init time: " << std::to_string(init_profiler.Elapsed()) << endl;;
+		int mode = 0;
+		bool exit_early = false;
+		int iter = 0;
+		while (exit_early == false ) {
+			exit_early = true;
+			log_file << "Iter " << std::to_string(iter) << endl;
+				iter++;
+			if(is_variant) {
+				mode = find_mode(mode, visit_list.size(), visit_limit, num_nodes_to_visit);
+				switch (mode)
+				{
+					case 1:
+						exit_early = bfs_with_array_variant(exit_early, id, info, seen, visit, visit_next, visit_list);
+						break;
+					case 0:
+						exit_early = bfs_without_array_variant(exit_early, id, input_size, info, seen, visit, visit_next, visit_list);
+						break;
+					case 2: {
+						auto return_pair = bfs_temp_state_variant(exit_early, id, input_size, info, seen, visit, visit_next);
+						exit_early = return_pair.first;
+						num_nodes_to_visit = return_pair.second;
+						break;
+					}
+					default:
+						throw Exception("Unknown mode encountered");
+				}
 			}
-			default:
-				throw Exception("Unknown mode encountered");
+			else {
+				
+				phase_profiler.Start();
+				exit_early = bfs_without_array(exit_early, id, input_size, info, seen, visit, visit_next);
+				phase_profiler.End();
+				log_file << "BFS time " << std::to_string(phase_profiler.Elapsed()) << endl;
+				
+				// profiler.time;
 			}
-		}
-		else {
-			// profiler.BeginSample();
-			phase_profiler.Start();
-			exit_early = bfs_without_array(exit_early, id, input_size, info, seen, visit, visit_next);
-			// profiler.EndSample(args.size());
-			phase_profiler.End();
-			log_file << "BFS function time " << std::to_string(phase_profiler.Elapsed()) << endl;
-			// LogOutput(log_file, std::to_string(phase_profiler.Elapsed()));
-			// fprintf(log_file, "%ld", ));
 			
-			// profiler.time;
-		}
-		visit = visit_next;
-		for (auto i = 0; i < input_size; i++) {
-			visit_next[i] = 0;
-		}
-		// check target
-		// visit_list with n's to keep track (iniitally 64 nodes to visit but looping till input_size)
-		// top down vs bottom up ->
-		// adaptive with and without visit list-> benchmark
-	}
-
-	
-	for (auto iter : lane_map) {
-		auto value = iter.first;
-		auto bfs_num = iter.second.first;
-		auto pos = iter.second.second;
-		for(auto index: pos) {
-			auto target_index = vdata_target.sel->get_index(index);
-			if(seen[target_data[target_index]][bfs_num] && seen[value][bfs_num]) {
-			// if(is_bit_set(seen[target_data[index]], bfs_num) & is_bit_set(seen[value], bfs_num) ) {
-				result_data[index] = true;
+			visit = visit_next;
+			for (auto i = 0; i < input_size; i++) {
+				visit_next[i] = 0;
 			}
-			else
-				result_data[index] = false;
+			// check target
+			// visit_list with n's to keep track (iniitally 64 nodes to visit but looping till input_size)
+			// top down vs bottom up ->
+			// adaptive with and without visit list-> benchmark
 		}
-	}
-	result_size = result_size + curr_batch_size;
+
+		
+		for (auto iter : lane_map) {
+			auto value = iter.first;
+			auto bfs_num = iter.second.first;
+			auto pos = iter.second.second;
+			for(auto index: pos) {
+				auto target_index = vdata_target.sel->get_index(index);
+				if(seen[target_data[target_index]][bfs_num] && seen[value][bfs_num]) {
+				// if(is_bit_set(seen[target_data[index]], bfs_num) & is_bit_set(seen[value], bfs_num) ) {
+					result_data[index] = true;
+				}
+				else
+					result_data[index] = false;
+			}
+		}
+		result_size = result_size + curr_batch_size;
+		log_file << "Batch size " << std::to_string(curr_batch_size) << endl;
+		log_file << "Result size " << std::to_string(result_size) << endl;
 	}
 	outer_profiler.End();
 	log_file << "Entire program time " << std::to_string(outer_profiler.Elapsed()) << endl;
