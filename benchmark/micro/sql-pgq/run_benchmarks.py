@@ -78,8 +78,9 @@ def replace_string(mode, in_file, lane, thread_count, sf_count, divisor, timing_
 			# 	write_lines.append(new_line)
 			if "debug" in lines:
 				left_pos = lines.find("benchmark")
-				closing_paren_pos = lines.find(")")
-				new_line = lines[:left_pos] + timing_file_name + "\'" + lines[closing_paren_pos:]
+				closing_paren_pos = lines.find("out\'") + len("out\'") + 1
+				print(timing_file_name)
+				new_line = lines[:left_pos] + timing_file_name + "\')" + lines[closing_paren_pos:]
 				write_lines.append(new_line)
 			
 			else:
@@ -94,7 +95,7 @@ def replace_string(mode, in_file, lane, thread_count, sf_count, divisor, timing_
 
 	# return write_lines
 
-def read_and_replace(mode, thread_file = '', sf_file = '', timing_file_name = '', lane = 64, thread_count = 1, sf_count = 0.1, divisor = 2):
+def read_and_replace(mode, thread_file = '', sf_file = '', timing_file = '', timing_output_file = '', lane = 64, thread_count = 1, sf_count = 0.1, divisor = 2):
 	if(mode == Mode.THREAD):
 		input_file = thread_file
 		output_file = thread_file
@@ -108,13 +109,13 @@ def read_and_replace(mode, thread_file = '', sf_file = '', timing_file_name = ''
 		input_file = LANE_FILE
 		output_file = LANE_FILE
 	elif(mode == Mode.TIMING):
-		input_file = FULLQUERY_FILE
-		output_file = FULLQUERY_FILE
+		input_file = timing_file
+		output_file = timing_file
 	else:
 		print("Unknown mode")
 		exit(0)
 	with open(input_file, 'r') as in_file:
-		write_lines = replace_string(mode, in_file, lane, thread_count, sf_count, divisor, timing_file_name)
+		write_lines = replace_string(mode, in_file, lane, thread_count, sf_count, divisor, timing_output_file)
 			
 	# print(write_lines)
 	with open(output_file, 'w') as out_file:
@@ -152,16 +153,17 @@ def run_benchmark( bc_file, output_dir, output_file):
 
 
 # thread_values = [1, 2, 4, 8, 12, 16]
-thread_values = [2]
+# thread_values = [2]
+thread_values = [1, 2, 4]
 vertex_count = 1000
 variant = 10
-nruns = 5
+nruns = 1
 def thread_benchmark(sf):
 	
 	# thread_files = [ "create_csr_edge.benchmark"]
 	# thread_files = ["create_csr_vertex.benchmark", "create_csr_edge.benchmark"]
-	# thread_files = [ msbfs_file]
-	thread_files = ["fullquery.benchmark"]
+	thread_files = [ msbfs_file]
+	# thread_files = ["fullquery.benchmark"]
 	global debug
 	# f = open('timings-test.txt', 'a')
 	# f.write("sf " + str(sf) + "########\n")
@@ -178,10 +180,13 @@ def thread_benchmark(sf):
 		output_dir = os.path.join(output_dir,  str(sf))
 	debug_dir = os.path.join(DEBUG_DIR, "thread")
 	debug_dir = os.path.join(debug_dir, str(sf))
-	if not os.path.isdir(debug_dir):
-		os.makedirs(debug_dir)
+	
 
 	for file in thread_files:
+		output_base = file.split(".")[0].split("_")[-1]
+		debug_dir = os.path.join(debug_dir, output_base)
+		if not os.path.isdir(debug_dir):
+			os.makedirs(debug_dir)
 		for thread_count in thread_values:
 			# f.write("Thread values " + str(thread_count) + "\n")
 			for run in range(nruns): 
@@ -189,10 +194,13 @@ def thread_benchmark(sf):
 				read_and_replace(Mode.THREAD, thread_file=thread_file, thread_count=thread_count)
 				debug_file = "sf" + str(sf) + "_" + "lane" + str(lane_count) + "_" + "thread" + str(thread_count) + "_variant" + str(variant) + "_run" + str(run) + ".out"
 				debug_file = os.path.join(debug_dir, debug_file)
-				read_and_replace(Mode.TIMING, timing_file_name=debug_file)
-				output_base = file.split(".")[0].split("_")[-1]
+				print(debug_file)
+				read_and_replace(Mode.TIMING, timing_file=thread_file, timing_output_file=debug_file)
+				
 				edge_count = edge_mapping[output_base]
 				run_benchmark(thread_file, output_dir, output_base +  '_' + str(lane_count) + '_' +  str(vertex_count) + '_' + str(edge_count) + '_' + str(thread_count) + '_' + str(run) + ".out")
+				# if output_file == "TIMEOUT":
+				# 	continue
 				# run_benchmark(thread_file, output_dir, output_base +  '_' + str(lane_count) + '_' +  str(vertex_count) + '_' + str(edge_count) + '_' + str(thread_count) + ".out")
 	# f.close()
 
@@ -244,7 +252,7 @@ def msbfs_variant_benchmark(sf):
 
 # sf_values = [0.1, 0.3, 1, 3, 10, 30]
 # sf_values = [0.1, 0.3, 1, 3]
-sf_values = [0.3]
+sf_values = [0.1]
 sf_files = ["snb.sql", "create_csr.sql", "fullquery.sql"]
 debug = True
 

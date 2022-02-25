@@ -235,7 +235,7 @@ WHERE
 # )
 
 
-SELECT src.cid AS c1id, dst.cid AS c2id 
-FROM csr JOIN Customer src JOIN Customer dst 
-WHERE  
-( greatest(src.rowid, dst.rowid) = csr.temp);
+# SELECT src.cid AS c1id, dst.cid AS c2id 
+# FROM csr JOIN Customer src JOIN Customer dst 
+# WHERE  
+# ( greatest(src.rowid, dst.rowid) = csr.temp);

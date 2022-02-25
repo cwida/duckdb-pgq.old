@@ -6,12 +6,13 @@ name MSBFS
 group sql-pgq
 
 init
-PRAGMA threads=2;
+PRAGMA threads=4;
 
 load benchmark/micro/sql-pgq/fullquery.sql
 
 run
-WITH cte1 AS (
+WITH
+cte1 AS (
 SELECT min(CREATE_CSR_EDGE(0, (SELECT count(p.personid) as vcount FROM Person p), 
 CAST ((SELECT sum(CREATE_CSR_VERTEX(0, (SELECT count(p.personid) as vcount FROM Person p), 
 sub.dense_id , sub.cnt )) AS numEdges
@@ -20,15 +21,15 @@ FROM (
     FROM Person p  
     LEFT JOIN  Person_knows_Person pkp ON pkp.person1id = p.personid
     GROUP BY p.rowid
-) sub) AS BIGINT) , src.rowid, dst.rowid)) as temp, (SELECT count(p.personid) FROM Person p) as vcount 
+) sub) AS BIGINT) , src.rowid, dst.rowid)) as temp 
 FROM 
   Person_knows_Person pkp 
   JOIN Person src ON pkp.person1id = src.personid
   JOIN Person dst ON pkp.person2id = dst.personid
 )
 SELECT min(p_id.lid)
-FROM cte1, Person_ids p_id
-WHERE  reach(0, false, cte1.vcount, p_id.lid, p_id.rid, 'benchmark/micro/sql-pgq/debug/thread/0.3/sf0.3_lane64_thread2_variant10_run4.out') = cte1.temp
+FROM  cte1, Person_ids p_id
+WHERE  reach(0, false, cte1.temp, p_id.lid, p_id.rid, 'benchmark/micro/sql-pgq/debug/thread/0.1/fullquery/sf0.1_thread4_9.out') = 1
 
 result I
 0

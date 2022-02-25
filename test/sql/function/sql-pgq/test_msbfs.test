@@ -75,10 +75,10 @@ INSERT INTO Transfers VALUES
 # 3
 
 
-query I
-SELECT v.vcount FROM (SELECT count(c.cid) as vcount FROM Customer c) v
-----
-5
+# query I
+# SELECT v.vcount FROM (SELECT count(c.cid) as vcount FROM Customer c) v
+# ----
+# 5
 
 
 # query T
@@ -144,7 +144,8 @@ FROM
 SELECT src.cid AS c1id, dst.cid AS c2id
 FROM cte1, Customer src, Customer dst 
 WHERE  
-( reach(0, false, cte1.vcount, src.rowid, dst.rowid, 'cust-msbfs.txt') = cte1.temp);
+( reach(0, true, cte1.vcount, src.rowid, dst.rowid, 'cust-msbfs.txt') = cte1.temp)
+ORDER BY src.cid, dst.cid;
 ----
 173	173
 173	202

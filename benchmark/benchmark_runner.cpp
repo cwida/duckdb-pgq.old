@@ -129,8 +129,8 @@ void BenchmarkRunner::RunBenchmark(Benchmark *benchmark) {
 	// LogLine(string(display_name.size() + 6, '-'));
 	auto state = benchmark->Initialize(configuration);
 	auto nruns = benchmark->NRuns();
-	for (size_t i = 0; i < nruns + 1; i++) {
-		bool hotrun = i > 0;
+	for (size_t i = 0; i < nruns ; i++) {
+		bool hotrun = true;
 		if (hotrun) {
 			Log(StringUtil::Format("%s\t%d\t", benchmark->name, i));
 		}
@@ -141,6 +141,9 @@ void BenchmarkRunner::RunBenchmark(Benchmark *benchmark) {
 		timeout = false;
 		std::thread interrupt_thread(sleep_thread, benchmark, state.get(), benchmark->Timeout());
 
+		// string query = GetQuery();
+		// std::cout<<"Query "<<query;
+		// Log("This is the answer");
 		profiler.Start();
 		benchmark->Run(state.get());
 		profiler.End();

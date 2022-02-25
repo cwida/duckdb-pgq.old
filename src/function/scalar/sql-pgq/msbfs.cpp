@@ -177,22 +177,23 @@ static pair<bool, size_t> bfs_temp_state_variant(bool exit_early, int32_t id, in
 static bool bfs_with_array_variant(bool exit_early, int32_t id, MsbfsBindData &info, vector<std::bitset<LANE_LIMIT>> &seen, 
 		vector<std::bitset<LANE_LIMIT>> &visit,
 		vector<std::bitset<LANE_LIMIT>> &visit_next, vector<int64_t> &visit_list) { 
-	vector<int64_t> neighbours_list;
+	unordered_set<int64_t> neighbours_set;
 	for (int64_t i : visit_list) {
-		if (!visit[i].any())
-			continue;
+		// can be removed
+		// if (!visit[i].any())
+		// 	continue;
 		
 		D_ASSERT(info.context.csr_list[id]);
 		for (auto index = (long)info.context.csr_list[id]->v[i]; index < (long)info.context.csr_list[id]->v[i + 1]; index++) {
 			auto n = info.context.csr_list[id]->e[index];
 			visit_next[n] = visit_next[n] | visit[i];
-			neighbours_list.push_back(n);
+			neighbours_set.insert(n);
 		}
 	}
 	visit_list.clear();
-	for (int64_t i: neighbours_list) {
-		if (visit_next[i].none())
-			continue;
+	for (int64_t i: neighbours_set) {
+		// if (visit_next[i].none())
+		// 	continue;
 		visit_next[i] = visit_next[i] & ~seen[i];
 		seen[i] = seen[i] | visit_next[i];
 		if(exit_early == true && visit_next[i].any() )
@@ -211,10 +212,10 @@ static int find_mode(int mode, size_t visit_list_len, size_t visit_limit, size_t
 		mode = 1;
 		// new_mode = 1;
 	}
-	if(mode == 1 && visit_list_len > visit_limit) {
+	else if(mode == 1 && visit_list_len > visit_limit) {
 		mode = 2;
 	}
-	if(mode == 2 && num_nodes_to_visit < visit_limit) {
+	else if(mode == 2 && num_nodes_to_visit < visit_limit) {
 		mode = 0;
 	}
 	return mode;
@@ -241,10 +242,11 @@ static void msbfs_function(DataChunk &args, ExpressionState &state, Vector &resu
 	target.Orrify(args.size(), vdata_target);
 	auto target_data = (int64_t *)vdata_target.data;
 	// const int32_t bfs = info.num_bfs;
-	string file_name = "timings-test.txt";
+	// string file_name;
 	// if(args.data[5].){
-		file_name = args.data[5].GetValue(0).GetValue<string>();
+		// file_name = args.data[5].GetValue(0).GetValue<string>();
 	// }
+	// file_name = info.file_name;
 	idx_t result_size = 0;
 	vector<int64_t> visit_list;
 	size_t visit_limit = input_size / VISIT_SIZE_DIVISOR;
@@ -260,6 +262,7 @@ static void msbfs_function(DataChunk &args, ExpressionState &state, Vector &resu
 	log_file.open(info.file_name, std::ios_base::app);
 	log_file << "Args size " << std::to_string(args.size()) <<endl ;
 	outer_profiler.Start();
+	info.context.init_m = true;
 
 	while (result_size < args.size()) {
 		// int32_t lanes = 0;
@@ -341,6 +344,7 @@ static void msbfs_function(DataChunk &args, ExpressionState &state, Vector &resu
 	}
 	outer_profiler.End();
 	log_file << "Entire program time " << std::to_string(outer_profiler.Elapsed()) << endl;
+	
 	// local struct -> bitset (how many bits it contains), 
 				// dynamically move between different ; can
 				// 3 modes to benchmark - separate visit list ( keep track of number of nodes to visit) 
