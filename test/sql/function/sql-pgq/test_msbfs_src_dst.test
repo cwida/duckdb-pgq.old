@@ -1,4 +1,4 @@
-# name: test/sql/function/sql-pgq/test_threads.test
+# name: test/sql/function/sql-pgq/test_msbfs_src_dst.test
 # description: Test msbfs threads 
 # group: [sql-pgq]
 

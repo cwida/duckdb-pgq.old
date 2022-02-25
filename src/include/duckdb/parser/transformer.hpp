@@ -19,7 +19,6 @@
 #include "duckdb/parser/property_graph_table.hpp"
 #include "duckdb/parser/graph_element_pattern.hpp"
 
-
 #include "pg_definitions.hpp"
 #include "nodes/parsenodes.hpp"
 

@@ -87,13 +87,14 @@ unique_ptr<TableRef> Transformer::TransformMatch(PGMatchPattern *root) {
 		// root->pattern->head->data.ptr_value
 		auto path_list = (PGList *)node->data.ptr_value;
 		auto path_name = (PGValue *)path_list->head->data.ptr_value;
-		if (path_name)
-			result->path_names.push_back(string(path_name->val.str));
+		if (path_name) {
+			result->path_names.emplace_back(string(path_name->val.str));
+		}
 		auto pattern_list = (PGList *)path_list->tail->data.ptr_value;
 		for (auto node_1 = pattern_list->head; node_1 != nullptr; node_1 = node_1->next) {
 			auto element_pattern = reinterpret_cast<PGGraphElementPattern *>(node_1->data.ptr_value);
 			auto transformed_pattern = TransformElementPattern(element_pattern);
-			result->param_list.push_back(move(transformed_pattern));
+			result->param_list.emplace_back(move(transformed_pattern));
 		}
 	}
 

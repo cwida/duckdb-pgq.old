@@ -8,14 +8,14 @@ unique_ptr<TableRef> Transformer::TransformTableRefNode(duckdb_libpgquery::PGNod
 	StackCheck();
 
 	switch (n->type) {
-	// case T_PGRangeVar:
-	// 	return TransformRangeVar(reinterpret_cast<PGRangeVar *>(n));
-	// case T_PGJoinExpr:
-	// 	return TransformJoin(reinterpret_cast<PGJoinExpr *>(n));
-	// case T_PGRangeSubselect:
-	// 	return TransformRangeSubselect(reinterpret_cast<PGRangeSubselect *>(n));
-	// case T_PGRangeFunction:
-	// 	return TransformRangeFunction(reinterpret_cast<PGRangeFunction *>(n));
+		// case T_PGRangeVar:
+		// 	return TransformRangeVar(reinterpret_cast<PGRangeVar *>(n));
+		// case T_PGJoinExpr:
+		// 	return TransformJoin(reinterpret_cast<PGJoinExpr *>(n));
+		// case T_PGRangeSubselect:
+		// 	return TransformRangeSubselect(reinterpret_cast<PGRangeSubselect *>(n));
+		// case T_PGRangeFunction:
+		// 	return TransformRangeFunction(reinterpret_cast<PGRangeFunction *>(n));
 
 	case duckdb_libpgquery::T_PGRangeVar:
 		return TransformRangeVar(reinterpret_cast<duckdb_libpgquery::PGRangeVar *>(n));

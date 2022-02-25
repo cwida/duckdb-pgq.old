@@ -19,7 +19,7 @@ unique_ptr<GlobalSourceState> PhysicalCreatePropertyGraph::GetGlobalSourceState(
 }
 
 void PhysicalCreatePropertyGraph::GetData(ExecutionContext &context, DataChunk &chunk, GlobalSourceState &gstate,
-                                 LocalSourceState &lstate) const {
+                                          LocalSourceState &lstate) const {
 	auto &state = (CreatePropertyGraphSourceState &)gstate;
 	if (state.finished) {
 		return;
@@ -27,6 +27,5 @@ void PhysicalCreatePropertyGraph::GetData(ExecutionContext &context, DataChunk &
 	Catalog::GetCatalog(context.client).CreatePropertyGraph(context.client, info.get());
 	state.finished = true;
 }
-
 
 } // namespace duckdb

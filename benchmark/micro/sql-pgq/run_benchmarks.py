@@ -176,7 +176,7 @@ def thread_benchmark(sf):
 		output_dir = os.path.join(OUTPUT_DIR, "thread_debug")
 		output_dir = os.path.join(output_dir,  str(sf))
 	else:
-		output_dir = os.path.join(OUTPUT_DIR, "thread_debug")
+		output_dir = os.path.join(OUTPUT_DIR, "thread")
 		output_dir = os.path.join(output_dir,  str(sf))
 	debug_dir = os.path.join(DEBUG_DIR, "thread")
 	debug_dir = os.path.join(debug_dir, str(sf))
@@ -192,10 +192,11 @@ def thread_benchmark(sf):
 			for run in range(nruns): 
 				thread_file = os.path.join(BENCHMARK_DIR, file)
 				read_and_replace(Mode.THREAD, thread_file=thread_file, thread_count=thread_count)
-				debug_file = "sf" + str(sf) + "_" + "lane" + str(lane_count) + "_" + "thread" + str(thread_count) + "_variant" + str(variant) + "_run" + str(run) + ".out"
-				debug_file = os.path.join(debug_dir, debug_file)
-				print(debug_file)
-				read_and_replace(Mode.TIMING, timing_file=thread_file, timing_output_file=debug_file)
+				if debug:
+					debug_file = "sf" + str(sf) + "_" + "lane" + str(lane_count) + "_" + "thread" + str(thread_count) + "_variant" + str(variant) + "_run" + str(run) + ".out"
+					debug_file = os.path.join(debug_dir, debug_file)
+					print(debug_file)
+					read_and_replace(Mode.TIMING, timing_file=thread_file, timing_output_file=debug_file)
 				
 				edge_count = edge_mapping[output_base]
 				run_benchmark(thread_file, output_dir, output_base +  '_' + str(lane_count) + '_' +  str(vertex_count) + '_' + str(edge_count) + '_' + str(thread_count) + '_' + str(run) + ".out")
@@ -207,7 +208,7 @@ def thread_benchmark(sf):
 
 
 def lane_benchmark(sf):
-	lane_values = [8, 16, 32, 64, 128, 256, 512]
+	lane_values = [ 16, 32, 128, 256, 512]
 	# lane_values = [16, 64, 256]
 	# lane_values = [256]
 	# f = open('timings-test.txt', 'a')
@@ -252,9 +253,9 @@ def msbfs_variant_benchmark(sf):
 
 # sf_values = [0.1, 0.3, 1, 3, 10, 30]
 # sf_values = [0.1, 0.3, 1, 3]
-sf_values = [0.1]
+sf_values = [0.1, 0.3]
 sf_files = ["snb.sql", "create_csr.sql", "fullquery.sql"]
-debug = True
+debug = False
 
 for sf in sf_values:
 	for f in sf_files:

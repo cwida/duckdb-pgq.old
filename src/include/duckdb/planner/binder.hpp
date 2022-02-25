@@ -262,7 +262,6 @@ private:
 	bool CheckAliasUsage(unordered_map<string, std::tuple<string, bool, string>> &alias_table_map, string &alias,
 	                     string &table_name, bool is_vertex_pattern, string &label);
 
-
 public:
 	// This should really be a private constructor, but make_shared does not allow it...
 	// If you are thinking about calling this, you should probably call Binder::CreateBinder

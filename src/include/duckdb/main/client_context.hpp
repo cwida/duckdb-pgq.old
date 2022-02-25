@@ -127,7 +127,6 @@ public:
 	vector<unique_ptr<Csr>> csr_list;
 	std::mutex csr_lock;
 
-
 	const unique_ptr<CatalogSearchPath> catalog_search_path;
 
 	unique_ptr<FileOpener> file_opener;

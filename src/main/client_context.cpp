@@ -92,14 +92,14 @@ void ClientContext::Cleanup() {
 }
 
 void ClientContext::CleanupCSR() {
-	
-	delete [] csr_list[0]->v;
+
+	delete[] csr_list[0]->v;
 	initialized_v = false;
 	initialized_e = false;
 	init_m = false;
 }
 
-unique_ptr<DataChunk> ClientContext::Fetch() {	
+unique_ptr<DataChunk> ClientContext::Fetch() {
 	auto lock = LockContext();
 	if (!open_result) {
 		throw InternalException("Fetch was called, but there is no open result (or the result was previously closed)");
@@ -491,7 +491,7 @@ unique_ptr<QueryResult> ClientContext::RunStatementOrPreparedStatement(ClientCon
 			return make_unique<MaterializedQueryResult>(error);
 		}
 	}
-	if(initialized_v && initialized_e && init_m) {
+	if (initialized_v && initialized_e && init_m) {
 		CleanupCSR();
 	}
 	return result;

@@ -101,7 +101,7 @@ unique_ptr<CreateStatement> Transformer::TransformCreatePropertyGraph(PGNode *no
 	info->on_conflict = OnCreateConflict::ERROR_ON_CONFLICT;
 	// TransformExpressionList(stmt->vertex_tables);
 
-	for (auto c = stmt->vertex_tables->head; c != NULL; c = lnext(c)) {
+	for (auto c = stmt->vertex_tables->head; c != nullptr; c = lnext(c)) {
 		auto node = reinterpret_cast<PGNode *>(c->data.ptr_value);
 		switch (node->type) {
 
@@ -118,7 +118,7 @@ unique_ptr<CreateStatement> Transformer::TransformCreatePropertyGraph(PGNode *no
 		}
 	}
 
-	for (auto c = stmt->edge_tables->head; c != NULL; c = lnext(c)) {
+	for (auto c = stmt->edge_tables->head; c != nullptr; c = lnext(c)) {
 		auto node = reinterpret_cast<PGNode *>(c->data.ptr_value);
 		switch (node->type) {
 

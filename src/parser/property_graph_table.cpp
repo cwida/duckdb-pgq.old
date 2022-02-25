@@ -31,11 +31,12 @@ unique_ptr<PropertyGraphTable> PropertyGraphTable::Copy() {
 	// 	}
 	// 	result->source_key_reference = source_key_reference;
 	// }
-	if (is_vertex_table)
+	if (is_vertex_table) {
 		return make_unique<PropertyGraphTable>(name, keys, labels, is_vertex_table);
-	else
+	} else {
 		return make_unique<PropertyGraphTable>(name, keys, labels, is_vertex_table, source_key, source_key_reference,
 		                                       destination_key, destination_key_reference);
+	}
 }
 
 void PropertyGraphTable::Serialize(Serializer &serializer) const {

@@ -12,7 +12,6 @@ add_subdirectory(system)
 add_subdirectory(uuid)
 add_subdirectory(sql-pgq)
 
-
 add_library_unity(
   duckdb_func_scalar
   OBJECT

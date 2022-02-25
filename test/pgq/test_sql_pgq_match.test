@@ -118,15 +118,15 @@ EDGE TABLES ( transfers KEY ( from_id ) SOURCE KEY ( from_id ) REFERENCES accoun
 # 20
 # 30
 
-# statement ok
-# SELECT c1.cid as c1id, c2.cid as c2id, c3.cid as c3id
-# FROM customer c1, transfers t1, customer c2, transfers t2, customer c3, transfers t3
-# WHERE c1.cid = t1.from_id
-#     AND c2.cid = t1.to_id
-#     AND c2.cid = t2.from_id
-#     AND c3.cid = t2.to_id
-#     AND t3.from_id = c3.cid 
-#     AND t3.to_id = c1.cid
+statement ok
+SELECT c1.cid as c1id, c2.cid as c2id, c3.cid as c3id
+FROM customer c1, transfers t1, customer c2, transfers t2, customer c3, transfers t3
+WHERE c1.cid = t1.from_id
+    AND c2.cid = t1.to_id
+    AND c2.cid = t2.from_id
+    AND c3.cid = t2.to_id
+    AND t3.from_id = c3.cid 
+    AND t3.to_id = c1.cid
 
 
 # statement error
@@ -149,6 +149,7 @@ EDGE TABLES ( transfers KEY ( from_id ) SOURCE KEY ( from_id ) REFERENCES accoun
 # from GRAPH_TABLE (aml, MATCH (c1 IS customer)-[IS transfers]->(c2) COLUMNS (c1.cid AS c1id, c2.cid AS c2id, c3.cid AS c3id)
 # ) gt
 
+# statement ok
 # select c1id, c2id, c3id 
 # from GRAPH_TABLE (aml, 
 # MATCH (c1 IS customer)-[IS transfers]->(c2 IS customer)-[t2 IS transfers]->(c3 IS customer)-[t3 IS transfers]->(c1) 

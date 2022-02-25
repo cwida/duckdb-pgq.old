@@ -107,16 +107,16 @@ static void create_csr_vertex_function(DataChunk &args, ExpressionState &state, 
 	// auto csr = move(info.context.csr_list[info.id]);
 
 	BinaryExecutor::Execute<int64_t, int64_t, int64_t>(args.data[2], args.data[3], result, args.size(),
-	                                                         [&](int64_t src, int64_t cnt) {
-		                                                         int64_t edge_count = 0;
+	                                                   [&](int64_t src, int64_t cnt) {
+		                                                   int64_t edge_count = 0;
 
-		                                                         // for(idx_t i = 0; i < src.size(); i++) {
-		                                                         // *csr.v[src[i+2]] = 1;
-		                                                         info.context.csr_list[info.id]->v[src + 2] = cnt;
+		                                                   // for(idx_t i = 0; i < src.size(); i++) {
+		                                                   // *csr.v[src[i+2]] = 1;
+		                                                   info.context.csr_list[info.id]->v[src + 2] = cnt;
 
-		                                                         edge_count = edge_count + cnt;
-		                                                         return edge_count;
-	                                                         });
+		                                                   edge_count = edge_count + cnt;
+		                                                   return edge_count;
+	                                                   });
 	// info.context.csr_list[info.id] = move(csr);
 	return;
 }
@@ -149,11 +149,11 @@ static void create_csr_edge_function(DataChunk &args, ExpressionState &state, Ve
 	// auto csr = move(info.context.csr_list[info.id]);
 
 	BinaryExecutor::Execute<int64_t, int64_t, int32_t>(args.data[3], args.data[4], result, args.size(),
-	                                                         [&](int64_t src, int64_t dst) {
-		                                                         auto pos = ++info.context.csr_list[info.id]->v[src + 1];
-		                                                         info.context.csr_list[info.id]->e[(int64_t)pos - 1] = dst;
-		                                                         return 1;
-	                                                         });
+	                                                   [&](int64_t src, int64_t dst) {
+		                                                   auto pos = ++info.context.csr_list[info.id]->v[src + 1];
+		                                                   info.context.csr_list[info.id]->e[(int64_t)pos - 1] = dst;
+		                                                   return 1;
+	                                                   });
 
 	// info.context.csr_list[info.id] = move(csr);
 	return;
@@ -173,11 +173,11 @@ static unique_ptr<FunctionData> create_csr_edge_bind(ClientContext &context, Sca
 }
 
 void CreateCsrFun::RegisterFunction(BuiltinFunctions &set) {
-	//params -> id, size, src/dense_id, cnt
+	// params -> id, size, src/dense_id, cnt
 	set.AddFunction(ScalarFunction(
 	    "create_csr_vertex", {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT},
 	    LogicalType::BIGINT, create_csr_vertex_function, false, create_csr_vertex_bind));
-	//params -> id, v_size, num_edges, src_rowid, dst_rowid
+	// params -> id, v_size, num_edges, src_rowid, dst_rowid
 	set.AddFunction(ScalarFunction(
 	    "create_csr_edge",
 	    {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT},
