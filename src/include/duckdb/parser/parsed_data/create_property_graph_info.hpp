@@ -12,6 +12,7 @@
 #include "duckdb/parser/property_graph_table.hpp"
 #include "duckdb/parser/tableref/basetableref.hpp"
 #include "duckdb/parser/property_graph_table.hpp"
+#include "duckdb/common/unordered_map.hpp"
 
 namespace duckdb {
 

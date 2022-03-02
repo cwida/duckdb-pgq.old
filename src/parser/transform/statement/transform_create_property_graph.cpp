@@ -6,7 +6,7 @@
 
 namespace duckdb {
 
-using namespace duckdb_libpgquery;
+// using namespace duckdb_libpgquery;
 
 // unique_ptr<BaseTableRef> get_table_reference(string name) {
 // 	auto tableref = make_unique<BaseTableRef>();
@@ -18,7 +18,7 @@ using namespace duckdb_libpgquery;
 // }
 
 unique_ptr<PropertyGraphTable>
-Transformer::TranformPropertyGraphTable(PGPropertyGraphTable *table,
+Transformer::TranformPropertyGraphTable(duckdb_libpgquery::PGPropertyGraphTable *table,
                                         unordered_map<string, PropertyGraphTable *> &label_map_1) {
 
 	vector<string> keys, labels, source_key, destination_key;
@@ -28,14 +28,14 @@ Transformer::TranformPropertyGraphTable(PGPropertyGraphTable *table,
 	auto ref = TransformRangeVar(table->name);
 
 	for (auto kc = table->keys->head; kc; kc = kc->next) {
-		keys.push_back(string(reinterpret_cast<PGValue *>(kc->data.ptr_value)->val.str));
+		keys.emplace_back(string(reinterpret_cast<duckdb_libpgquery::PGValue *>(kc->data.ptr_value)->val.str));
 	}
 
 	for (auto kc = table->labels->head; kc; kc = kc->next) {
 		auto label = string((char *)(kc->data.ptr_value));
 		auto entry = label_map_1.find(label);
 		if (entry == label_map_1.end()) {
-			labels.push_back(label);
+			labels.emplace_back(label);
 			// label_map[label] = qname.name;
 
 		} else {
@@ -60,11 +60,11 @@ Transformer::TranformPropertyGraphTable(PGPropertyGraphTable *table,
 		// return unique_ptr<PropertyGraphTable>(new PropertyGraphTable(keys, labels));
 	} else {
 		for (auto kc = table->source_key->head; kc; kc = kc->next) {
-			source_key.push_back(string(reinterpret_cast<PGValue *>(kc->data.ptr_value)->val.str));
+			source_key.emplace_back(string(reinterpret_cast<duckdb_libpgquery::PGValue *>(kc->data.ptr_value)->val.str));
 		}
 
 		for (auto kc = table->destination_key->head; kc; kc = kc->next) {
-			destination_key.push_back(string(reinterpret_cast<PGValue *>(kc->data.ptr_value)->val.str));
+			destination_key.emplace_back(string(reinterpret_cast<duckdb_libpgquery::PGValue *>(kc->data.ptr_value)->val.str));
 		}
 
 		destination_key_reference = string(table->destination_key_reference->relname);
@@ -85,11 +85,11 @@ Transformer::TranformPropertyGraphTable(PGPropertyGraphTable *table,
 	}
 }
 
-unique_ptr<CreateStatement> Transformer::TransformCreatePropertyGraph(PGNode *node) {
+unique_ptr<CreateStatement> Transformer::TransformCreatePropertyGraph(duckdb_libpgquery::PGNode *node) {
 	D_ASSERT(node);
-	D_ASSERT(node->type == T_PGCreatePropertyGraphStmt);
+	D_ASSERT(node->type == duckdb_libpgquery::T_PGCreatePropertyGraphStmt);
 
-	auto stmt = reinterpret_cast<PGCreatePropertyGraphStmt *>(node);
+	auto stmt = reinterpret_cast<duckdb_libpgquery::PGCreatePropertyGraphStmt *>(node);
 	D_ASSERT(stmt);
 
 	auto result = make_unique<CreateStatement>();
@@ -102,11 +102,11 @@ unique_ptr<CreateStatement> Transformer::TransformCreatePropertyGraph(PGNode *no
 	// TransformExpressionList(stmt->vertex_tables);
 
 	for (auto c = stmt->vertex_tables->head; c != nullptr; c = lnext(c)) {
-		auto node = reinterpret_cast<PGNode *>(c->data.ptr_value);
+		auto node = reinterpret_cast<duckdb_libpgquery::PGNode *>(c->data.ptr_value);
 		switch (node->type) {
 
-		case T_PGPropertyGraphTable: {
-			auto graph_table = reinterpret_cast<PGPropertyGraphTable *>(c->data.ptr_value);
+		case duckdb_libpgquery::T_PGPropertyGraphTable: {
+			auto graph_table = reinterpret_cast<duckdb_libpgquery::PGPropertyGraphTable *>(c->data.ptr_value);
 			auto qname = TransformQualifiedName(graph_table->name);
 			auto pg_table = TranformPropertyGraphTable(graph_table, label_map_1);
 			info->vertex_tables.push_back(move(pg_table));
@@ -119,11 +119,11 @@ unique_ptr<CreateStatement> Transformer::TransformCreatePropertyGraph(PGNode *no
 	}
 
 	for (auto c = stmt->edge_tables->head; c != nullptr; c = lnext(c)) {
-		auto node = reinterpret_cast<PGNode *>(c->data.ptr_value);
+		auto node = reinterpret_cast<duckdb_libpgquery::PGNode *>(c->data.ptr_value);
 		switch (node->type) {
 
-		case T_PGPropertyGraphTable: {
-			auto graph_table = reinterpret_cast<PGPropertyGraphTable *>(c->data.ptr_value);
+		case duckdb_libpgquery::T_PGPropertyGraphTable: {
+			auto graph_table = reinterpret_cast<duckdb_libpgquery::PGPropertyGraphTable *>(c->data.ptr_value);
 			// (void)graph_table;
 			auto qname = TransformQualifiedName(graph_table->name);
 			auto pg_table = TranformPropertyGraphTable(graph_table, label_map_1);

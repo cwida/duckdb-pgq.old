@@ -7,13 +7,13 @@
 
 namespace duckdb {
 
-using namespace duckdb_libpgquery;
+// using namespace duckdb_libpgquery;
 
-unique_ptr<GraphElementPattern> Transformer::TransformElementPattern(PGGraphElementPattern *element_pattern) {
+unique_ptr<GraphElementPattern> Transformer::TransformElementPattern(duckdb_libpgquery::PGGraphElementPattern *element_pattern) {
 
 	MatchDirection direction;
 	string edge_alias, vertex_alias;
-	auto graph_variable = reinterpret_cast<PGGraphVariablePattern *>(element_pattern->pattern_clause);
+	auto graph_variable = reinterpret_cast<duckdb_libpgquery::PGGraphVariablePattern *>(element_pattern->pattern_clause);
 
 	auto label_name = graph_variable->label_name ? graph_variable->label_name : "";
 
@@ -28,13 +28,13 @@ unique_ptr<GraphElementPattern> Transformer::TransformElementPattern(PGGraphElem
 		return make_unique<GraphElementPattern>(vertex_alias, label_name, element_pattern->is_vertex_pattern);
 	} else {
 		switch (element_pattern->direction) {
-		case PG_MATCH_DIR_LEFT:
+		case duckdb_libpgquery::PG_MATCH_DIR_LEFT:
 			direction = MatchDirection::LEFT;
 			break;
-		case PG_MATCH_DIR_RIGHT:
+		case duckdb_libpgquery::PG_MATCH_DIR_RIGHT:
 			direction = MatchDirection::RIGHT;
 			break;
-		case PG_MATCH_DIR_ANY:
+		case duckdb_libpgquery::PG_MATCH_DIR_ANY:
 			direction = MatchDirection::ANY;
 			break;
 		default:
@@ -49,13 +49,13 @@ unique_ptr<GraphElementPattern> Transformer::TransformElementPattern(PGGraphElem
 		}
 
 		switch (element_pattern->star_pattern) {
-		case PG_STAR_NONE:
+		case duckdb_libpgquery::PG_STAR_NONE:
 			return make_unique<GraphElementPattern>(edge_alias, label_name, element_pattern->is_vertex_pattern,
 			                                        direction, MatchStarPattern::NONE);
-		case PG_STAR_ALL:
+		case duckdb_libpgquery::PG_STAR_ALL:
 			return make_unique<GraphElementPattern>(edge_alias, label_name, element_pattern->is_vertex_pattern,
 			                                        direction, MatchStarPattern::ALL);
-		case PG_STAR_BOUNDED: {
+		case duckdb_libpgquery::PG_STAR_BOUNDED: {
 			if (element_pattern->lower_bound < 0 || element_pattern->upper_bound < 0) {
 				throw ParserException("Lower and upper bound have to be greater and 0");
 			} else if (element_pattern->lower_bound > element_pattern->upper_bound) {
@@ -75,7 +75,7 @@ unique_ptr<GraphElementPattern> Transformer::TransformElementPattern(PGGraphElem
 	}
 }
 
-unique_ptr<TableRef> Transformer::TransformMatch(PGMatchPattern *root) {
+unique_ptr<TableRef> Transformer::TransformMatch(duckdb_libpgquery::PGMatchPattern *root) {
 	auto result = make_unique<MatchRef>();
 	auto qname = TransformQualifiedName(root->name);
 
@@ -85,14 +85,14 @@ unique_ptr<TableRef> Transformer::TransformMatch(PGMatchPattern *root) {
 	for (auto node = root->pattern->head; node != nullptr; node = node->next) {
 		// list of second member
 		// root->pattern->head->data.ptr_value
-		auto path_list = (PGList *)node->data.ptr_value;
-		auto path_name = (PGValue *)path_list->head->data.ptr_value;
+		auto path_list = (duckdb_libpgquery::PGList *)node->data.ptr_value;
+		auto path_name = (duckdb_libpgquery::PGValue *)path_list->head->data.ptr_value;
 		if (path_name) {
 			result->path_names.emplace_back(string(path_name->val.str));
 		}
-		auto pattern_list = (PGList *)path_list->tail->data.ptr_value;
+		auto pattern_list = (duckdb_libpgquery::PGList *)path_list->tail->data.ptr_value;
 		for (auto node_1 = pattern_list->head; node_1 != nullptr; node_1 = node_1->next) {
-			auto element_pattern = reinterpret_cast<PGGraphElementPattern *>(node_1->data.ptr_value);
+			auto element_pattern = reinterpret_cast<duckdb_libpgquery::PGGraphElementPattern *>(node_1->data.ptr_value);
 			auto transformed_pattern = TransformElementPattern(element_pattern);
 			result->param_list.emplace_back(move(transformed_pattern));
 		}

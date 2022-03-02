@@ -24,16 +24,16 @@ struct CsrBindData : public FunctionData {
 	//     : context(context), id(id), vertex_size(vertex_size) {
 	// }
 
-	~CsrBindData() {
+	// ~CsrBindData() {
 		// could possibly destroy the array here
-	}
+	// }
 
 	unique_ptr<FunctionData> Copy() override {
 		return make_unique<CsrBindData>(context, id);
 	}
 };
 
-static void csr_initialize_vertex_or_edge(ClientContext &context, int32_t id, int64_t v_size, int64_t e_size = 0,
+static void CsrInitializeVertexOrEdge(ClientContext &context, int32_t id, int64_t v_size, int64_t e_size = 0,
                                           bool is_vertex = true) {
 	// Vector result;
 	// auto csr = ((u_int64_t) id) < context.csr_list.size() ? context.csr_list[id] : make_unique<Csr>();
@@ -54,11 +54,12 @@ static void csr_initialize_vertex_or_edge(ClientContext &context, int32_t id, in
 			for (idx_t i = 0; i < (idx_t)v_size + 2; i++) {
 				csr->v[i] = 0;
 			}
-			if (((u_int64_t)id) < context.csr_list.size())
+			if (((u_int64_t)id) < context.csr_list.size()) {
 				context.csr_list[id] = move(csr);
-			else
+			}
+			else {
 				context.csr_list.push_back(move(csr));
-
+			}
 			// dont' forget to destroy
 			// }
 		} catch (std::bad_alloc const &) {
@@ -94,14 +95,14 @@ static void csr_initialize_vertex_or_edge(ClientContext &context, int32_t id, in
 	}
 }
 
-static void create_csr_vertex_function(DataChunk &args, ExpressionState &state, Vector &result) {
+static void CreateCsrVertexFunction(DataChunk &args, ExpressionState &state, Vector &result) {
 	// D_ASSERT(args.ColumnCount() == 0);
 	auto &func_expr = (BoundFunctionExpression &)state.expr;
 	auto &info = (CsrBindData &)*func_expr.bind_info;
 
 	int64_t input_size = args.data[1].GetValue(0).GetValue<int64_t>();
 	if (!info.context.initialized_v) {
-		csr_initialize_vertex_or_edge(info.context, info.id, input_size, 0, true);
+		CsrInitializeVertexOrEdge(info.context, info.id, input_size, 0, true);
 		// csr_initialize_vertex_or_edge(args, state, true);
 	}
 	// auto csr = move(info.context.csr_list[info.id]);
@@ -121,7 +122,7 @@ static void create_csr_vertex_function(DataChunk &args, ExpressionState &state, 
 	return;
 }
 
-static unique_ptr<FunctionData> create_csr_vertex_bind(ClientContext &context, ScalarFunction &bound_function,
+static unique_ptr<FunctionData> CreateCsrVertexBind(ClientContext &context, ScalarFunction &bound_function,
                                                        vector<unique_ptr<Expression>> &arguments) {
 	// SequenceCatalogEntry *sequence = nullptr;
 	if (!arguments[0]->IsFoldable()) {
@@ -135,7 +136,7 @@ static unique_ptr<FunctionData> create_csr_vertex_bind(ClientContext &context, S
 	// , vertex_size.GetValue<int32_t>());
 }
 
-static void create_csr_edge_function(DataChunk &args, ExpressionState &state, Vector &result) {
+static void CreateCsrEdgeFunction(DataChunk &args, ExpressionState &state, Vector &result) {
 	// D_ASSERT(args.ColumnCount() == 0);
 	auto &func_expr = (BoundFunctionExpression &)state.expr;
 	auto &info = (CsrBindData &)*func_expr.bind_info;
@@ -143,7 +144,7 @@ static void create_csr_edge_function(DataChunk &args, ExpressionState &state, Ve
 	int64_t vertex_size = args.data[1].GetValue(0).GetValue<int64_t>();
 	int64_t edge_size = args.data[2].GetValue(0).GetValue<int64_t>();
 	if (!info.context.initialized_e) {
-		csr_initialize_vertex_or_edge(info.context, info.id, vertex_size, edge_size, false);
+		CsrInitializeVertexOrEdge(info.context, info.id, vertex_size, edge_size, false);
 	}
 
 	// auto csr = move(info.context.csr_list[info.id]);
@@ -159,7 +160,7 @@ static void create_csr_edge_function(DataChunk &args, ExpressionState &state, Ve
 	return;
 }
 
-static unique_ptr<FunctionData> create_csr_edge_bind(ClientContext &context, ScalarFunction &bound_function,
+static unique_ptr<FunctionData> CreateCsrEdgeBind(ClientContext &context, ScalarFunction &bound_function,
                                                      vector<unique_ptr<Expression>> &arguments) {
 	if (!arguments[0]->IsFoldable()) {
 		throw InvalidInputException("Id must be constant.");
@@ -176,12 +177,12 @@ void CreateCsrFun::RegisterFunction(BuiltinFunctions &set) {
 	// params -> id, size, src/dense_id, cnt
 	set.AddFunction(ScalarFunction(
 	    "create_csr_vertex", {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT},
-	    LogicalType::BIGINT, create_csr_vertex_function, false, create_csr_vertex_bind));
+	    LogicalType::BIGINT, CreateCsrVertexFunction, false, CreateCsrVertexBind));
 	// params -> id, v_size, num_edges, src_rowid, dst_rowid
 	set.AddFunction(ScalarFunction(
 	    "create_csr_edge",
 	    {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT},
-	    LogicalType::INTEGER, create_csr_edge_function, false, create_csr_edge_bind));
+	    LogicalType::INTEGER, CreateCsrEdgeFunction, false, CreateCsrEdgeBind));
 }
 
 } // namespace duckdb

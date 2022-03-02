@@ -161,7 +161,7 @@ static void PragmaTableInfoView(PragmaTableOperatorData &data, ViewCatalogEntry 
 }
 
 static void PragmaTableInfoPropertyGraph(PragmaTableOperatorData &data, PropertyGraphCatalogEntry *pg_table,
-                                             DataChunk &output) {
+                                         DataChunk &output) {
 	if (data.offset >= pg_table->types.size()) {
 		// finished returning values
 		return;
@@ -169,8 +169,6 @@ static void PragmaTableInfoPropertyGraph(PragmaTableOperatorData &data, Property
 	// either fill up the chunk or return all the remaining columns
 	idx_t next = MinValue<idx_t>(data.offset + STANDARD_VECTOR_SIZE, pg_table->types.size());
 	output.SetCardinality(next - data.offset);
-
-
 }
 
 static void PragmaTableInfoFunction(ClientContext &context, const FunctionData *bind_data_p,

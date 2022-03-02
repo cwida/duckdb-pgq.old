@@ -149,7 +149,7 @@ static unique_ptr<SelectStatement> GetCountTable(string name) {
 	auto select_inner = make_unique<SelectNode>();
 	auto ref = make_unique<BaseTableRef>();
 	ref->schema_name = DEFAULT_SCHEMA;
-	ref->table_name = name; // doubt?
+	ref->table_name = move(name); // doubt?
 
 	// auto statement = make_unique<SelectNode>();
 	select_inner->from_table = move(ref);
