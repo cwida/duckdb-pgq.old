@@ -197,7 +197,7 @@ void CheckpointManager::WriteSchema(SchemaCatalogEntry &schema) {
 	for (auto &macro : macros) {
 		WriteMacro(*macro);
 	}
-	metadata_writer->Write<uint32_t>(pg_tables.size());
+	// metadata_writer->Write<uint32_t>(pg_tables.size());
 	// for (auto &pg_table : pg_tables) {
 	// 	WritePropertyGraph(*pg_table);
 	// }

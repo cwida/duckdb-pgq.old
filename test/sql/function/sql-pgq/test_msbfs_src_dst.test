@@ -77,7 +77,7 @@ FROM
 
 
 query T
-SELECT reachability(id, true, v_size, src, dst) FROM src_dest;
+SELECT reachability(id, false, v_size, src, dst) FROM src_dest;
 ----
 1
 1
