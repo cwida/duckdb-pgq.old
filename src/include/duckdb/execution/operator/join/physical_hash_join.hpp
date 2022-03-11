@@ -29,6 +29,9 @@ public:
 	                 vector<JoinCondition> cond, JoinType join_type, idx_t estimated_cardinality,
 	                 PerfectHashJoinStats join_state);
 
+	friend bool operator!=(const PhysicalHashJoin &lhs, const PhysicalHashJoin &rhs);
+	friend bool operator==(const PhysicalHashJoin &lhs, const PhysicalHashJoin &rhs);
+
 	vector<idx_t> right_projection_map;
 	//! The types of the keys
 	vector<LogicalType> condition_types;
@@ -36,7 +39,7 @@ public:
 	vector<LogicalType> build_types;
 	//! Duplicate eliminated types; only used for delim_joins (i.e. correlated subqueries)
 	vector<LogicalType> delim_types;
-	// used in perfect hash join
+	//! used in perfect hash join
 	PerfectHashJoinStats perfect_join_statistics;
 
 public:
@@ -53,6 +56,7 @@ public:
 		return true;
 	}
 
+
 public:
 	// Source interface
 	unique_ptr<GlobalSourceState> GetGlobalSourceState(ClientContext &context) const override;
@@ -68,14 +72,18 @@ public:
 
 public:
 	// Sink Interface
-	unique_ptr<GlobalSinkState> GetGlobalSinkState(ClientContext &context) const override;
+	shared_ptr<GlobalSinkState> GetGlobalSinkState(ClientContext &context) const override;
 
-	unique_ptr<LocalSinkState> GetLocalSinkState(ExecutionContext &context) const override;
+	shared_ptr<LocalSinkState> GetLocalSinkState(ExecutionContext &context) const override;
 	SinkResultType Sink(ExecutionContext &context, GlobalSinkState &state, LocalSinkState &lstate,
 	                    DataChunk &input) const override;
 	void Combine(ExecutionContext &context, GlobalSinkState &gstate, LocalSinkState &lstate) const override;
 	SinkFinalizeType Finalize(Pipeline &pipeline, Event &event, ClientContext &context,
 	                          GlobalSinkState &gstate) const override;
+
+	friend bool operator!=(const PhysicalHashJoin &lhs, const PhysicalHashJoin &rhs);
+
+	friend bool operator==(const PhysicalHashJoin &lhs, const PhysicalHashJoin &rhs);
 
 	bool IsSink() const override {
 		return true;

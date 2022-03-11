@@ -65,11 +65,11 @@ public:
 	idx_t right_outer_position;
 };
 
-unique_ptr<GlobalSinkState> PhysicalPiecewiseMergeJoin::GetGlobalSinkState(ClientContext &context) const {
+shared_ptr<GlobalSinkState> PhysicalPiecewiseMergeJoin::GetGlobalSinkState(ClientContext &context) const {
 	return make_unique<MergeJoinGlobalState>();
 }
 
-unique_ptr<LocalSinkState> PhysicalPiecewiseMergeJoin::GetLocalSinkState(ExecutionContext &context) const {
+shared_ptr<LocalSinkState> PhysicalPiecewiseMergeJoin::GetLocalSinkState(ExecutionContext &context) const {
 	return make_unique<MergeJoinLocalState>(conditions);
 }
 

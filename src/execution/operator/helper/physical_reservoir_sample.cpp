@@ -30,7 +30,7 @@ public:
 	unique_ptr<BlockingSample> sample;
 };
 
-unique_ptr<GlobalSinkState> PhysicalReservoirSample::GetGlobalSinkState(ClientContext &context) const {
+shared_ptr<GlobalSinkState> PhysicalReservoirSample::GetGlobalSinkState(ClientContext &context) const {
 	return make_unique<SampleGlobalSinkState>(*options);
 }
 

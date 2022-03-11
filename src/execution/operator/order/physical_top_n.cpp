@@ -407,11 +407,11 @@ public:
 	TopNHeap heap;
 };
 
-unique_ptr<LocalSinkState> PhysicalTopN::GetLocalSinkState(ExecutionContext &context) const {
+shared_ptr<LocalSinkState> PhysicalTopN::GetLocalSinkState(ExecutionContext &context) const {
 	return make_unique<TopNLocalState>(context.client, types, orders, limit, offset);
 }
 
-unique_ptr<GlobalSinkState> PhysicalTopN::GetGlobalSinkState(ClientContext &context) const {
+shared_ptr<GlobalSinkState> PhysicalTopN::GetGlobalSinkState(ClientContext &context) const {
 	return make_unique<TopNGlobalState>(context, types, orders, limit, offset);
 }
 

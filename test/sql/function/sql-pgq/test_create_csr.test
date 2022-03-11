@@ -59,10 +59,10 @@ INSERT INTO Transfers VALUES
   (184, 297, 869, 350);
 
 statement ok
-CREATE TABLE TestSerial(tid int)
+CREATE TABLE TestSerial(tid int);
 
 statement ok
-INSERT INTO TestSerial VALUES(0), (1), (2)
+INSERT INTO TestSerial VALUES(0), (1), (2);
 
 # query T
 # SELECT sum(CREATE_CSR_VERTEX(0, 3, tid)) 
@@ -73,7 +73,7 @@ INSERT INTO TestSerial VALUES(0), (1), (2)
 
 
 query T
-SELECT v.vcount FROM (SELECT count(c.cid) as vcount FROM Customer c) v
+SELECT v.vcount FROM (SELECT count(c.cid) as vcount FROM Customer c) v;
 ----
 4
 

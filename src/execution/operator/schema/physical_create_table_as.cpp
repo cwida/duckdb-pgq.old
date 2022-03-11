@@ -26,7 +26,7 @@ public:
 	int64_t inserted_count;
 };
 
-unique_ptr<GlobalSinkState> PhysicalCreateTableAs::GetGlobalSinkState(ClientContext &context) const {
+shared_ptr<GlobalSinkState> PhysicalCreateTableAs::GetGlobalSinkState(ClientContext &context) const {
 	auto sink = make_unique<CreateTableAsGlobalState>();
 	auto &catalog = Catalog::GetCatalog(context);
 	sink->table = (TableCatalogEntry *)catalog.CreateTable(context, schema, info.get());

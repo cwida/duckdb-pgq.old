@@ -77,7 +77,7 @@ SinkResultType PhysicalExpressionScan::Sink(ExecutionContext &context, GlobalSin
 	return SinkResultType::FINISHED;
 }
 
-unique_ptr<GlobalSinkState> PhysicalExpressionScan::GetGlobalSinkState(ClientContext &context) const {
+shared_ptr<GlobalSinkState> PhysicalExpressionScan::GetGlobalSinkState(ClientContext &context) const {
 	return make_unique<ExpressionSinkState>();
 }
 

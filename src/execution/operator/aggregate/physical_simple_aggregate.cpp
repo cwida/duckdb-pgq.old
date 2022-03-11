@@ -97,11 +97,11 @@ public:
 	DataChunk payload_chunk;
 };
 
-unique_ptr<GlobalSinkState> PhysicalSimpleAggregate::GetGlobalSinkState(ClientContext &context) const {
+shared_ptr<GlobalSinkState> PhysicalSimpleAggregate::GetGlobalSinkState(ClientContext &context) const {
 	return make_unique<SimpleAggregateGlobalState>(aggregates);
 }
 
-unique_ptr<LocalSinkState> PhysicalSimpleAggregate::GetLocalSinkState(ExecutionContext &context) const {
+shared_ptr<LocalSinkState> PhysicalSimpleAggregate::GetLocalSinkState(ExecutionContext &context) const {
 	return make_unique<SimpleAggregateLocalState>(aggregates);
 }
 

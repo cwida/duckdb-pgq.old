@@ -23,7 +23,7 @@ public:
 	mutex rhs_lock;
 };
 
-unique_ptr<GlobalSinkState> PhysicalCrossProduct::GetGlobalSinkState(ClientContext &context) const {
+shared_ptr<GlobalSinkState> PhysicalCrossProduct::GetGlobalSinkState(ClientContext &context) const {
 	return make_unique<CrossProductGlobalState>();
 }
 

@@ -19,6 +19,9 @@ public:
 	JoinCondition() : null_values_are_equal(false) {
 	}
 
+	friend bool operator!=(const JoinCondition& lhs, const JoinCondition& rhs);
+	friend bool operator==(const JoinCondition& lhs, const JoinCondition& rhs);
+
 	//! Turns the JoinCondition into an expression; note that this destroys the JoinCondition as the expression inherits
 	//! the left/right expressions
 	static unique_ptr<Expression> CreateExpression(JoinCondition cond);

@@ -106,11 +106,11 @@ public:
 	DataChunk aggregate_input_chunk;
 };
 
-unique_ptr<GlobalSinkState> PhysicalPerfectHashAggregate::GetGlobalSinkState(ClientContext &context) const {
+shared_ptr<GlobalSinkState> PhysicalPerfectHashAggregate::GetGlobalSinkState(ClientContext &context) const {
 	return make_unique<PerfectHashAggregateGlobalState>(*this, context);
 }
 
-unique_ptr<LocalSinkState> PhysicalPerfectHashAggregate::GetLocalSinkState(ExecutionContext &context) const {
+shared_ptr<LocalSinkState> PhysicalPerfectHashAggregate::GetLocalSinkState(ExecutionContext &context) const {
 	return make_unique<PerfectHashAggregateLocalState>(*this, context.client);
 }
 

@@ -31,7 +31,7 @@ public:
 	             LocalSourceState &lstate) const override;
 
 public:
-	unique_ptr<GlobalSinkState> GetGlobalSinkState(ClientContext &context) const override;
+	shared_ptr<GlobalSinkState> GetGlobalSinkState(ClientContext &context) const override;
 
 	SinkResultType Sink(ExecutionContext &context, GlobalSinkState &state, LocalSinkState &lstate,
 	                    DataChunk &input) const override;

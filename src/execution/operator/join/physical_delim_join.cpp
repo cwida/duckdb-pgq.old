@@ -46,7 +46,7 @@ public:
 
 class DelimJoinLocalState : public LocalSinkState {
 public:
-	unique_ptr<LocalSinkState> distinct_state;
+	shared_ptr<LocalSinkState> distinct_state;
 	ChunkCollection lhs_data;
 
 	void Append(DataChunk &input) {
@@ -54,7 +54,7 @@ public:
 	}
 };
 
-unique_ptr<GlobalSinkState> PhysicalDelimJoin::GetGlobalSinkState(ClientContext &context) const {
+shared_ptr<GlobalSinkState> PhysicalDelimJoin::GetGlobalSinkState(ClientContext &context) const {
 	auto state = make_unique<DelimJoinGlobalState>(this);
 	distinct->sink_state = distinct->GetGlobalSinkState(context);
 	if (delim_scans.size() > 1) {
@@ -63,7 +63,7 @@ unique_ptr<GlobalSinkState> PhysicalDelimJoin::GetGlobalSinkState(ClientContext 
 	return move(state);
 }
 
-unique_ptr<LocalSinkState> PhysicalDelimJoin::GetLocalSinkState(ExecutionContext &context) const {
+shared_ptr<LocalSinkState> PhysicalDelimJoin::GetLocalSinkState(ExecutionContext &context) const {
 	auto state = make_unique<DelimJoinLocalState>();
 	state->distinct_state = distinct->GetLocalSinkState(context);
 	return move(state);

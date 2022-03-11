@@ -42,7 +42,7 @@ public:
 	DataChunk sort;
 };
 
-unique_ptr<GlobalSinkState> PhysicalOrder::GetGlobalSinkState(ClientContext &context) const {
+shared_ptr<GlobalSinkState> PhysicalOrder::GetGlobalSinkState(ClientContext &context) const {
 	// Get the payload layout from the return types
 	RowLayout payload_layout;
 	payload_layout.Initialize(types);
@@ -57,7 +57,7 @@ unique_ptr<GlobalSinkState> PhysicalOrder::GetGlobalSinkState(ClientContext &con
 	return move(state);
 }
 
-unique_ptr<LocalSinkState> PhysicalOrder::GetLocalSinkState(ExecutionContext &context) const {
+shared_ptr<LocalSinkState> PhysicalOrder::GetLocalSinkState(ExecutionContext &context) const {
 	auto result = make_unique<OrderLocalState>();
 	// Initialize order clause expression executor and DataChunk
 	vector<LogicalType> types;

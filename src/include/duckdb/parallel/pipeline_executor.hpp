@@ -62,7 +62,7 @@ private:
 	//! The local source state
 	unique_ptr<LocalSourceState> local_source_state;
 	//! The local sink state (if any)
-	unique_ptr<LocalSinkState> local_sink_state;
+	shared_ptr<LocalSinkState> local_sink_state;
 
 	//! The final chunk used for moving data into the sink
 	DataChunk final_chunk;

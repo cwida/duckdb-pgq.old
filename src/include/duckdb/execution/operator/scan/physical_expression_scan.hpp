@@ -36,7 +36,7 @@ public:
 	SinkResultType Sink(ExecutionContext &context, GlobalSinkState &gstate, LocalSinkState &lstate,
 	                    DataChunk &input) const override;
 
-	unique_ptr<GlobalSinkState> GetGlobalSinkState(ClientContext &context) const override;
+	shared_ptr<GlobalSinkState> GetGlobalSinkState(ClientContext &context) const override;
 
 	bool IsSink() const override {
 		return true;

@@ -50,10 +50,10 @@ static void CsrInitializeVertexOrEdge(ClientContext &context, int32_t id, int64_
 			// extra 2 spaces required for CSR padding
 			// data contains a vector of elements so will need an anonymous function to apply the
 			// the first element id is repeated across, can I access the value directly?
-			csr->v = new std::atomic<int64_t>[v_size + 2];
-			for (idx_t i = 0; i < (idx_t)v_size + 2; i++) {
-				csr->v[i] = 0;
-			}
+			csr->v = new std::atomic<int64_t>[v_size + 2]{};
+//			for (idx_t i = 0; i < (idx_t)v_size + 2; i++) {
+//				csr->v[i] = 0;
+//			}
 			if (((u_int64_t)id) < context.csr_list.size()) {
 				context.csr_list[id] = move(csr);
 			}
@@ -81,7 +81,7 @@ static void CsrInitializeVertexOrEdge(ClientContext &context, int32_t id, int64_
 			throw Exception("Unable to initialise vector of size for csr edge table representation");
 		}
 
-		// 	//create running sum
+		// create running sum
 		for (auto i = 1; i < v_size + 2; i++) {
 			context.csr_list[id]->v[i] += context.csr_list[id]->v[i - 1];
 		}

@@ -1,3 +1,4 @@
+#include <iostream>
 #include "duckdb/planner/joinside.hpp"
 
 #include "duckdb/planner/expression/bound_columnref_expression.hpp"
@@ -6,6 +7,49 @@
 #include "duckdb/planner/expression_iterator.hpp"
 
 namespace duckdb {
+
+bool operator!=(const JoinCondition &lhs, const JoinCondition &rhs) {
+	return !(lhs==rhs);
+}
+
+bool operator==(const JoinCondition &lhs, const JoinCondition &rhs) {
+	if (lhs.comparison != rhs.comparison || lhs.null_values_are_equal != rhs.null_values_are_equal) {
+		return false;
+	}
+
+//	auto lhs_left_expression = lhs.left.get();
+//	auto rhs_left_expression = rhs.left.get();
+//	// TODO make operator comparison for expression
+//	//	if (lhs_left_expression != rhs_left_expression) {
+//	//		return false;
+//	//	}
+//
+//	if (lhs_left_expression->return_type != rhs_left_expression->return_type) {
+//		return false;
+//	}
+//	if (lhs_left_expression->alias.compare(rhs_left_expression->alias) != 0) {
+//		return false;
+//	}
+
+	auto lhs_right_expression = lhs.right.get();
+	auto rhs_right_expression = rhs.right.get();
+
+	if (lhs_right_expression->return_type != rhs_right_expression->return_type) {
+		return false;
+	}
+	if (lhs_right_expression->alias.compare(rhs_right_expression->alias) != 0) {
+		return false;
+	}
+	std::cout << lhs_right_expression->alias << std::endl;
+	std::cout << rhs_right_expression->alias << std::endl;
+
+	return true;
+	//	if (lhs_right_expression != rhs_right_expression) {
+	//		return false;
+	//	}
+	//	return true;
+
+}
 
 unique_ptr<Expression> JoinCondition::CreateExpression(JoinCondition cond) {
 	return make_unique<BoundComparisonExpression>(cond.comparison, move(cond.left), move(cond.right));

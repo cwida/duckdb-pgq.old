@@ -46,6 +46,7 @@ class Csr {
 public:
 	Csr() {
 	}
+//	~Csr();
 
 	// vector<unique_ptr<std::atomic<int>>> v;
 	std::atomic<int64_t> *v;

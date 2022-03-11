@@ -75,11 +75,11 @@ SinkFinalizeType PhysicalOperator::Finalize(Pipeline &pipeline, Event &event, Cl
 	return SinkFinalizeType::READY;
 }
 
-unique_ptr<LocalSinkState> PhysicalOperator::GetLocalSinkState(ExecutionContext &context) const {
+shared_ptr<LocalSinkState> PhysicalOperator::GetLocalSinkState(ExecutionContext &context) const {
 	return make_unique<LocalSinkState>();
 }
 
-unique_ptr<GlobalSinkState> PhysicalOperator::GetGlobalSinkState(ClientContext &context) const {
+shared_ptr<GlobalSinkState> PhysicalOperator::GetGlobalSinkState(ClientContext &context) const {
 	return make_unique<GlobalSinkState>();
 }
 

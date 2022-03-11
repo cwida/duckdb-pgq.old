@@ -42,7 +42,7 @@ uint64_t GetDelimiter(DataChunk &input, Expression *expr, uint64_t original_valu
 	return limit_value.value_.ubigint;
 }
 
-unique_ptr<GlobalSinkState> PhysicalLimit::GetGlobalSinkState(ClientContext &context) const {
+shared_ptr<GlobalSinkState> PhysicalLimit::GetGlobalSinkState(ClientContext &context) const {
 	return make_unique<LimitGlobalState>(*this);
 }
 

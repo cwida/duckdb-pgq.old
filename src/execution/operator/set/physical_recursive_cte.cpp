@@ -41,7 +41,7 @@ public:
 	SelectionVector new_groups;
 };
 
-unique_ptr<GlobalSinkState> PhysicalRecursiveCTE::GetGlobalSinkState(ClientContext &context) const {
+shared_ptr<GlobalSinkState> PhysicalRecursiveCTE::GetGlobalSinkState(ClientContext &context) const {
 	return make_unique<RecursiveCTEState>(context, *this);
 }
 

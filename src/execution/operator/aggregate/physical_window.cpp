@@ -1356,11 +1356,11 @@ void PhysicalWindow::Combine(ExecutionContext &context, GlobalSinkState &gstate_
 	}
 }
 
-unique_ptr<LocalSinkState> PhysicalWindow::GetLocalSinkState(ExecutionContext &context) const {
+shared_ptr<LocalSinkState> PhysicalWindow::GetLocalSinkState(ExecutionContext &context) const {
 	return make_unique<WindowLocalState>(*this);
 }
 
-unique_ptr<GlobalSinkState> PhysicalWindow::GetGlobalSinkState(ClientContext &context) const {
+shared_ptr<GlobalSinkState> PhysicalWindow::GetGlobalSinkState(ClientContext &context) const {
 	return make_unique<WindowGlobalState>(*this, context);
 }
 

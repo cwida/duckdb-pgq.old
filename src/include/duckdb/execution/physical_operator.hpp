@@ -82,7 +82,7 @@ public:
 	//! The extimated cardinality of this physical operator
 	idx_t estimated_cardinality;
 	//! The global sink state of this operator
-	unique_ptr<GlobalSinkState> sink_state;
+	shared_ptr<GlobalSinkState> sink_state;
 
 public:
 	virtual string GetName() const;
@@ -148,8 +148,8 @@ public:
 	virtual SinkFinalizeType Finalize(Pipeline &pipeline, Event &event, ClientContext &context,
 	                                  GlobalSinkState &gstate) const;
 
-	virtual unique_ptr<LocalSinkState> GetLocalSinkState(ExecutionContext &context) const;
-	virtual unique_ptr<GlobalSinkState> GetGlobalSinkState(ClientContext &context) const;
+	virtual shared_ptr<LocalSinkState> GetLocalSinkState(ExecutionContext &context) const;
+	virtual shared_ptr<GlobalSinkState> GetGlobalSinkState(ClientContext &context) const;
 
 	virtual bool IsSink() const {
 		return false;

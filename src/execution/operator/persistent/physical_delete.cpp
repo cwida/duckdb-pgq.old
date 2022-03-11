@@ -30,7 +30,7 @@ SinkResultType PhysicalDelete::Sink(ExecutionContext &context, GlobalSinkState &
 	return SinkResultType::NEED_MORE_INPUT;
 }
 
-unique_ptr<GlobalSinkState> PhysicalDelete::GetGlobalSinkState(ClientContext &context) const {
+shared_ptr<GlobalSinkState> PhysicalDelete::GetGlobalSinkState(ClientContext &context) const {
 	return make_unique<DeleteGlobalState>();
 }
 

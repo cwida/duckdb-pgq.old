@@ -35,11 +35,11 @@ public:
 	unique_ptr<bool[]> rhs_found_match;
 };
 
-unique_ptr<GlobalSinkState> PhysicalBlockwiseNLJoin::GetGlobalSinkState(ClientContext &context) const {
+shared_ptr<GlobalSinkState> PhysicalBlockwiseNLJoin::GetGlobalSinkState(ClientContext &context) const {
 	return make_unique<BlockwiseNLJoinGlobalState>();
 }
 
-unique_ptr<LocalSinkState> PhysicalBlockwiseNLJoin::GetLocalSinkState(ExecutionContext &context) const {
+shared_ptr<LocalSinkState> PhysicalBlockwiseNLJoin::GetLocalSinkState(ExecutionContext &context) const {
 	return make_unique<BlockwiseNLJoinLocalState>();
 }
 

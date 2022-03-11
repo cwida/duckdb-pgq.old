@@ -36,8 +36,8 @@ public:
 
 public:
 	//! Sink Interface
-	unique_ptr<GlobalSinkState> GetGlobalSinkState(ClientContext &context) const;
-	unique_ptr<LocalSinkState> GetLocalSinkState(ExecutionContext &context) const;
+	shared_ptr<GlobalSinkState> GetGlobalSinkState(ClientContext &context) const;
+	shared_ptr<LocalSinkState> GetLocalSinkState(ExecutionContext &context) const;
 
 	void Sink(ExecutionContext &context, GlobalSinkState &state, LocalSinkState &lstate, DataChunk &input,
 	          DataChunk &aggregate_input_chunk) const;

@@ -92,11 +92,11 @@ void RadixPartitionedHashTable::SetMultiScan(GlobalSinkState &state) {
 	gstate.multi_scan = true;
 }
 
-unique_ptr<GlobalSinkState> RadixPartitionedHashTable::GetGlobalSinkState(ClientContext &context) const {
+shared_ptr<GlobalSinkState> RadixPartitionedHashTable::GetGlobalSinkState(ClientContext &context) const {
 	return make_unique<RadixHTGlobalState>(context);
 }
 
-unique_ptr<LocalSinkState> RadixPartitionedHashTable::GetLocalSinkState(ExecutionContext &context) const {
+shared_ptr<LocalSinkState> RadixPartitionedHashTable::GetLocalSinkState(ExecutionContext &context) const {
 	return make_unique<RadixHTLocalState>(*this);
 }
 

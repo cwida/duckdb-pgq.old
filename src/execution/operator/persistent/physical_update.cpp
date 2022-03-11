@@ -105,11 +105,11 @@ SinkResultType PhysicalUpdate::Sink(ExecutionContext &context, GlobalSinkState &
 	return SinkResultType::NEED_MORE_INPUT;
 }
 
-unique_ptr<GlobalSinkState> PhysicalUpdate::GetGlobalSinkState(ClientContext &context) const {
+shared_ptr<GlobalSinkState> PhysicalUpdate::GetGlobalSinkState(ClientContext &context) const {
 	return make_unique<UpdateGlobalState>();
 }
 
-unique_ptr<LocalSinkState> PhysicalUpdate::GetLocalSinkState(ExecutionContext &context) const {
+shared_ptr<LocalSinkState> PhysicalUpdate::GetLocalSinkState(ExecutionContext &context) const {
 	return make_unique<UpdateLocalState>(expressions, table.GetTypes(), bound_defaults);
 }
 

@@ -949,4 +949,7 @@ bool ClientContext::TryGetCurrentSetting(const std::string &key, Value &result) 
 	return true;
 }
 
+//Csr::~Csr() {
+//	delete[] v;
+//}
 } // namespace duckdb

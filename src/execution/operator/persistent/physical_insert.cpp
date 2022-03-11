@@ -75,11 +75,11 @@ SinkResultType PhysicalInsert::Sink(ExecutionContext &context, GlobalSinkState &
 	return SinkResultType::NEED_MORE_INPUT;
 }
 
-unique_ptr<GlobalSinkState> PhysicalInsert::GetGlobalSinkState(ClientContext &context) const {
+shared_ptr<GlobalSinkState> PhysicalInsert::GetGlobalSinkState(ClientContext &context) const {
 	return make_unique<InsertGlobalState>();
 }
 
-unique_ptr<LocalSinkState> PhysicalInsert::GetLocalSinkState(ExecutionContext &context) const {
+shared_ptr<LocalSinkState> PhysicalInsert::GetLocalSinkState(ExecutionContext &context) const {
 	return make_unique<InsertLocalState>(table->GetTypes(), bound_defaults);
 }
 

@@ -63,7 +63,7 @@ public:
 	bool finalized = false;
 };
 
-unique_ptr<GlobalSinkState> PhysicalHashJoin::GetGlobalSinkState(ClientContext &context) const {
+shared_ptr<GlobalSinkState> PhysicalHashJoin::GetGlobalSinkState(ClientContext &context) const {
 	auto state = make_unique<HashJoinGlobalState>();
 	state->hash_table =
 	    make_unique<JoinHashTable>(BufferManager::GetBufferManager(context), conditions, build_types, join_type);
@@ -113,7 +113,7 @@ unique_ptr<GlobalSinkState> PhysicalHashJoin::GetGlobalSinkState(ClientContext &
 	return move(state);
 }
 
-unique_ptr<LocalSinkState> PhysicalHashJoin::GetLocalSinkState(ExecutionContext &context) const {
+shared_ptr<LocalSinkState> PhysicalHashJoin::GetLocalSinkState(ExecutionContext &context) const {
 	auto state = make_unique<HashJoinLocalState>();
 	if (!right_projection_map.empty()) {
 		state->build_chunk.Initialize(build_types);
@@ -282,6 +282,29 @@ void PhysicalHashJoin::GetData(ExecutionContext &context, DataChunk &chunk, Glob
 	auto &sink = (HashJoinGlobalState &)*sink_state;
 	auto &state = (HashJoinScanState &)gstate;
 	sink.hash_table->ScanFullOuter(chunk, state.ht_scan_state);
+}
+bool operator==(const PhysicalHashJoin &lhs, const PhysicalHashJoin &rhs) {
+	if (lhs.conditions.size() != rhs.conditions.size()) {
+		return false;
+	}
+	if (lhs.join_type != rhs.join_type) {
+		return false;
+	}
+
+	for (idx_t join_idx = 0; join_idx < lhs.conditions.size(); join_idx++) {
+		const auto lhs_condition = &lhs.conditions[join_idx];
+		const auto rhs_condition = &rhs.conditions[join_idx];
+
+		if (*lhs_condition != *rhs_condition) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
+bool operator!=(const PhysicalHashJoin &lhs, const PhysicalHashJoin &rhs) {
+	return !(lhs==rhs);
 }
 
 } // namespace duckdb

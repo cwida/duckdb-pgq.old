@@ -185,11 +185,11 @@ SinkFinalizeType PhysicalNestedLoopJoin::Finalize(Pipeline &pipeline, Event &eve
 	return SinkFinalizeType::READY;
 }
 
-unique_ptr<GlobalSinkState> PhysicalNestedLoopJoin::GetGlobalSinkState(ClientContext &context) const {
+shared_ptr<GlobalSinkState> PhysicalNestedLoopJoin::GetGlobalSinkState(ClientContext &context) const {
 	return make_unique<NestedLoopJoinGlobalState>();
 }
 
-unique_ptr<LocalSinkState> PhysicalNestedLoopJoin::GetLocalSinkState(ExecutionContext &context) const {
+shared_ptr<LocalSinkState> PhysicalNestedLoopJoin::GetLocalSinkState(ExecutionContext &context) const {
 	return make_unique<NestedLoopJoinLocalState>(conditions);
 }
 

@@ -13,7 +13,7 @@ project(DuckDB)
 find_package(Threads REQUIRED)
 
 if (CMAKE_VERSION VERSION_LESS "3.1")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 else ()
   set (CMAKE_CXX_STANDARD 11)
 endif ()
@@ -33,22 +33,22 @@ endif()
 
 # Determine install paths
 set(INSTALL_LIB_DIR
-    lib
-    CACHE PATH "Installation directory for libraries")
+        lib
+        CACHE PATH "Installation directory for libraries")
 set(INSTALL_BIN_DIR
-    bin
-    CACHE PATH "Installation directory for executables")
+        bin
+        CACHE PATH "Installation directory for executables")
 set(INSTALL_INCLUDE_DIR
-    include
-    CACHE PATH "Installation directory for header files")
+        include
+        CACHE PATH "Installation directory for header files")
 if(WIN32 AND NOT CYGWIN)
   set(DEF_INSTALL_CMAKE_DIR cmake)
 else()
   set(DEF_INSTALL_CMAKE_DIR lib/cmake/DuckDB)
 endif()
 set(INSTALL_CMAKE_DIR
-    ${DEF_INSTALL_CMAKE_DIR}
-    CACHE PATH "Installation directory for CMake files")
+        ${DEF_INSTALL_CMAKE_DIR}
+        CACHE PATH "Installation directory for CMake files")
 set(DUCKDB_EXPORT_SET "DuckDBExports")
 
 # Make relative install paths absolute
@@ -64,7 +64,7 @@ endforeach()
 option(DISABLE_UNITY "Disable unity builds." FALSE)
 
 option(FORCE_COLORED_OUTPUT
-       "Always produce ANSI-colored output (GNU/Clang only)." FALSE)
+        "Always produce ANSI-colored output (GNU/Clang only)." FALSE)
 if(${FORCE_COLORED_OUTPUT})
   if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
     add_compile_options(-fdiagnostics-color=always)
@@ -73,7 +73,7 @@ if(${FORCE_COLORED_OUTPUT})
   endif()
 endif()
 
-option( "Enable address sanitizer." TRUE)
+option("Enable address sanitizer." TRUE)
 
 set(M32_FLAG "")
 if(FORCE_32_BIT)
@@ -87,22 +87,22 @@ option(ENABLE_THREAD_SANITIZER "Enable thread sanitizer." FALSE)
 option(ENABLE_UBSAN "Enable undefined behavior sanitizer." TRUE)
 option(DISABLE_VPTR_SANITIZER "Disable vptr sanitizer; work-around for sanitizer false positive on Macbook M1" FALSE)
 option(
-  FORCE_SANITIZER
-  "Forces building with sanitizers even if the Python and R modules are enabled."
-  FALSE)
+        FORCE_SANITIZER
+        "Forces building with sanitizers even if the Python and R modules are enabled."
+        FALSE)
 if((BUILD_PYTHON OR BUILD_R OR CONFIGURE_R)
-   AND (ENABLE_SANITIZER OR ENABLE_UBSAN)
-   AND ("${CMAKE_BUILD_TYPE}" STREQUAL "Debug"))
+        AND (ENABLE_SANITIZER OR ENABLE_UBSAN)
+        AND ("${CMAKE_BUILD_TYPE}" STREQUAL "Debug"))
   if(FORCE_SANITIZER)
     message(
-      WARNING
-        "FORCE_SANITIZER is set and the Python/R builds are enabled. Sanitizers will be linked as a shared library (-shared-libasan). You may need to do LD_PRELOAD tricks to load packages built in this way."
+            WARNING
+            "FORCE_SANITIZER is set and the Python/R builds are enabled. Sanitizers will be linked as a shared library (-shared-libasan). You may need to do LD_PRELOAD tricks to load packages built in this way."
     )
     set(CXX_EXTRA_DEBUG "${CXX_EXTRA_DEBUG} -shared-libasan")
   else()
     message(
-      WARNING
-        "Sanitizers are enabled but will not be built because the Python/R builds are enabled. Use FORCE_SANITIZER to force building of the sanitizers even when building these packages."
+            WARNING
+            "Sanitizers are enabled but will not be built because the Python/R builds are enabled. Use FORCE_SANITIZER to force building of the sanitizers even when building these packages."
     )
     set(ENABLE_SANITIZER FALSE)
     set(ENABLE_UBSAN FALSE)
@@ -111,8 +111,8 @@ endif()
 if(${ENABLE_THREAD_SANITIZER})
   if(${ENABLE_SANITIZER})
     message(
-      WARNING
-        "Both thread and address sanitizers are enabled. This is not supported. The address sanitizer will be disabled, and we will run with only the thread sanitizer."
+            WARNING
+            "Both thread and address sanitizers are enabled. This is not supported. The address sanitizer will be disabled, and we will run with only the thread sanitizer."
     )
   endif()
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=thread")
@@ -127,8 +127,8 @@ endif()
 if(${ENABLE_UBSAN})
   if(${ENABLE_THREAD_SANITIZER})
     message(
-      WARNING
-        "Both thread and undefined sanitizers are enabled. This is not supported. The undefined sanitizer will be disabled, and we will run with only the thread sanitizer."
+            WARNING
+            "Both thread and undefined sanitizers are enabled. This is not supported. The undefined sanitizer will be disabled, and we will run with only the thread sanitizer."
     )
   else()
     if(FORCE_ASSERT)
@@ -198,8 +198,8 @@ else()
 endif()
 
 option(AMALGAMATION_BUILD
-       "Build from the amalgamation files, rather than from the normal sources."
-       FALSE)
+        "Build from the amalgamation files, rather than from the normal sources."
+        FALSE)
 
 option(BUILD_ICU_EXTENSION "Build the ICU extension." FALSE)
 option(BUILD_PARQUET_EXTENSION "Build the Parquet extension." FALSE)
@@ -208,9 +208,12 @@ option(BUILD_TPCDS_EXTENSION "Build the TPC-DS extension." FALSE)
 option(BUILD_FTS_EXTENSION "Build the FTS extension." FALSE)
 option(BUILD_HTTPFS_EXTENSION "Build the HTTP File System extension." FALSE)
 option(BUILD_VISUALIZER_EXTENSION "Build the profiler-output visualizer extension." FALSE)
+option(BUILD_EXCEL_EXTENSION "Build the excel extension." FALSE)
 option(BUILD_BENCHMARKS "Enable building of the benchmark suite." FALSE)
 option(BUILD_SQLSMITH "Enable building of SQLSmith." FALSE)
 option(BUILD_TPCE "Enable building of the TPC-E tool." FALSE)
+option(DISABLE_BUILTIN_EXTENSIONS "Disable linking extensions." FALSE)
+option(BUILD_SUBSTRAIT_EXTENSION "Enable building of Substrait Extension." FALSE)
 option(JDBC_DRIVER "Build the DuckDB JDBC driver" FALSE)
 option(BUILD_ODBC_DRIVER "Build the DuckDB ODBC driver" FALSE)
 option(BUILD_PYTHON "Build the DuckDB Python extension" FALSE)
@@ -223,24 +226,25 @@ option(DISABLE_THREADS "Disable support for multi-threading" FALSE)
 option(CLANG_TIDY "Enable build for clang-tidy, this disables all source files excluding the core database. This does not produce a working build." FALSE)
 option(BUILD_UNITTESTS "Build the C++ Unit Tests." TRUE)
 option(
-  ASSERT_EXCEPTION
-  "Throw an exception on an assert failing, instead of triggering a sigabort"
-  TRUE)
+        ASSERT_EXCEPTION
+        "Throw an exception on an assert failing, instead of triggering a sigabort"
+        TRUE)
 option(FORCE_ASSERT "Enable checking of assertions, even in release mode" FALSE)
 
 option(TREAT_WARNINGS_AS_ERRORS "Treat warnings as errors" FALSE)
 option(EXPORT_DLL_SYMBOLS "Export dll symbols on Windows, else import" TRUE)
 option(BUILD_RDTSC "Enable the rdtsc instruction." FALSE)
 option(BUILD_ARROW_ABI_TEST "Enable the Arrow ABI Test." FALSE)
+option(TEST_REMOTE_INSTALL "Test installation of specific extensions." FALSE)
 
 if(${BUILD_RDTSC})
   add_compile_definitions(RDTSC)
 endif()
 
 if(BUILD_PYTHON
-   OR BUILD_R
-   OR CONFIGURE_R
-   OR JDBC_DRIVER)
+        OR BUILD_R
+        OR CONFIGURE_R
+        OR JDBC_DRIVER)
   set(BUILD_ICU_EXTENSION TRUE)
   set(BUILD_VISUALIZER_EXTENSION TRUE)
   set(BUILD_PARQUET_EXTENSION TRUE)
@@ -250,6 +254,7 @@ if(BUILD_PYTHON)
   set(BUILD_TPCH_EXTENSION TRUE)
   set(BUILD_TPCDS_EXTENSION TRUE)
   set(BUILD_FTS_EXTENSION TRUE)
+  set(BUILD_EXCEL_EXTENSION TRUE)
 endif()
 
 if(BUILD_SQLSMITH)
@@ -262,7 +267,7 @@ endif()
 
 if(!ASSERT_EXCEPTION)
   set(CMAKE_CXX_FLAGS_DEBUG
-      "${CMAKE_CXX_FLAGS_DEBUG} -DDUCKDB_USE_STANDARD_ASSERT")
+          "${CMAKE_CXX_FLAGS_DEBUG} -DDUCKDB_USE_STANDARD_ASSERT")
 endif()
 
 if(FORCE_ASSERT)
@@ -277,27 +282,27 @@ if(NOT MSVC)
     set(CXX_EXTRA "${CXX_EXTRA} -Werror")
   endif()
   set(CMAKE_CXX_FLAGS_DEBUG
-      "${CMAKE_CXX_FLAGS_DEBUG} -g -O0 -DDEBUG -Wall ${M32_FLAG} ${CXX_EXTRA}")
+          "${CMAKE_CXX_FLAGS_DEBUG} -g -O0 -DDEBUG -Wall ${M32_FLAG} ${CXX_EXTRA}")
   set(CMAKE_CXX_FLAGS_RELEASE
-      "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG ${M32_FLAG} ${CXX_EXTRA}")
+          "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG ${M32_FLAG} ${CXX_EXTRA}")
   set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELEASE} -g")
 
   set(CXX_EXTRA_DEBUG
-      "${CXX_EXTRA_DEBUG} -Wunused -Werror=vla -Wnarrowing -pedantic"
-  )
+          "${CXX_EXTRA_DEBUG} -Wunused -Werror=vla -Wnarrowing -pedantic"
+          )
 
   if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION
-                                                   VERSION_GREATER 8.0)
+          VERSION_GREATER 8.0)
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} ${CXX_EXTRA_DEBUG}")
   elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang"
-         AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 9.0)
+          AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 9.0)
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} ${CXX_EXTRA_DEBUG}")
   else()
     message(WARNING "Please use a recent compiler for debug builds")
   endif()
 else()
   set(CMAKE_CXX_WINDOWS_FLAGS
-      "/wd4244 /wd4267 /wd4200 /wd26451 /wd26495 /D_CRT_SECURE_NO_WARNINGS")
+          "/wd4244 /wd4267 /wd4200 /wd26451 /wd26495 /D_CRT_SECURE_NO_WARNINGS /utf-8")
   if(TREAT_WARNINGS_AS_ERRORS)
     set(CMAKE_CXX_WINDOWS_FLAGS "${CMAKE_CXX_WINDOWS_FLAGS} /WX")
   endif()
@@ -305,8 +310,8 @@ else()
   string(REGEX REPLACE "/W[0-4]" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
   # add to-be-ignored warnings
   set(CMAKE_CXX_FLAGS
-      "${CMAKE_CXX_FLAGS} /wd4244 /wd4267 /wd4200 /wd26451 /wd26495 /D_CRT_SECURE_NO_WARNINGS"
-  )
+          "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_WINDOWS_FLAGS}"
+          )
 endif()
 
 # todo use CHECK_CXX_COMPILER_FLAG(-fsanitize=address SUPPORTS_SANITIZER) etc.
@@ -319,13 +324,35 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(DEFAULT_BUILD_TYPE "Release")
   message(STATUS "Setting build type to '${DEFAULT_BUILD_TYPE}'.")
   set(CMAKE_BUILD_TYPE
-      "${DEFAULT_BUILD_TYPE}"
-      CACHE STRING "Choose the type of build." FORCE)
+          "${DEFAULT_BUILD_TYPE}"
+          CACHE STRING "Choose the type of build." FORCE)
 endif()
+
+
+set(OS_NAME "unknown")
+set(OS_ARCH "amd64")
+
+string(REGEX MATCH "(arm64|aarch64)" IS_ARM "${CMAKE_SYSTEM_PROCESSOR}")
+if(IS_ARM)
+  set(OS_ARCH "arm64")
+endif()
+
+if(APPLE)
+  set(OS_NAME "osx")
+endif()
+if(WIN32)
+  set(OS_NAME "windows")
+endif()
+if(UNIX AND NOT APPLE)
+  set(OS_NAME "linux") # sorry BSD
+endif()
+
 
 include_directories(src/include)
 include_directories(third_party/fmt/include)
 include_directories(third_party/hyperloglog)
+include_directories(third_party/fastpforlib)
+include_directories(third_party/fast_float)
 include_directories(third_party/re2)
 include_directories(third_party/miniz)
 include_directories(third_party/utf8proc/include)
@@ -348,7 +375,7 @@ function(enable_unity_build UB_SUFFIX SOURCE_VARIABLE_NAME)
   # check if any of the source files have changed
   foreach(source_file ${files})
     if(${CMAKE_CURRENT_SOURCE_DIR}/${source_file} IS_NEWER_THAN
-       ${unit_build_file})
+            ${unit_build_file})
       set(rebuild TRUE)
     endif()
   endforeach(source_file)
@@ -356,17 +383,17 @@ function(enable_unity_build UB_SUFFIX SOURCE_VARIABLE_NAME)
   file(WRITE ${temp_unit_build_file} "// Unity Build generated by CMake\n")
   foreach(source_file ${files})
     file(
-      APPEND ${temp_unit_build_file}
-      "#include <${CMAKE_CURRENT_SOURCE_DIR}/${source_file}>\n"
+            APPEND ${temp_unit_build_file}
+            "#include <${CMAKE_CURRENT_SOURCE_DIR}/${source_file}>\n"
     )
   endforeach(source_file)
 
   execute_process(
-    COMMAND ${CMAKE_COMMAND} -E compare_files ${unit_build_file}
-            ${temp_unit_build_file}
-    RESULT_VARIABLE compare_result
-    OUTPUT_VARIABLE bla
-    ERROR_VARIABLE bla)
+          COMMAND ${CMAKE_COMMAND} -E compare_files ${unit_build_file}
+          ${temp_unit_build_file}
+          RESULT_VARIABLE compare_result
+          OUTPUT_VARIABLE bla
+          ERROR_VARIABLE bla)
   if(compare_result EQUAL 0)
     # files are identical: do nothing
   elseif(compare_result EQUAL 1)
@@ -381,16 +408,16 @@ function(enable_unity_build UB_SUFFIX SOURCE_VARIABLE_NAME)
     file(WRITE ${unit_build_file} "// Unity Build generated by CMake\n")
     foreach(source_file ${files})
       file(
-        APPEND ${unit_build_file}
-        "#include <${CMAKE_CURRENT_SOURCE_DIR}/${source_file}>\n"
+              APPEND ${unit_build_file}
+              "#include <${CMAKE_CURRENT_SOURCE_DIR}/${source_file}>\n"
       )
     endforeach(source_file)
   endif()
 
   # Complement list of translation units with the name of ub
   set(${SOURCE_VARIABLE_NAME}
-      ${${SOURCE_VARIABLE_NAME}} ${unit_build_file}
-      PARENT_SCOPE)
+          ${${SOURCE_VARIABLE_NAME}} ${unit_build_file}
+          PARENT_SCOPE)
 endfunction(enable_unity_build)
 
 function(add_library_unity NAME MODE)
@@ -405,13 +432,21 @@ function(disable_target_warnings NAME)
   if(MSVC)
     target_compile_options(${NAME} PRIVATE "/W0")
   elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang"
-         OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
+          OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
     target_compile_options(${NAME} PRIVATE "-w")
   endif()
 endfunction()
 
 function(add_extension_definitions)
   include_directories(${PROJECT_SOURCE_DIR}/extension)
+
+  if(NOT("${TEST_REMOTE_INSTALL}" STREQUAL "OFF"))
+    add_definitions(-DDUCKDB_TEST_REMOTE_INSTALL="${TEST_REMOTE_INSTALL}")
+  endif()
+
+  if(${DISABLE_BUILTIN_EXTENSIONS})
+    add_definitions(-DDISABLE_BUILTIN_EXTENSIONS=${DISABLE_BUILTIN_EXTENSIONS})
+  endif()
 
   if(${BUILD_ICU_EXTENSION})
     include_directories(${PROJECT_SOURCE_DIR}/extension/icu/include)
@@ -426,6 +461,11 @@ function(add_extension_definitions)
   if(${BUILD_TPCH_EXTENSION})
     include_directories(${PROJECT_SOURCE_DIR}/extension/tpch/include)
     add_definitions(-DBUILD_TPCH_EXTENSION=${BUILD_TPCH_EXTENSION})
+  endif()
+
+  if(${BUILD_SUBSTRAIT_EXTENSION})
+    include_directories(${PROJECT_SOURCE_DIR}/extension/substrait/include)
+    add_definitions(-DBUILD_SUBSTRAIT_EXTENSION=${BUILD_SUBSTRAIT_EXTENSION})
   endif()
 
   if(${BUILD_TPCDS_EXTENSION})
@@ -448,6 +488,11 @@ function(add_extension_definitions)
     include_directories(${PROJECT_SOURCE_DIR}/extension/visualizer/include)
     add_definitions(-DBUILD_VISUALIZER_EXTENSION=${BUILD_VISUALIZER_EXTENSION})
   endif()
+
+  if(${BUILD_EXCEL_EXTENSION})
+    include_directories(${PROJECT_SOURCE_DIR}/extension/excel/include)
+    add_definitions(-DBUILD_EXCEL_EXTENSION=${BUILD_EXCEL_EXTENSION})
+  endif()
 endfunction()
 
 function(add_extension_dependencies LIBRARY)
@@ -461,6 +506,10 @@ function(add_extension_dependencies LIBRARY)
 
   if(${BUILD_TPCH_EXTENSION})
     add_dependencies(${LIBRARY} tpch_extension)
+  endif()
+
+  if(${BUILD_SUBSTRAIT_EXTENSION})
+    add_dependencies(${LIBRARY} substrait_extension)
   endif()
 
   if(${BUILD_TPCDS_EXTENSION})
@@ -478,9 +527,17 @@ function(add_extension_dependencies LIBRARY)
   if(${BUILD_VISUALIZER_EXTENSION})
     add_dependencies(${LIBRARY} visualizer_extension)
   endif()
+
+  if(${BUILD_EXCEL_EXTENSION})
+    add_dependencies(${LIBRARY} excel_extension)
+  endif()
 endfunction()
 
 function(link_extension_libraries LIBRARY)
+  if(${DISABLE_BUILTIN_EXTENSIONS})
+    return()
+  endif()
+
   if(${BUILD_PARQUET_EXTENSION})
     target_link_libraries(${LIBRARY} parquet_extension)
   endif()
@@ -491,6 +548,10 @@ function(link_extension_libraries LIBRARY)
 
   if(${BUILD_TPCH_EXTENSION})
     target_link_libraries(${LIBRARY} tpch_extension)
+  endif()
+
+  if(${BUILD_SUBSTRAIT_EXTENSION})
+    target_link_libraries(${LIBRARY} substrait_extension)
   endif()
 
   if(${BUILD_TPCDS_EXTENSION})
@@ -509,6 +570,10 @@ function(link_extension_libraries LIBRARY)
   if(${BUILD_VISUALIZER_EXTENSION})
     target_link_libraries(${LIBRARY} visualizer_extension)
   endif()
+
+  if(${BUILD_EXCEL_EXTENSION})
+    target_link_libraries(${LIBRARY} excel_extension)
+  endif()
 endfunction()
 
 function(link_threads LIBRARY)
@@ -518,6 +583,62 @@ function(link_threads LIBRARY)
   else()
     target_link_libraries(${LIBRARY} Threads::Threads)
   endif()
+endfunction()
+
+function(build_loadable_extension_directory NAME OUTPUT_DIRECTORY)
+  #  skip building extensions on mingw because its weird
+  if(WIN32 AND NOT MSVC)
+    return()
+  endif()
+
+  set(TARGET_NAME ${NAME}_loadable_extension)
+  # all parameters after output_directory
+  set(FILES ${ARGV})
+  # remove name
+  list(REMOVE_AT FILES 0)
+  # remove output_directory
+  list(REMOVE_AT FILES 0)
+
+  add_library(${TARGET_NAME} SHARED ${FILES})
+  set_target_properties(${TARGET_NAME} PROPERTIES OUTPUT_NAME ${NAME})
+  set_target_properties(${TARGET_NAME} PROPERTIES PREFIX "")
+  target_compile_definitions(${TARGET_NAME} PUBLIC -DDUCKDB_BUILD_LOADABLE_EXTENSION)
+  target_link_libraries(${TARGET_NAME} duckdb ${DUCKDB_EXTRA_LINK_FLAGS})
+  set_target_properties(${TARGET_NAME} PROPERTIES SUFFIX
+          ".duckdb_extension")
+
+  if(MSVC)
+    target_link_libraries(${TARGET_NAME} delayimp)
+    set_target_properties(
+            ${TARGET_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY_DEBUG
+            "${CMAKE_BINARY_DIR}/${OUTPUT_DIRECTORY}")
+    set_target_properties(
+            ${TARGET_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY_RELEASE
+            "${CMAKE_BINARY_DIR}/${OUTPUT_DIRECTORY}")
+  endif()
+
+  if(WIN32)
+    set_target_properties(${TARGET_NAME}
+            PROPERTIES LINK_FLAGS_DEBUG "/DELAYLOAD:duckdb.dll")
+    set(CMAKE_EXE_LINKER_FLAGS_DEBUG
+            "${CMAKE_EXE_LINKER_FLAGS_DEBUG}  /DELAYLOAD:duckdb.dll")
+    set_target_properties(${TARGET_NAME}
+            PROPERTIES LINK_FLAGS_RELEASE "/DELAYLOAD:duckdb.dll")
+    set(CMAKE_EXE_LINKER_FLAGS_RELEASE
+            "${CMAKE_EXE_LINKER_FLAGS_RELEASE}  /DELAYLOAD:duckdb.dll")
+    # This is only strictly required in non-Visual-Studio builds like Ninja:
+    target_link_libraries(${TARGET_NAME}
+            delayimp)
+  endif()
+
+endfunction()
+
+function(build_loadable_extension NAME)
+  # all parameters after name
+  set(FILES ${ARGV})
+  list(REMOVE_AT FILES 0)
+
+  build_loadable_extension_directory(${NAME} extension/${NAME} ${FILES})
 endfunction()
 
 if(${EXPORT_DLL_SYMBOLS})
@@ -535,8 +656,8 @@ if(NOT CLANG_TIDY)
   if(${BUILD_UNITTESTS})
     add_subdirectory(test)
     if(NOT WIN32
-      AND NOT SUN
-      AND ${BUILD_BENCHMARKS})
+            AND NOT SUN
+            AND ${BUILD_BENCHMARKS})
       add_subdirectory(benchmark)
     endif()
   endif()
@@ -544,39 +665,39 @@ if(NOT CLANG_TIDY)
 endif()
 
 if (CMAKE_VERSION VERSION_GREATER "3.0") # this does not work with 2.8
-# Write the export set for build and install tree
-install(EXPORT "${DUCKDB_EXPORT_SET}" DESTINATION "${INSTALL_CMAKE_DIR}")
-export(EXPORT "${DUCKDB_EXPORT_SET}"
-       FILE "${PROJECT_BINARY_DIR}/${DUCKDB_EXPORT_SET}.cmake")
+  # Write the export set for build and install tree
+  install(EXPORT "${DUCKDB_EXPORT_SET}" DESTINATION "${INSTALL_CMAKE_DIR}")
+  export(EXPORT "${DUCKDB_EXPORT_SET}"
+          FILE "${PROJECT_BINARY_DIR}/${DUCKDB_EXPORT_SET}.cmake")
 
-# Only write the cmake package configuration if the templates exist
-set(CMAKE_CONFIG_TEMPLATE "${CMAKE_SOURCE_DIR}/DuckDBConfig.cmake.in")
-set(CMAKE_CONFIG_VERSION_TEMPLATE
-    "${CMAKE_SOURCE_DIR}/DuckDBConfigVersion.cmake.in")
-if(EXISTS ${CMAKE_CONFIG_TEMPLATE} AND EXISTS ${CMAKE_CONFIG_VERSION_TEMPLATE})
+  # Only write the cmake package configuration if the templates exist
+  set(CMAKE_CONFIG_TEMPLATE "${CMAKE_SOURCE_DIR}/DuckDBConfig.cmake.in")
+  set(CMAKE_CONFIG_VERSION_TEMPLATE
+          "${CMAKE_SOURCE_DIR}/DuckDBConfigVersion.cmake.in")
+  if(EXISTS ${CMAKE_CONFIG_TEMPLATE} AND EXISTS ${CMAKE_CONFIG_VERSION_TEMPLATE})
 
-  # Configure cmake package config for the build tree
-  set(CONF_INCLUDE_DIRS "${PROJECT_SOURCE_DIR}/src/include")
-  configure_file(${CMAKE_CONFIG_TEMPLATE}
-                 "${PROJECT_BINARY_DIR}/DuckDBConfig.cmake" @ONLY)
+    # Configure cmake package config for the build tree
+    set(CONF_INCLUDE_DIRS "${PROJECT_SOURCE_DIR}/src/include")
+    configure_file(${CMAKE_CONFIG_TEMPLATE}
+            "${PROJECT_BINARY_DIR}/DuckDBConfig.cmake" @ONLY)
 
-  # Configure cmake package config for the install tree
-  file(RELATIVE_PATH REL_INCLUDE_DIR "${INSTALL_CMAKE_DIR}"
-       "${INSTALL_INCLUDE_DIR}")
-  set(CONF_INCLUDE_DIRS "\${DuckDB_CMAKE_DIR}/${REL_INCLUDE_DIR}")
-  configure_file(
-    ${CMAKE_CONFIG_TEMPLATE}
-    "${PROJECT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/DuckDBConfig.cmake" @ONLY)
+    # Configure cmake package config for the install tree
+    file(RELATIVE_PATH REL_INCLUDE_DIR "${INSTALL_CMAKE_DIR}"
+            "${INSTALL_INCLUDE_DIR}")
+    set(CONF_INCLUDE_DIRS "\${DuckDB_CMAKE_DIR}/${REL_INCLUDE_DIR}")
+    configure_file(
+            ${CMAKE_CONFIG_TEMPLATE}
+            "${PROJECT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/DuckDBConfig.cmake" @ONLY)
 
-  # Configure cmake package version for build and install tree
-  configure_file(${CMAKE_CONFIG_VERSION_TEMPLATE}
-                 "${PROJECT_BINARY_DIR}/DuckDBConfigVersion.cmake" @ONLY)
+    # Configure cmake package version for build and install tree
+    configure_file(${CMAKE_CONFIG_VERSION_TEMPLATE}
+            "${PROJECT_BINARY_DIR}/DuckDBConfigVersion.cmake" @ONLY)
 
-  # Install the cmake package
-  install(
-    FILES "${PROJECT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/DuckDBConfig.cmake"
-          "${PROJECT_BINARY_DIR}/DuckDBConfigVersion.cmake"
-    DESTINATION "${INSTALL_CMAKE_DIR}")
-endif()
+    # Install the cmake package
+    install(
+            FILES "${PROJECT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/DuckDBConfig.cmake"
+            "${PROJECT_BINARY_DIR}/DuckDBConfigVersion.cmake"
+            DESTINATION "${INSTALL_CMAKE_DIR}")
+  endif()
 
 endif()

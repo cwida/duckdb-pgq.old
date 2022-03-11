@@ -113,7 +113,7 @@ public:
 		}
 	}
 
-	vector<unique_ptr<GlobalSinkState>> radix_states;
+	vector<shared_ptr<GlobalSinkState>> radix_states;
 };
 
 class HashAggregateLocalState : public LocalSinkState {
@@ -131,7 +131,7 @@ public:
 
 	DataChunk aggregate_input_chunk;
 
-	vector<unique_ptr<LocalSinkState>> radix_states;
+	vector<shared_ptr<LocalSinkState>> radix_states;
 };
 
 void PhysicalHashAggregate::SetMultiScan(GlobalSinkState &state) {
@@ -141,11 +141,11 @@ void PhysicalHashAggregate::SetMultiScan(GlobalSinkState &state) {
 	}
 }
 
-unique_ptr<GlobalSinkState> PhysicalHashAggregate::GetGlobalSinkState(ClientContext &context) const {
+shared_ptr<GlobalSinkState> PhysicalHashAggregate::GetGlobalSinkState(ClientContext &context) const {
 	return make_unique<HashAggregateGlobalState>(*this, context);
 }
 
-unique_ptr<LocalSinkState> PhysicalHashAggregate::GetLocalSinkState(ExecutionContext &context) const {
+shared_ptr<LocalSinkState> PhysicalHashAggregate::GetLocalSinkState(ExecutionContext &context) const {
 	return make_unique<HashAggregateLocalState>(*this, context);
 }
 

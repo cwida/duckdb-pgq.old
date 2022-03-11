@@ -14,8 +14,10 @@
 #include "duckdb/parallel/pipeline_event.hpp"
 #include "duckdb/parallel/pipeline_finish_event.hpp"
 #include "duckdb/parallel/pipeline_complete_event.hpp"
+#include "duckdb/execution/operator/join/physical_hash_join.hpp"
 
 #include <algorithm>
+#include <iostream>
 
 namespace duckdb {
 
@@ -421,9 +423,21 @@ void Executor::BuildPipelines(PhysicalOperator *op, Pipeline *current) {
 			D_ASSERT(op->children.size() == 1);
 			pipeline_child = op->children[0].get();
 			break;
+
+		case PhysicalOperatorType::HASH_JOIN:
+			if (duplicate_sink_states.empty()) {
+				duplicate_sink_states[op] = current;
+			} else {
+				for (auto sink_state : duplicate_sink_states) {
+					const auto first = (PhysicalHashJoin*)sink_state.first;
+					const auto second = (PhysicalHashJoin*)op;
+					if (*first == *second) {
+						std::cout << "Duplicate detected" << std::endl;
+					}
+				}
+			}
 		case PhysicalOperatorType::NESTED_LOOP_JOIN:
 		case PhysicalOperatorType::BLOCKWISE_NL_JOIN:
-		case PhysicalOperatorType::HASH_JOIN:
 		case PhysicalOperatorType::PIECEWISE_MERGE_JOIN:
 		case PhysicalOperatorType::CROSS_PRODUCT:
 			// regular join, create a pipeline with RHS source that sinks into this pipeline
