@@ -13,6 +13,8 @@
 #include "duckdb/parallel/pipeline.hpp"
 #include "duckdb/common/unordered_map.hpp"
 #include "duckdb/common/pair.hpp"
+#include "duckdb/execution/operator/join/physical_hash_join.hpp"
+#include "duckdb/execution/operator/scan/physical_table_scan.hpp"
 
 namespace duckdb {
 class ClientContext;
@@ -137,7 +139,7 @@ private:
 	//! Duplicate eliminated join scan dependencies
 	unordered_map<PhysicalOperator *, Pipeline *> delim_join_dependencies;
 
-	unordered_map<PhysicalOperator *, Pipeline *> duplicate_sink_states;
+	unordered_set<PhysicalHashJoin *> duplicate_sink_states;
 
 	//! Active recursive CTE node (if any)
 	PhysicalOperator *recursive_cte;

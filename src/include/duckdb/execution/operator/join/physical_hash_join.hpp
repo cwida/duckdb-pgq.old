@@ -89,7 +89,7 @@ public:
 		return true;
 	}
 	bool ParallelSink() const override {
-		return true;
+		return false;
 	}
 };
 

@@ -1,3 +1,4 @@
+#include <iostream>
 #include "duckdb/execution/operator/join/physical_hash_join.hpp"
 #include "duckdb/common/vector_operations/vector_operations.hpp"
 #include "duckdb/execution/expression_executor.hpp"
@@ -56,17 +57,17 @@ public:
 	}
 
 	//! The HT used by the join
-	unique_ptr<JoinHashTable> hash_table;
+	shared_ptr<JoinHashTable> hash_table;
 	//! The perfect hash join executor (if any)
-	unique_ptr<PerfectHashJoinExecutor> perfect_join_executor;
+	shared_ptr<PerfectHashJoinExecutor> perfect_join_executor;
 	//! Whether or not the hash table has been finalized
 	bool finalized = false;
 };
 
 shared_ptr<GlobalSinkState> PhysicalHashJoin::GetGlobalSinkState(ClientContext &context) const {
-	auto state = make_unique<HashJoinGlobalState>();
+	auto state = make_shared<HashJoinGlobalState>();
 	state->hash_table =
-	    make_unique<JoinHashTable>(BufferManager::GetBufferManager(context), conditions, build_types, join_type);
+	    make_shared<JoinHashTable>(BufferManager::GetBufferManager(context), conditions, build_types, join_type);
 	if (!delim_types.empty() && join_type == JoinType::MARK) {
 		// correlated MARK join
 		if (delim_types.size() + 1 == conditions.size()) {
@@ -110,7 +111,7 @@ shared_ptr<GlobalSinkState> PhysicalHashJoin::GetGlobalSinkState(ClientContext &
 	// for perfect hash join
 	state->perfect_join_executor =
 	    make_unique<PerfectHashJoinExecutor>(*this, *state->hash_table, perfect_join_statistics);
-	return move(state);
+	return state;
 }
 
 shared_ptr<LocalSinkState> PhysicalHashJoin::GetLocalSinkState(ExecutionContext &context) const {
@@ -164,9 +165,14 @@ void PhysicalHashJoin::Combine(ExecutionContext &context, GlobalSinkState &gstat
 //===--------------------------------------------------------------------===//
 SinkFinalizeType PhysicalHashJoin::Finalize(Pipeline &pipeline, Event &event, ClientContext &context,
                                             GlobalSinkState &gstate) const {
+
 	auto &sink = (HashJoinGlobalState &)gstate;
+	std::cout << sink.finalized << std::endl;
 	// check for possible perfect hash table
 	auto use_perfect_hash = sink.perfect_join_executor->CanDoPerfectHashJoin();
+
+	// FIXME Remove once it works without perfect join
+	use_perfect_hash = false;
 	if (use_perfect_hash) {
 		D_ASSERT(sink.hash_table->equality_types.size() == 1);
 		auto key_type = sink.hash_table->equality_types[0];

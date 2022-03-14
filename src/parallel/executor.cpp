@@ -425,17 +425,20 @@ void Executor::BuildPipelines(PhysicalOperator *op, Pipeline *current) {
 			break;
 
 		case PhysicalOperatorType::HASH_JOIN:
-			if (duplicate_sink_states.empty()) {
-				duplicate_sink_states[op] = current;
-			} else {
-				for (auto sink_state : duplicate_sink_states) {
-					const auto first = (PhysicalHashJoin*)sink_state.first;
-					const auto second = (PhysicalHashJoin*)op;
-					if (*first == *second) {
-						std::cout << "Duplicate detected" << std::endl;
-					}
-				}
-			}
+//			pipeline_child = op->children[1].get();
+//			current->operators.push_back(op);
+//			if (op->IsSource()) {
+//				// FULL or RIGHT outer join
+//				// schedule a scan of the node as a child pipeline
+//				// this scan has to be performed AFTER all the probing has happened
+//				if (recursive_cte) {
+//					throw NotImplementedException("FULL and RIGHT outer joins are not supported in recursive CTEs yet");
+//				}
+//				AddChildPipeline(current);
+//			}
+//			BuildPipelines(op->children[0].get(), current);
+//
+//			break;
 		case PhysicalOperatorType::NESTED_LOOP_JOIN:
 		case PhysicalOperatorType::BLOCKWISE_NL_JOIN:
 		case PhysicalOperatorType::PIECEWISE_MERGE_JOIN:
@@ -490,12 +493,34 @@ void Executor::BuildPipelines(PhysicalOperator *op, Pipeline *current) {
 			throw InternalException("Unimplemented sink type!");
 		}
 		// the current is dependent on this pipeline to complete
+
 		auto pipeline = make_shared<Pipeline>(*this);
+		bool duplicate_found = false;
+		if (op->type == PhysicalOperatorType::HASH_JOIN) {
+			if (duplicate_sink_states.empty()) {
+				duplicate_sink_states.insert((PhysicalHashJoin*)op);
+			}
+			else {
+				for (const auto &sink_state : duplicate_sink_states) {
+					const auto first = (PhysicalHashJoin*)sink_state;
+					const auto second = (PhysicalHashJoin*)op;
+					if (*first == *second) {
+						op = sink_state;
+						duplicate_found = true;
+						break;
+					}
+				}
+				if (!duplicate_found) {
+					duplicate_sink_states.insert((PhysicalHashJoin*)op);
+				}
+			}
+		}
 		pipeline->sink = op;
 		current->AddDependency(pipeline);
 		D_ASSERT(pipeline_child);
-		// recurse into the pipeline child
 		BuildPipelines(pipeline_child, pipeline.get());
+		// recurse into the pipeline child
+
 		if (op->type == PhysicalOperatorType::DELIM_JOIN) {
 			// for delim joins, recurse into the actual join
 			// any pipelines in there depend on the main pipeline
