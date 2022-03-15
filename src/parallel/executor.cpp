@@ -425,20 +425,6 @@ void Executor::BuildPipelines(PhysicalOperator *op, Pipeline *current) {
 			break;
 
 		case PhysicalOperatorType::HASH_JOIN:
-//			pipeline_child = op->children[1].get();
-//			current->operators.push_back(op);
-//			if (op->IsSource()) {
-//				// FULL or RIGHT outer join
-//				// schedule a scan of the node as a child pipeline
-//				// this scan has to be performed AFTER all the probing has happened
-//				if (recursive_cte) {
-//					throw NotImplementedException("FULL and RIGHT outer joins are not supported in recursive CTEs yet");
-//				}
-//				AddChildPipeline(current);
-//			}
-//			BuildPipelines(op->children[0].get(), current);
-//
-//			break;
 		case PhysicalOperatorType::NESTED_LOOP_JOIN:
 		case PhysicalOperatorType::BLOCKWISE_NL_JOIN:
 		case PhysicalOperatorType::PIECEWISE_MERGE_JOIN:
