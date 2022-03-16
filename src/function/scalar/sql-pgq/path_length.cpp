@@ -133,7 +133,6 @@ static void PathLengthFunction(DataChunk &args, ExpressionState &state, Vector &
 		bool exit_early = false;
 
 		while (!exit_early) {
-			std::cout << bfs_depth << std::endl;
 			bfs_depth++;
 			exit_early = true;
 			exit_early = BfsWithoutArray(exit_early, id, input_size, info.context, seen, visit, visit_next, bfs_depth,
@@ -174,7 +173,7 @@ void PathLengthFun::RegisterFunction(BuiltinFunctions &set) {
 	set.AddFunction(ScalarFunction(
 	    "path_length",
 	    {LogicalType::INTEGER, LogicalType::BOOLEAN, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT},
-	    LogicalType::INTEGER, PathLengthFunction, false, PathLengthBind));
+	    LogicalType::TINYINT, PathLengthFunction, false, PathLengthBind));
 }
 
 } // namespace duckdb
