@@ -55,16 +55,17 @@ static int16_t InitialiseBfs(idx_t curr_batch, idx_t size, int64_t *src_data, co
 		auto src_index = src_sel->get_index(i);
 
 		if (src_validity.RowIsValid(src_index)) {
-			auto entry = lane_map.find(src_data[src_index]);
+			int64_t &src_entry = src_data[src_index];
+			auto entry = lane_map.find(src_entry);
 			if (entry == lane_map.end()) {
-				lane_map[src_data[src_index]].first = lanes;
+				lane_map[src_entry].first = lanes;
 				// seen[src_data[i]] = std::bitset<LANE_LIMIT>();
-				seen[src_data[src_index]][lanes] = true;
+				seen[src_entry][lanes] = true;
 				// visit[src_data[i]] = std::bitset<LANE_LIMIT>();
-				visit[src_data[src_index]][lanes] = true;
+				visit[src_entry][lanes] = true;
 				lanes++;
 			}
-			lane_map[src_data[src_index]].second.push_back(i);
+			lane_map[src_entry].second.push_back(i);
 			curr_batch_size++;
 		}
 	}
@@ -103,7 +104,7 @@ static bool BfsWithoutArrayVariant(bool exit_early, int32_t id, int64_t input_si
 	return exit_early;
 }
 
-static bool BfsWithoutArray(bool exit_early, int32_t id, int64_t input_size, MsbfsBindData &info,
+static bool BfsWithoutArray(bool exit_early, int32_t id, int64_t input_size, ClientContext &context,
                               vector<std::bitset<LANE_LIMIT>> &seen, vector<std::bitset<LANE_LIMIT>> &visit,
                               vector<std::bitset<LANE_LIMIT>> &visit_next) {
 	for (int64_t i = 0; i < input_size; i++) {
@@ -111,10 +112,10 @@ static bool BfsWithoutArray(bool exit_early, int32_t id, int64_t input_size, Msb
 			continue;
 		}
 
-		D_ASSERT(info.context.csr_list[id]);
-		for (auto index = (int64_t)info.context.csr_list[id]->v[i]; index < (int64_t)info.context.csr_list[id]->v[i + 1];
+		D_ASSERT(context.csr_list[id]);
+		for (auto index = (int64_t)context.csr_list[id]->v[i]; index < (int64_t)context.csr_list[id]->v[i + 1];
 		     index++) {
-			auto n = info.context.csr_list[id]->e[index];
+			auto n = context.csr_list[id]->e[index];
 			visit_next[n] = visit_next[n] | visit[i];
 		}
 	}
@@ -125,7 +126,7 @@ static bool BfsWithoutArray(bool exit_early, int32_t id, int64_t input_size, Msb
 		}
 		visit_next[i] = visit_next[i] & ~seen[i];
 		seen[i] = seen[i] | visit_next[i];
-		if (exit_early == true && visit_next[i].any()) {
+		if (exit_early && visit_next[i].any()) {
 			exit_early = false;
 		}
 	}
@@ -156,7 +157,7 @@ static pair<bool, size_t> BfsTempStateVariant(bool exit_early, int32_t id, int64
 		}
 		visit_next[i] = visit_next[i] & ~seen[i];
 		seen[i] = seen[i] | visit_next[i];
-		if (exit_early == true && visit_next[i].any()) {
+		if (exit_early && visit_next[i].any()) {
 			exit_early = false;
 		}
 		if (visit_next[i].any()) {
@@ -261,7 +262,7 @@ static void MsbfsFunction(DataChunk &args, ExpressionState &state, Vector &resul
 		vector<std::bitset<LANE_LIMIT>> visit(input_size);
 		vector<std::bitset<LANE_LIMIT>> visit_next(input_size);
 
-		// mapping of src_value ->  (bfs_num/lane, vector of indices in src_data)
+		//! mapping of src_value ->  (bfs_num/lane, vector of indices in src_data)
 		unordered_map<int64_t, pair<int16_t, vector<int64_t>>> lane_map;
 		// init_profiler.Start();
 		auto curr_batch_size = InitialiseBfs(result_size, args.size(), src_data, vdata_src.sel, vdata_src.validity,
@@ -298,7 +299,7 @@ static void MsbfsFunction(DataChunk &args, ExpressionState &state, Vector &resul
 			} else {
 
 				// phase_profiler.Start();
-				exit_early = BfsWithoutArray(exit_early, id, input_size, info, seen, visit, visit_next);
+				exit_early = BfsWithoutArray(exit_early, id, input_size, info.context, seen, visit, visit_next);
 				// phase_profiler.End();
 				// log_file << "BFS time " << std::to_string(phase_profiler.Elapsed()) << endl;
 
