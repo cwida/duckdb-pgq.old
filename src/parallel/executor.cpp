@@ -498,6 +498,10 @@ void Executor::BuildPipelines(PhysicalOperator *op, Pipeline *current) {
 				}
 				if (!duplicate_found) {
 					duplicate_sink_states.insert((PhysicalHashJoin*)op);
+				} else {
+					// use the actual duplicate pipeline thingy
+					// op->sink_state = duplicate_sink_states[...];
+					return;
 				}
 			}
 		}
