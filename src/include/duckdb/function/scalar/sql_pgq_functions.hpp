@@ -13,7 +13,7 @@
 
 namespace duckdb {
 
-#define LANE_LIMIT         64
+#define LANE_LIMIT         1024
 #define VISIT_SIZE_DIVISOR 2
 
 struct CreateCsrFun {

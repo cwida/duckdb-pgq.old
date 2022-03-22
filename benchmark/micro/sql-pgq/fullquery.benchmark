@@ -6,7 +6,7 @@ name MSBFS
 group sql-pgq
 
 init
-PRAGMA threads=4;
+PRAGMA threads=1;
 
 load benchmark/micro/sql-pgq/fullquery.sql
 

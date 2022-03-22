@@ -5,6 +5,15 @@
 
 namespace duckdb {
 
+enum UIntSizes {
+	UINT_8 = 0,
+	UINT_16 = 1,
+	UINT_32 = 2,
+	UINT_64 = 3,
+};
+
+auto current_max_size = UINT8_MAX;
+
 struct PathLengthBindData : public FunctionData {
 	ClientContext &context;
 
@@ -20,7 +29,7 @@ static int16_t InitialiseBfs(idx_t curr_batch, idx_t size, int64_t *src_data, co
                              const ValidityMask &src_validity, vector<std::bitset<LANE_LIMIT>> &seen,
                              vector<std::bitset<LANE_LIMIT>> &visit, vector<std::bitset<LANE_LIMIT>> &visit_next,
                              unordered_map<int64_t, pair<int16_t, vector<int64_t>>> &lane_map, const uint8_t bfs_depth,
-                             unordered_map<int16_t, vector<int8_t>> &depth_map, int64_t input_size) {
+                             unordered_map<int16_t, vector<uint8_t>> &depth_map, int64_t input_size) {
 	int16_t lanes = 0;
 	int16_t curr_batch_size = 0;
 
@@ -36,7 +45,7 @@ static int16_t InitialiseBfs(idx_t curr_batch, idx_t size, int64_t *src_data, co
 				seen[src_entry][lanes] = true;
 				// visit[src_data[i]] = std::bitset<LANE_LIMIT>();
 				visit[src_entry][lanes] = true;
-				depth_map[lanes] = vector<int8_t>(input_size, -1);
+				depth_map[lanes] = vector<uint8_t>(input_size, UINT8_MAX);
 				depth_map[lanes][src_entry] = bfs_depth;
 				lanes++;
 			}
@@ -50,7 +59,7 @@ static int16_t InitialiseBfs(idx_t curr_batch, idx_t size, int64_t *src_data, co
 static bool BfsWithoutArray(bool exit_early, int32_t id, int64_t input_size, ClientContext &context,
                             vector<std::bitset<LANE_LIMIT>> &seen, vector<std::bitset<LANE_LIMIT>> &visit,
                             vector<std::bitset<LANE_LIMIT>> &visit_next, uint8_t bfs_depth,
-                            unordered_map<int16_t, vector<int8_t>> &depth_map) {
+                            unordered_map<int16_t, vector<uint8_t>> &depth_map) {
 	for (int64_t i = 0; i < input_size; i++) {
 		if (!visit[i].any()) {
 			continue;
@@ -70,7 +79,7 @@ static bool BfsWithoutArray(bool exit_early, int32_t id, int64_t input_size, Cli
 		}
 		for (uint64_t map_index = 0; map_index < visit_next[bfs_index].size(); map_index++) {
 			if (visit_next[bfs_index][map_index]) {
-				if (depth_map[map_index][bfs_index] != -1) {
+				if (depth_map[map_index][bfs_index] != UINT8_MAX) {
 					continue;
 				}
 				depth_map[map_index][bfs_index] = bfs_depth;
@@ -92,6 +101,7 @@ static bool BfsWithoutArray(bool exit_early, int32_t id, int64_t input_size, Cli
 }
 
 static void PathLengthFunction(DataChunk &args, ExpressionState &state, Vector &result) {
+	auto start = std::chrono::high_resolution_clock::now();
 	auto &func_expr = (BoundFunctionExpression &)state.expr;
 	auto &info = (PathLengthBindData &)*func_expr.bind_info;
 
@@ -115,7 +125,7 @@ static void PathLengthFunction(DataChunk &args, ExpressionState &state, Vector &
 	//	size_t visit_limit = input_size / VISIT_SIZE_DIVISOR;
 	//	size_t num_nodes_to_visit = 0;
 	result.SetVectorType(VectorType::FLAT_VECTOR);
-	auto result_data = FlatVector::GetData<int8_t>(result);
+	auto result_data = FlatVector::GetData<uint8_t>(result);
 
 	info.context.init_m = true;
 
@@ -126,17 +136,19 @@ static void PathLengthFunction(DataChunk &args, ExpressionState &state, Vector &
 
 		//! mapping of src_value ->  (bfs_num/lane, vector of indices in src_data)
 		unordered_map<int64_t, pair<int16_t, vector<int64_t>>> lane_map;
-		unordered_map<int16_t, vector<int8_t>> depth_map;
-		int8_t bfs_depth = 0;
+		unordered_map<int16_t, vector<uint8_t>> depth_map;
+		uint8_t bfs_depth = 0;
 		auto curr_batch_size = InitialiseBfs(result_size, args.size(), src_data, vdata_src.sel, vdata_src.validity,
 		                                     seen, visit, visit_next, lane_map, bfs_depth, depth_map, input_size);
 		bool exit_early = false;
-
 		while (!exit_early) {
+			if (bfs_depth == current_max_size) {
+				// TODO Copy the values of the depth_map to a new vector of larger int size
+			}
 			bfs_depth++;
 			exit_early = true;
-			exit_early = BfsWithoutArray(exit_early, id, input_size, info.context, seen, visit, visit_next, bfs_depth,
-			                             depth_map);
+			exit_early =
+			    BfsWithoutArray(exit_early, id, input_size, info.context, seen, visit, visit_next, bfs_depth, depth_map);
 
 			visit = visit_next;
 			for (auto i = 0; i < input_size; i++) {
@@ -145,23 +157,25 @@ static void PathLengthFunction(DataChunk &args, ExpressionState &state, Vector &
 		}
 
 		for (const auto &iter : lane_map) {
-			auto value = iter.first;
+//			auto value = iter.first;
 			auto bfs_num = iter.second.first;
 			auto pos = iter.second.second;
 			for (auto index : pos) {
 				auto target_index = vdata_target.sel->get_index(index);
-				result_data[index] = depth_map[bfs_num][target_data[target_index]];
-//				if (seen[target_data[target_index]][bfs_num] && seen[value][bfs_num]) {
-//					// if(is_bit_set(seen[target_data[index]], bfs_num) & is_bit_set(seen[value], bfs_num) ) {
-//					result_data[index] = true;
-//				} else {
-//					result_data[index] = false;
-//				}
+				auto value = depth_map[bfs_num][target_data[target_index]];
+				result_data[index] = value;
 			}
 		}
 		result_size = result_size + curr_batch_size;
 	}
-}
+	auto end = std::chrono::high_resolution_clock::now();
+
+	auto int_s = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+
+	std::cout << "PathLengthFunction() elapsed time is " << int_s.count() << " milliseconds )" << std::endl;
+
+} // select create_csr_vertex( 0, v.vcount, sub.dense_id, sub.cnt) as numEdges from ( select c.rowid as dense_id,
+  // count(t.
 
 static unique_ptr<FunctionData> PathLengthBind(ClientContext &context, ScalarFunction &bound_function,
                                                vector<unique_ptr<Expression>> &arguments) {
@@ -171,9 +185,9 @@ static unique_ptr<FunctionData> PathLengthBind(ClientContext &context, ScalarFun
 void PathLengthFun::RegisterFunction(BuiltinFunctions &set) {
 	// params ->id, is_variant, v_size, source, target
 	set.AddFunction(ScalarFunction(
-	    "path_length",
+	    "shortest_path",
 	    {LogicalType::INTEGER, LogicalType::BOOLEAN, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT},
-	    LogicalType::TINYINT, PathLengthFunction, false, PathLengthBind));
+	    LogicalType::UTINYINT, PathLengthFunction, false, PathLengthBind));
 }
 
 } // namespace duckdb

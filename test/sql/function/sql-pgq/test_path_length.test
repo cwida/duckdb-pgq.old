@@ -52,9 +52,19 @@ INSERT INTO src_dest VALUES(0, 4, 0, 3), (0, 4, 1, 2), (0, 4, 1, 0), (0, 4, 0, 2
 
 #csr will be deleted after calling reachability.
 query T
-SELECT path_length(id, false, v_size, src, dst) FROM src_dest;
+SELECT shortest_path(id, false, v_size, src, dst) FROM src_dest;
 ----
 2
 1
--1
+255
 1
+
+statement ok
+drop table src_dest
+
+statement ok
+drop table Customer
+
+statement ok
+drop table Transfers
+
