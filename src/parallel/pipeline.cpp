@@ -126,6 +126,9 @@ void Pipeline::Reset() {
 	if (sink && !sink->sink_state) {
 		sink->sink_state = sink->GetGlobalSinkState(GetClientContext());
 	}
+	for (auto extra_sink : extra_sinks) {
+		extra_sink->sink_state = sink->sink_state;
+	}
 	ResetSource();
 }
 

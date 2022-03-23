@@ -171,8 +171,6 @@ SinkFinalizeType PhysicalHashJoin::Finalize(Pipeline &pipeline, Event &event, Cl
 	// check for possible perfect hash table
 	auto use_perfect_hash = sink.perfect_join_executor->CanDoPerfectHashJoin();
 
-	// FIXME Remove once it works without perfect join
-	use_perfect_hash = false;
 	if (use_perfect_hash) {
 		D_ASSERT(sink.hash_table->equality_types.size() == 1);
 		auto key_type = sink.hash_table->equality_types[0];

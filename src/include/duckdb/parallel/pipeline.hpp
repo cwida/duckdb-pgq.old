@@ -75,6 +75,9 @@ private:
 	//! The dependencies of this pipeline
 	vector<weak_ptr<Pipeline>> dependencies;
 
+	vector<PhysicalOperator*> extra_sinks;
+
+
 private:
 	bool GetProgressInternal(ClientContext &context, PhysicalOperator *op, int &current_percentage);
 	void ScheduleSequentialTask(shared_ptr<Event> &event);

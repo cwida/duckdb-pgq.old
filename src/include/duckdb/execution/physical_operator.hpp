@@ -84,6 +84,7 @@ public:
 	//! The global sink state of this operator
 	shared_ptr<GlobalSinkState> sink_state;
 
+
 public:
 	virtual string GetName() const;
 	virtual string ParamsToString() const {

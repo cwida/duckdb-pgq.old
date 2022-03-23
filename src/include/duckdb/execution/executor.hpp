@@ -139,7 +139,7 @@ private:
 	//! Duplicate eliminated join scan dependencies
 	unordered_map<PhysicalOperator *, Pipeline *> delim_join_dependencies;
 
-	unordered_set<PhysicalHashJoin *> duplicate_sink_states;
+	unordered_map<PhysicalHashJoin *, shared_ptr<Pipeline>> found_sink_states;
 
 	//! Active recursive CTE node (if any)
 	PhysicalOperator *recursive_cte;
