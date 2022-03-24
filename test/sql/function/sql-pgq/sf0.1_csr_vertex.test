@@ -1,0 +1,31 @@
+statement ok
+PRAGMA enable_profiling
+
+statement ok
+CREATE TABLE person (id bigint);
+
+statement ok
+CREATE TABLE knows (source bigint, target bigint);
+
+statement ok
+copy knows from '/home/daniel/Documents/Programming/duckdb-pgq/data/csv/sf0.1/Person_knows_Person.csv' (HEADER, DELIMITER '|');
+
+statement ok
+insert into knows select target, source from knows;
+
+statement ok
+copy person from '/home/daniel/Documents/Programming/duckdb-pgq/data/csv/sf0.1/Person.csv' (HEADER);
+
+statement ok
+SELECT CREATE_CSR_VERTEX(
+0,
+v.vcount,
+sub.dense_id,
+sub.cnt
+) AS numEdges
+FROM (
+    SELECT p.rowid as dense_id, count(k.source) as cnt
+    FROM person p
+    LEFT JOIN  knows k ON k.source = p.id
+    GROUP BY p.rowid
+) sub,  (SELECT count(p.id) as vcount FROM person p) v;
