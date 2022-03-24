@@ -5,13 +5,13 @@ statement ok
 CREATE TABLE knows (source bigint, target bigint);
 
 statement ok
-copy knows from '/home/daniel/Documents/Programming/duckdb-pgq/data/csv/Person_knows_Person.csv' (HEADER, DELIMITER '|');
+copy knows from '/home/daniel/Documents/Programming/duckdb-pgq/data/csv/sf0.1/Person_knows_Person.csv' (HEADER, DELIMITER '|');
 
 statement ok
 insert into knows select target, source from knows;
 
 statement ok
-copy person from '/home/daniel/Documents/Programming/duckdb-pgq/data/csv/Person.csv' (HEADER);
+copy person from '/home/daniel/Documents/Programming/duckdb-pgq/data/csv/sf0.1/Person.csv' (HEADER);
 
 statement ok
 create table hops (source bigint, target bigint, hops int);
