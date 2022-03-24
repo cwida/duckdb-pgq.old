@@ -43,6 +43,9 @@
 # INSERT INTO csr VALUES (1,10, 0), (1,10, 2), (1,10, 3)
 
 statement ok
+PRAGMA enable_profiling
+
+statement ok
 CREATE TABLE Customer(cid bigint not null, name string);
 
 statement ok

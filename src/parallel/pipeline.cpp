@@ -148,7 +148,6 @@ void Pipeline::Ready() {
 void Pipeline::Finalize(Event &event) {
 	D_ASSERT(ready);
 	try {
-		printf("Address of x is %p\n", (void *)sink);
 		auto sink_state = sink->Finalize(*this, event, executor.context, *sink->sink_state);
 		sink->sink_state->state = sink_state;
 	} catch (Exception &ex) { // LCOV_EXCL_START

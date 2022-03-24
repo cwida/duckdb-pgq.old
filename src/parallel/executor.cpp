@@ -318,6 +318,7 @@ void Executor::Initialize(PhysicalOperator *plan) {
 			pipelines.clear();
 			union_pipelines.clear();
 			child_pipelines.clear();
+			found_sink_states.clear();
 			events.clear();
 		}
 		for (auto &weak_ref : weak_references) {
@@ -355,6 +356,7 @@ void Executor::Reset() {
 	events.clear();
 	union_pipelines.clear();
 	child_pipelines.clear();
+	found_sink_states.clear();
 	child_dependencies.clear();
 }
 
@@ -482,29 +484,33 @@ void Executor::BuildPipelines(PhysicalOperator *op, Pipeline *current) {
 
 		auto pipeline = make_shared<Pipeline>(*this);
 		bool duplicate_found = false;
-		if (op->type == PhysicalOperatorType::HASH_JOIN) {
-			if (found_sink_states.empty()) {
-				found_sink_states[(PhysicalHashJoin*)op] = pipeline;
-			}
-			else {
-				for (const auto &sink_state : found_sink_states) {
-					const auto first = (PhysicalHashJoin*)sink_state.first;
-					const auto second = (PhysicalHashJoin*)op;
-					if (*first == *second) {
-						duplicate_found = true;
-						sink_state.second->extra_sinks.push_back(op);
-						break;
-					}
-				}
-				if (!duplicate_found) {
+		bool enable_duplicate_hash_join = false;
+		if (enable_duplicate_hash_join) {
+			if (op->type == PhysicalOperatorType::HASH_JOIN) {
+				if (found_sink_states.empty()) {
 					found_sink_states[(PhysicalHashJoin*)op] = pipeline;
-				} else {
-					// use the actual duplicate pipeline thingy
-//					op->sink_state = duplicate_entry.first->sink_state;
-					return;
+				}
+				else {
+					for (const auto &sink_state : found_sink_states) {
+						const auto first = (PhysicalHashJoin*)sink_state.first;
+						const auto second = (PhysicalHashJoin*)op;
+						if (*first == *second) {
+							duplicate_found = true;
+							sink_state.second->extra_sinks.push_back(op);
+							break;
+						}
+					}
+					if (!duplicate_found) {
+						found_sink_states[(PhysicalHashJoin*)op] = pipeline;
+					} else {
+						// use the actual duplicate pipeline thingy
+						//					op->sink_state = duplicate_entry.first->sink_state;
+						return;
+					}
 				}
 			}
 		}
+
 		pipeline->sink = op;
 		current->AddDependency(pipeline);
 		D_ASSERT(pipeline_child);

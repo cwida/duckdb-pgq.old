@@ -40,8 +40,6 @@ bool operator==(const JoinCondition &lhs, const JoinCondition &rhs) {
 	if (lhs_right_expression->alias.compare(rhs_right_expression->alias) != 0) {
 		return false;
 	}
-	std::cout << lhs_right_expression->alias << std::endl;
-	std::cout << rhs_right_expression->alias << std::endl;
 
 	return true;
 	//	if (lhs_right_expression != rhs_right_expression) {

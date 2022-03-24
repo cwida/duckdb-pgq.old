@@ -167,7 +167,6 @@ SinkFinalizeType PhysicalHashJoin::Finalize(Pipeline &pipeline, Event &event, Cl
                                             GlobalSinkState &gstate) const {
 
 	auto &sink = (HashJoinGlobalState &)gstate;
-	std::cout << sink.finalized << std::endl;
 	// check for possible perfect hash table
 	auto use_perfect_hash = sink.perfect_join_executor->CanDoPerfectHashJoin();
 
