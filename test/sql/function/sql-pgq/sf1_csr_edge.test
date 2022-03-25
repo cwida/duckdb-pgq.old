@@ -1,5 +1,5 @@
 statement ok
-PRAGMA enable_profiling
+PRAGMA enable_profiling;
 
 statement ok
 CREATE TABLE person (id bigint);
