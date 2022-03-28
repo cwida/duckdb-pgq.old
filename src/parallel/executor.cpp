@@ -484,7 +484,7 @@ void Executor::BuildPipelines(PhysicalOperator *op, Pipeline *current) {
 
 		auto pipeline = make_shared<Pipeline>(*this);
 		bool duplicate_found = false;
-		bool enable_duplicate_hash_join = false;
+		bool enable_duplicate_hash_join = true;
 		if (enable_duplicate_hash_join) {
 			if (op->type == PhysicalOperatorType::HASH_JOIN) {
 				if (found_sink_states.empty()) {
@@ -497,6 +497,7 @@ void Executor::BuildPipelines(PhysicalOperator *op, Pipeline *current) {
 						if (*first == *second) {
 							duplicate_found = true;
 							sink_state.second->extra_sinks.push_back(op);
+							op->sink_state = sink_state.first->sink_state;
 							break;
 						}
 					}
@@ -504,7 +505,6 @@ void Executor::BuildPipelines(PhysicalOperator *op, Pipeline *current) {
 						found_sink_states[(PhysicalHashJoin*)op] = pipeline;
 					} else {
 						// use the actual duplicate pipeline thingy
-						//					op->sink_state = duplicate_entry.first->sink_state;
 						return;
 					}
 				}

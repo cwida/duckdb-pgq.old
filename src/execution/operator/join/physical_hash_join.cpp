@@ -179,6 +179,7 @@ SinkFinalizeType PhysicalHashJoin::Finalize(Pipeline &pipeline, Event &event, Cl
 	if (!use_perfect_hash) {
 		sink.perfect_join_executor.reset();
 		sink.hash_table->Finalize();
+		std::cout << "Hash table finalized" << std::endl;
 	}
 	sink.finalized = true;
 	if (sink.hash_table->Count() == 0 && EmptyResultIfRHSIsEmpty()) {
