@@ -17,7 +17,7 @@ statement ok
 create table hops (source bigint, target bigint, hops int);
 
 statement ok
-copy hops from '/home/daniel/Documents/Programming/duckdb-pgq/data/csv/shortest_unweighted_pathsf0.1_comma.csv' (DELIMITER ',', HEADER);
+copy hops from '/home/daniel/Documents/Programming/duckdb-pgq/data/csv/sf0.1/shortest_unweighted_pathsf0.1_comma.csv' (DELIMITER ',', HEADER);
 
 statement ok
 SELECT CREATE_CSR_VERTEX(

@@ -5,15 +5,6 @@
 
 namespace duckdb {
 
-enum UIntSizes {
-	UINT_8 = 0,
-	UINT_16 = 1,
-	UINT_32 = 2,
-	UINT_64 = 3,
-};
-
-auto current_max_size = UINT8_MAX;
-
 struct PathLengthBindData : public FunctionData {
 	ClientContext &context;
 
@@ -24,6 +15,15 @@ struct PathLengthBindData : public FunctionData {
 		return make_unique<PathLengthBindData>(context);
 	}
 };
+
+template<typename T, typename S>
+std::unordered_map<int16_t, std::vector<S>> createCopy(unordered_map<int16_t, std::vector<T>> const &dict) {
+	unordered_map<int16_t, std::vector<S>> new_dict;
+	for (auto val : dict) {
+		new_dict[val.first] = std::vector<S>(val.second.begin(), val.second.end());
+	}
+	return new_dict;
+}
 
 static int16_t InitialiseBfs(idx_t curr_batch, idx_t size, int64_t *src_data, const SelectionVector *src_sel,
                              const ValidityMask &src_validity, vector<std::bitset<LANE_LIMIT>> &seen,
@@ -136,19 +136,22 @@ static void PathLengthFunction(DataChunk &args, ExpressionState &state, Vector &
 
 		//! mapping of src_value ->  (bfs_num/lane, vector of indices in src_data)
 		unordered_map<int64_t, pair<int16_t, vector<int64_t>>> lane_map;
-		unordered_map<int16_t, vector<uint8_t>> depth_map;
-		uint8_t bfs_depth = 0;
+		unordered_map<int16_t, vector<uint8_t>> depth_map_uint8;
+		unordered_map<int16_t, vector<uint16_t>> depth_map_uint16;
+		unordered_map<int16_t, vector<uint32_t>> depth_map_uint32;
+		unordered_map<int16_t, vector<uint64_t>> depth_map_uint64;
+		uint64_t bfs_depth = 0;
 		auto curr_batch_size = InitialiseBfs(result_size, args.size(), src_data, vdata_src.sel, vdata_src.validity,
-		                                     seen, visit, visit_next, lane_map, bfs_depth, depth_map, input_size);
+		                                     seen, visit, visit_next, lane_map, bfs_depth, depth_map_uint8, input_size);
 		bool exit_early = false;
 		while (!exit_early) {
-			if (bfs_depth == current_max_size) {
-				// TODO Copy the values of the depth_map to a new vector of larger int size
+			if(bfs_depth == 2) {
+				depth_map_uint16 = createCopy<uint8_t, uint16_t>(depth_map_uint8);
 			}
 			bfs_depth++;
 			exit_early = true;
 			exit_early =
-			    BfsWithoutArray(exit_early, id, input_size, info.context, seen, visit, visit_next, bfs_depth, depth_map);
+			    BfsWithoutArray(exit_early, id, input_size, info.context, seen, visit, visit_next, bfs_depth, depth_map_uint8);
 
 			visit = visit_next;
 			for (auto i = 0; i < input_size; i++) {
@@ -162,7 +165,8 @@ static void PathLengthFunction(DataChunk &args, ExpressionState &state, Vector &
 			auto pos = iter.second.second;
 			for (auto index : pos) {
 				auto target_index = vdata_target.sel->get_index(index);
-				auto value = depth_map[bfs_num][target_data[target_index]];
+				// TODO Insert check which vector to use.
+				auto value = depth_map_uint8[bfs_num][target_data[target_index]];
 				result_data[index] = value;
 			}
 		}
