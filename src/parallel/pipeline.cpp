@@ -138,7 +138,7 @@ void Pipeline::Reset() {
 
 	// To get the value of duration use the count()
 	// member function on the duration object
-	std::cout << duration.count() << std::endl;
+	std::cout << "Reset time: " << duration.count() << std::endl;
 }
 
 void Pipeline::ResetSource() {

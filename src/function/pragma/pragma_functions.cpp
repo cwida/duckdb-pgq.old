@@ -139,6 +139,14 @@ static void PragmaDisablePrintProgressBar(ClientContext &context, const Function
 	context.print_progress_bar = false;
 }
 
+static void PragmaEnableSharedHashJoin(ClientContext &context, const FunctionParameters &parameters) {
+	context.debug_shared_hash_join = true;
+}
+
+static void PragmaDisableSharedHashJoin(ClientContext &context, const FunctionParameters &parameters) {
+	context.debug_shared_hash_join = false;
+}
+
 static void PragmaEnableVerification(ClientContext &context, const FunctionParameters &parameters) {
 	context.query_verification_enabled = true;
 }
@@ -331,6 +339,10 @@ void PragmaFunctions::RegisterFunction(BuiltinFunctions &set) {
 
 	set.AddFunction(PragmaFunction::PragmaStatement("enable_print_progress_bar", PragmaEnablePrintProgressBar));
 	set.AddFunction(PragmaFunction::PragmaStatement("disable_print_progress_bar", PragmaDisablePrintProgressBar));
+
+	set.AddFunction(PragmaFunction::PragmaStatement("enable_shared_hash_join", PragmaEnableSharedHashJoin));
+	set.AddFunction(PragmaFunction::PragmaStatement("disable_shared_hash_join", PragmaDisableSharedHashJoin));
+
 
 	set.AddFunction(
 	    PragmaFunction::PragmaAssignment("set_progress_bar_time", PragmaSetProgressBarWaitTime, LogicalType::INTEGER));
