@@ -73,7 +73,7 @@ if(${FORCE_COLORED_OUTPUT})
   endif()
 endif()
 
-option("Enable address sanitizer." TRUE)
+option( "Enable address sanitizer." TRUE)
 
 set(M32_FLAG "")
 if(FORCE_32_BIT)
@@ -208,12 +208,9 @@ option(BUILD_TPCDS_EXTENSION "Build the TPC-DS extension." FALSE)
 option(BUILD_FTS_EXTENSION "Build the FTS extension." FALSE)
 option(BUILD_HTTPFS_EXTENSION "Build the HTTP File System extension." FALSE)
 option(BUILD_VISUALIZER_EXTENSION "Build the profiler-output visualizer extension." FALSE)
-option(BUILD_EXCEL_EXTENSION "Build the excel extension." FALSE)
 option(BUILD_BENCHMARKS "Enable building of the benchmark suite." FALSE)
 option(BUILD_SQLSMITH "Enable building of SQLSmith." FALSE)
 option(BUILD_TPCE "Enable building of the TPC-E tool." FALSE)
-option(DISABLE_BUILTIN_EXTENSIONS "Disable linking extensions." FALSE)
-option(BUILD_SUBSTRAIT_EXTENSION "Enable building of Substrait Extension." FALSE)
 option(JDBC_DRIVER "Build the DuckDB JDBC driver" FALSE)
 option(BUILD_ODBC_DRIVER "Build the DuckDB ODBC driver" FALSE)
 option(BUILD_PYTHON "Build the DuckDB Python extension" FALSE)
@@ -235,7 +232,6 @@ option(TREAT_WARNINGS_AS_ERRORS "Treat warnings as errors" FALSE)
 option(EXPORT_DLL_SYMBOLS "Export dll symbols on Windows, else import" TRUE)
 option(BUILD_RDTSC "Enable the rdtsc instruction." FALSE)
 option(BUILD_ARROW_ABI_TEST "Enable the Arrow ABI Test." FALSE)
-option(TEST_REMOTE_INSTALL "Test installation of specific extensions." FALSE)
 
 if(${BUILD_RDTSC})
   add_compile_definitions(RDTSC)
@@ -254,7 +250,6 @@ if(BUILD_PYTHON)
   set(BUILD_TPCH_EXTENSION TRUE)
   set(BUILD_TPCDS_EXTENSION TRUE)
   set(BUILD_FTS_EXTENSION TRUE)
-  set(BUILD_EXCEL_EXTENSION TRUE)
 endif()
 
 if(BUILD_SQLSMITH)
@@ -302,7 +297,7 @@ if(NOT MSVC)
   endif()
 else()
   set(CMAKE_CXX_WINDOWS_FLAGS
-          "/wd4244 /wd4267 /wd4200 /wd26451 /wd26495 /D_CRT_SECURE_NO_WARNINGS /utf-8")
+          "/wd4244 /wd4267 /wd4200 /wd26451 /wd26495 /D_CRT_SECURE_NO_WARNINGS")
   if(TREAT_WARNINGS_AS_ERRORS)
     set(CMAKE_CXX_WINDOWS_FLAGS "${CMAKE_CXX_WINDOWS_FLAGS} /WX")
   endif()
@@ -310,7 +305,7 @@ else()
   string(REGEX REPLACE "/W[0-4]" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
   # add to-be-ignored warnings
   set(CMAKE_CXX_FLAGS
-          "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_WINDOWS_FLAGS}"
+          "${CMAKE_CXX_FLAGS} /wd4244 /wd4267 /wd4200 /wd26451 /wd26495 /D_CRT_SECURE_NO_WARNINGS"
           )
 endif()
 
@@ -328,31 +323,9 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
           CACHE STRING "Choose the type of build." FORCE)
 endif()
 
-
-set(OS_NAME "unknown")
-set(OS_ARCH "amd64")
-
-string(REGEX MATCH "(arm64|aarch64)" IS_ARM "${CMAKE_SYSTEM_PROCESSOR}")
-if(IS_ARM)
-  set(OS_ARCH "arm64")
-endif()
-
-if(APPLE)
-  set(OS_NAME "osx")
-endif()
-if(WIN32)
-  set(OS_NAME "windows")
-endif()
-if(UNIX AND NOT APPLE)
-  set(OS_NAME "linux") # sorry BSD
-endif()
-
-
 include_directories(src/include)
 include_directories(third_party/fmt/include)
 include_directories(third_party/hyperloglog)
-include_directories(third_party/fastpforlib)
-include_directories(third_party/fast_float)
 include_directories(third_party/re2)
 include_directories(third_party/miniz)
 include_directories(third_party/utf8proc/include)
@@ -440,14 +413,6 @@ endfunction()
 function(add_extension_definitions)
   include_directories(${PROJECT_SOURCE_DIR}/extension)
 
-  if(NOT("${TEST_REMOTE_INSTALL}" STREQUAL "OFF"))
-    add_definitions(-DDUCKDB_TEST_REMOTE_INSTALL="${TEST_REMOTE_INSTALL}")
-  endif()
-
-  if(${DISABLE_BUILTIN_EXTENSIONS})
-    add_definitions(-DDISABLE_BUILTIN_EXTENSIONS=${DISABLE_BUILTIN_EXTENSIONS})
-  endif()
-
   if(${BUILD_ICU_EXTENSION})
     include_directories(${PROJECT_SOURCE_DIR}/extension/icu/include)
     add_definitions(-DBUILD_ICU_EXTENSION=${BUILD_ICU_EXTENSION})
@@ -461,11 +426,6 @@ function(add_extension_definitions)
   if(${BUILD_TPCH_EXTENSION})
     include_directories(${PROJECT_SOURCE_DIR}/extension/tpch/include)
     add_definitions(-DBUILD_TPCH_EXTENSION=${BUILD_TPCH_EXTENSION})
-  endif()
-
-  if(${BUILD_SUBSTRAIT_EXTENSION})
-    include_directories(${PROJECT_SOURCE_DIR}/extension/substrait/include)
-    add_definitions(-DBUILD_SUBSTRAIT_EXTENSION=${BUILD_SUBSTRAIT_EXTENSION})
   endif()
 
   if(${BUILD_TPCDS_EXTENSION})
@@ -488,11 +448,6 @@ function(add_extension_definitions)
     include_directories(${PROJECT_SOURCE_DIR}/extension/visualizer/include)
     add_definitions(-DBUILD_VISUALIZER_EXTENSION=${BUILD_VISUALIZER_EXTENSION})
   endif()
-
-  if(${BUILD_EXCEL_EXTENSION})
-    include_directories(${PROJECT_SOURCE_DIR}/extension/excel/include)
-    add_definitions(-DBUILD_EXCEL_EXTENSION=${BUILD_EXCEL_EXTENSION})
-  endif()
 endfunction()
 
 function(add_extension_dependencies LIBRARY)
@@ -506,10 +461,6 @@ function(add_extension_dependencies LIBRARY)
 
   if(${BUILD_TPCH_EXTENSION})
     add_dependencies(${LIBRARY} tpch_extension)
-  endif()
-
-  if(${BUILD_SUBSTRAIT_EXTENSION})
-    add_dependencies(${LIBRARY} substrait_extension)
   endif()
 
   if(${BUILD_TPCDS_EXTENSION})
@@ -527,17 +478,9 @@ function(add_extension_dependencies LIBRARY)
   if(${BUILD_VISUALIZER_EXTENSION})
     add_dependencies(${LIBRARY} visualizer_extension)
   endif()
-
-  if(${BUILD_EXCEL_EXTENSION})
-    add_dependencies(${LIBRARY} excel_extension)
-  endif()
 endfunction()
 
 function(link_extension_libraries LIBRARY)
-  if(${DISABLE_BUILTIN_EXTENSIONS})
-    return()
-  endif()
-
   if(${BUILD_PARQUET_EXTENSION})
     target_link_libraries(${LIBRARY} parquet_extension)
   endif()
@@ -548,10 +491,6 @@ function(link_extension_libraries LIBRARY)
 
   if(${BUILD_TPCH_EXTENSION})
     target_link_libraries(${LIBRARY} tpch_extension)
-  endif()
-
-  if(${BUILD_SUBSTRAIT_EXTENSION})
-    target_link_libraries(${LIBRARY} substrait_extension)
   endif()
 
   if(${BUILD_TPCDS_EXTENSION})
@@ -570,10 +509,6 @@ function(link_extension_libraries LIBRARY)
   if(${BUILD_VISUALIZER_EXTENSION})
     target_link_libraries(${LIBRARY} visualizer_extension)
   endif()
-
-  if(${BUILD_EXCEL_EXTENSION})
-    target_link_libraries(${LIBRARY} excel_extension)
-  endif()
 endfunction()
 
 function(link_threads LIBRARY)
@@ -583,62 +518,6 @@ function(link_threads LIBRARY)
   else()
     target_link_libraries(${LIBRARY} Threads::Threads)
   endif()
-endfunction()
-
-function(build_loadable_extension_directory NAME OUTPUT_DIRECTORY)
-  #  skip building extensions on mingw because its weird
-  if(WIN32 AND NOT MSVC)
-    return()
-  endif()
-
-  set(TARGET_NAME ${NAME}_loadable_extension)
-  # all parameters after output_directory
-  set(FILES ${ARGV})
-  # remove name
-  list(REMOVE_AT FILES 0)
-  # remove output_directory
-  list(REMOVE_AT FILES 0)
-
-  add_library(${TARGET_NAME} SHARED ${FILES})
-  set_target_properties(${TARGET_NAME} PROPERTIES OUTPUT_NAME ${NAME})
-  set_target_properties(${TARGET_NAME} PROPERTIES PREFIX "")
-  target_compile_definitions(${TARGET_NAME} PUBLIC -DDUCKDB_BUILD_LOADABLE_EXTENSION)
-  target_link_libraries(${TARGET_NAME} duckdb ${DUCKDB_EXTRA_LINK_FLAGS})
-  set_target_properties(${TARGET_NAME} PROPERTIES SUFFIX
-          ".duckdb_extension")
-
-  if(MSVC)
-    target_link_libraries(${TARGET_NAME} delayimp)
-    set_target_properties(
-            ${TARGET_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY_DEBUG
-            "${CMAKE_BINARY_DIR}/${OUTPUT_DIRECTORY}")
-    set_target_properties(
-            ${TARGET_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY_RELEASE
-            "${CMAKE_BINARY_DIR}/${OUTPUT_DIRECTORY}")
-  endif()
-
-  if(WIN32)
-    set_target_properties(${TARGET_NAME}
-            PROPERTIES LINK_FLAGS_DEBUG "/DELAYLOAD:duckdb.dll")
-    set(CMAKE_EXE_LINKER_FLAGS_DEBUG
-            "${CMAKE_EXE_LINKER_FLAGS_DEBUG}  /DELAYLOAD:duckdb.dll")
-    set_target_properties(${TARGET_NAME}
-            PROPERTIES LINK_FLAGS_RELEASE "/DELAYLOAD:duckdb.dll")
-    set(CMAKE_EXE_LINKER_FLAGS_RELEASE
-            "${CMAKE_EXE_LINKER_FLAGS_RELEASE}  /DELAYLOAD:duckdb.dll")
-    # This is only strictly required in non-Visual-Studio builds like Ninja:
-    target_link_libraries(${TARGET_NAME}
-            delayimp)
-  endif()
-
-endfunction()
-
-function(build_loadable_extension NAME)
-  # all parameters after name
-  set(FILES ${ARGV})
-  list(REMOVE_AT FILES 0)
-
-  build_loadable_extension_directory(${NAME} extension/${NAME} ${FILES})
 endfunction()
 
 if(${EXPORT_DLL_SYMBOLS})
