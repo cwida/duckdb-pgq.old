@@ -2,9 +2,9 @@ PRAGMA enable_profiling;
 
 CREATE TABLE person (id bigint);
 
-CREATE TABLE knows (source bigint, target bigint);
+CREATE TABLE person_knows_person (source bigint, target bigint);
 
-copy knows from '/home/daniel/Documents/Programming/duckdb-pgq/data/csv/sf30/Person_knows_Person.csv' (HEADER, DELIMITER '|');
+copy person_knows_person from '/home/daniel/Documents/Programming/duckdb-pgq/data/csv/sf30/Person_knows_Person.csv' (HEADER, DELIMITER '|');
 
 insert into knows select target, source from knows;
 

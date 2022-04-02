@@ -494,7 +494,6 @@ void Executor::BuildPipelines(PhysicalOperator *op, Pipeline *current) {
 						const auto first = (PhysicalHashJoin*)sink_state.first;
 						const auto second = (PhysicalHashJoin*)op;
 						if (*first == *second) {
-							std::cout << "Found Duplicate Join" << std::endl;
 							duplicate_found = true;
 							sink_state.second->extra_sinks.push_back(op);
 							op->sink_state = sink_state.first->sink_state;

@@ -123,22 +123,16 @@ bool Pipeline::LaunchScanTasks(shared_ptr<Event> &event, idx_t max_threads) {
 }
 
 void Pipeline::Reset() {
-	using namespace std::chrono;
-	auto start = high_resolution_clock::now();
 	if (sink && !sink->sink_state) {
 		sink->sink_state = sink->GetGlobalSinkState(GetClientContext());
 	}
 	for (auto extra_sink : extra_sinks) {
 		extra_sink->sink_state = sink->sink_state;
-		std::cout << "Duplicate sinks around here" << std::endl;
 	}
 	ResetSource();
-	auto stop = high_resolution_clock::now();
-	auto duration = duration_cast<microseconds>(stop - start);
 
 	// To get the value of duration use the count()
 	// member function on the duration object
-	std::cout << "Reset time: " << duration.count() << std::endl;
 }
 
 void Pipeline::ResetSource() {
