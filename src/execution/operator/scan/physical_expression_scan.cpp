@@ -78,7 +78,7 @@ SinkResultType PhysicalExpressionScan::Sink(ExecutionContext &context, GlobalSin
 }
 
 shared_ptr<GlobalSinkState> PhysicalExpressionScan::GetGlobalSinkState(ClientContext &context) const {
-	return make_unique<ExpressionSinkState>();
+	return make_shared<ExpressionSinkState>();
 }
 
 } // namespace duckdb

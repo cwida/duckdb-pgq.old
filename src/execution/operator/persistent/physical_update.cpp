@@ -106,11 +106,11 @@ SinkResultType PhysicalUpdate::Sink(ExecutionContext &context, GlobalSinkState &
 }
 
 shared_ptr<GlobalSinkState> PhysicalUpdate::GetGlobalSinkState(ClientContext &context) const {
-	return make_unique<UpdateGlobalState>();
+	return make_shared<UpdateGlobalState>();
 }
 
 shared_ptr<LocalSinkState> PhysicalUpdate::GetLocalSinkState(ExecutionContext &context) const {
-	return make_unique<UpdateLocalState>(expressions, table.GetTypes(), bound_defaults);
+	return make_shared<UpdateLocalState>(expressions, table.GetTypes(), bound_defaults);
 }
 
 void PhysicalUpdate::Combine(ExecutionContext &context, GlobalSinkState &gstate, LocalSinkState &lstate) const {

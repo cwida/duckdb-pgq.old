@@ -134,7 +134,7 @@ public:
 	SelectionVector seq_sel_vec;
 };
 
-unique_ptr<OperatorState> PerfectHashJoinExecutor::GetOperatorState(ClientContext &context) {
+shared_ptr<OperatorState> PerfectHashJoinExecutor::GetOperatorState(ClientContext &context) {
 	auto state = make_unique<PerfectHashJoinState>();
 	state->join_keys.Initialize(join.condition_types);
 	for (auto &cond : join.conditions) {

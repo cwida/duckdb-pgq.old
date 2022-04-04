@@ -36,11 +36,11 @@ public:
 };
 
 shared_ptr<GlobalSinkState> PhysicalBlockwiseNLJoin::GetGlobalSinkState(ClientContext &context) const {
-	return make_unique<BlockwiseNLJoinGlobalState>();
+	return make_shared<BlockwiseNLJoinGlobalState>();
 }
 
 shared_ptr<LocalSinkState> PhysicalBlockwiseNLJoin::GetLocalSinkState(ExecutionContext &context) const {
-	return make_unique<BlockwiseNLJoinLocalState>();
+	return make_shared<BlockwiseNLJoinLocalState>();
 }
 
 SinkResultType PhysicalBlockwiseNLJoin::Sink(ExecutionContext &context, GlobalSinkState &state, LocalSinkState &lstate,

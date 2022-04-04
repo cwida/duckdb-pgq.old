@@ -142,11 +142,11 @@ void PhysicalHashAggregate::SetMultiScan(GlobalSinkState &state) {
 }
 
 shared_ptr<GlobalSinkState> PhysicalHashAggregate::GetGlobalSinkState(ClientContext &context) const {
-	return make_unique<HashAggregateGlobalState>(*this, context);
+	return make_shared<HashAggregateGlobalState>(*this, context);
 }
 
 shared_ptr<LocalSinkState> PhysicalHashAggregate::GetLocalSinkState(ExecutionContext &context) const {
-	return make_unique<HashAggregateLocalState>(*this, context);
+	return make_shared<HashAggregateLocalState>(*this, context);
 }
 
 SinkResultType PhysicalHashAggregate::Sink(ExecutionContext &context, GlobalSinkState &state, LocalSinkState &lstate,

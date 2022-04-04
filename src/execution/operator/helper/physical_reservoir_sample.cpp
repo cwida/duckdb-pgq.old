@@ -31,7 +31,7 @@ public:
 };
 
 shared_ptr<GlobalSinkState> PhysicalReservoirSample::GetGlobalSinkState(ClientContext &context) const {
-	return make_unique<SampleGlobalSinkState>(*options);
+	return make_shared<SampleGlobalSinkState>(*options);
 }
 
 SinkResultType PhysicalReservoirSample::Sink(ExecutionContext &context, GlobalSinkState &state, LocalSinkState &lstate,

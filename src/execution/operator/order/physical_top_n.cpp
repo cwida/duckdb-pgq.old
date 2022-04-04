@@ -408,11 +408,11 @@ public:
 };
 
 shared_ptr<LocalSinkState> PhysicalTopN::GetLocalSinkState(ExecutionContext &context) const {
-	return make_unique<TopNLocalState>(context.client, types, orders, limit, offset);
+	return make_shared<TopNLocalState>(context.client, types, orders, limit, offset);
 }
 
 shared_ptr<GlobalSinkState> PhysicalTopN::GetGlobalSinkState(ClientContext &context) const {
-	return make_unique<TopNGlobalState>(context, types, orders, limit, offset);
+	return make_shared<TopNGlobalState>(context, types, orders, limit, offset);
 }
 
 //===--------------------------------------------------------------------===//

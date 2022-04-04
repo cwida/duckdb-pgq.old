@@ -76,11 +76,11 @@ SinkResultType PhysicalInsert::Sink(ExecutionContext &context, GlobalSinkState &
 }
 
 shared_ptr<GlobalSinkState> PhysicalInsert::GetGlobalSinkState(ClientContext &context) const {
-	return make_unique<InsertGlobalState>();
+	return make_shared<InsertGlobalState>();
 }
 
 shared_ptr<LocalSinkState> PhysicalInsert::GetLocalSinkState(ExecutionContext &context) const {
-	return make_unique<InsertLocalState>(table->GetTypes(), bound_defaults);
+	return make_shared<InsertLocalState>(table->GetTypes(), bound_defaults);
 }
 
 void PhysicalInsert::Combine(ExecutionContext &context, GlobalSinkState &gstate, LocalSinkState &lstate) const {

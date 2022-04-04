@@ -76,11 +76,11 @@ SinkFinalizeType PhysicalOperator::Finalize(Pipeline &pipeline, Event &event, Cl
 }
 
 shared_ptr<LocalSinkState> PhysicalOperator::GetLocalSinkState(ExecutionContext &context) const {
-	return make_unique<LocalSinkState>();
+	return make_shared<LocalSinkState>();
 }
 
 shared_ptr<GlobalSinkState> PhysicalOperator::GetGlobalSinkState(ClientContext &context) const {
-	return make_unique<GlobalSinkState>();
+	return make_shared<GlobalSinkState>();
 }
 
 } // namespace duckdb

@@ -66,11 +66,11 @@ public:
 };
 
 shared_ptr<GlobalSinkState> PhysicalPiecewiseMergeJoin::GetGlobalSinkState(ClientContext &context) const {
-	return make_unique<MergeJoinGlobalState>();
+	return make_shared<MergeJoinGlobalState>();
 }
 
 shared_ptr<LocalSinkState> PhysicalPiecewiseMergeJoin::GetLocalSinkState(ExecutionContext &context) const {
-	return make_unique<MergeJoinLocalState>(conditions);
+	return make_shared<MergeJoinLocalState>(conditions);
 }
 
 SinkResultType PhysicalPiecewiseMergeJoin::Sink(ExecutionContext &context, GlobalSinkState &state,

@@ -107,11 +107,11 @@ public:
 };
 
 shared_ptr<GlobalSinkState> PhysicalPerfectHashAggregate::GetGlobalSinkState(ClientContext &context) const {
-	return make_unique<PerfectHashAggregateGlobalState>(*this, context);
+	return make_shared<PerfectHashAggregateGlobalState>(*this, context);
 }
 
 shared_ptr<LocalSinkState> PhysicalPerfectHashAggregate::GetLocalSinkState(ExecutionContext &context) const {
-	return make_unique<PerfectHashAggregateLocalState>(*this, context.client);
+	return make_shared<PerfectHashAggregateLocalState>(*this, context.client);
 }
 
 SinkResultType PhysicalPerfectHashAggregate::Sink(ExecutionContext &context, GlobalSinkState &state,

@@ -60,10 +60,10 @@ SinkFinalizeType PhysicalCopyToFile::Finalize(Pipeline &pipeline, Event &event, 
 }
 
 shared_ptr<LocalSinkState> PhysicalCopyToFile::GetLocalSinkState(ExecutionContext &context) const {
-	return make_unique<CopyToFunctionLocalState>(function.copy_to_initialize_local(context.client, *bind_data));
+	return make_shared<CopyToFunctionLocalState>(function.copy_to_initialize_local(context.client, *bind_data));
 }
 shared_ptr<GlobalSinkState> PhysicalCopyToFile::GetGlobalSinkState(ClientContext &context) const {
-	return make_unique<CopyToFunctionGlobalState>(function.copy_to_initialize_global(context, *bind_data));
+	return make_shared<CopyToFunctionGlobalState>(function.copy_to_initialize_global(context, *bind_data));
 }
 
 //===--------------------------------------------------------------------===//

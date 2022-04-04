@@ -186,11 +186,11 @@ SinkFinalizeType PhysicalNestedLoopJoin::Finalize(Pipeline &pipeline, Event &eve
 }
 
 shared_ptr<GlobalSinkState> PhysicalNestedLoopJoin::GetGlobalSinkState(ClientContext &context) const {
-	return make_unique<NestedLoopJoinGlobalState>();
+	return make_shared<NestedLoopJoinGlobalState>();
 }
 
 shared_ptr<LocalSinkState> PhysicalNestedLoopJoin::GetLocalSinkState(ExecutionContext &context) const {
-	return make_unique<NestedLoopJoinLocalState>(conditions);
+	return make_shared<NestedLoopJoinLocalState>(conditions);
 }
 
 //===--------------------------------------------------------------------===//

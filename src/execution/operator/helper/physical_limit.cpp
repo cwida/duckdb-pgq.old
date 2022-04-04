@@ -43,7 +43,7 @@ uint64_t GetDelimiter(DataChunk &input, Expression *expr, uint64_t original_valu
 }
 
 shared_ptr<GlobalSinkState> PhysicalLimit::GetGlobalSinkState(ClientContext &context) const {
-	return make_unique<LimitGlobalState>(*this);
+	return make_shared<LimitGlobalState>(*this);
 }
 
 SinkResultType PhysicalLimit::Sink(ExecutionContext &context, GlobalSinkState &gstate, LocalSinkState &lstate,

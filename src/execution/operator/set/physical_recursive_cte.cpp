@@ -42,7 +42,7 @@ public:
 };
 
 shared_ptr<GlobalSinkState> PhysicalRecursiveCTE::GetGlobalSinkState(ClientContext &context) const {
-	return make_unique<RecursiveCTEState>(context, *this);
+	return make_shared<RecursiveCTEState>(context, *this);
 }
 
 idx_t PhysicalRecursiveCTE::ProbeHT(DataChunk &chunk, RecursiveCTEState &state) const {

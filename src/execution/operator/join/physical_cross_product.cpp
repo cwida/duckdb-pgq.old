@@ -24,7 +24,7 @@ public:
 };
 
 shared_ptr<GlobalSinkState> PhysicalCrossProduct::GetGlobalSinkState(ClientContext &context) const {
-	return make_unique<CrossProductGlobalState>();
+	return make_shared<CrossProductGlobalState>();
 }
 
 SinkResultType PhysicalCrossProduct::Sink(ExecutionContext &context, GlobalSinkState &state, LocalSinkState &lstate_p,

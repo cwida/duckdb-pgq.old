@@ -110,7 +110,7 @@ shared_ptr<GlobalSinkState> PhysicalHashJoin::GetGlobalSinkState(ClientContext &
 	}
 	// for perfect hash join
 	state->perfect_join_executor =
-	    make_unique<PerfectHashJoinExecutor>(*this, *state->hash_table, perfect_join_statistics);
+	    make_shared<PerfectHashJoinExecutor>(*this, *state->hash_table, perfect_join_statistics);
 	return state;
 }
 
@@ -195,7 +195,7 @@ public:
 	DataChunk join_keys;
 	ExpressionExecutor probe_executor;
 	unique_ptr<JoinHashTable::ScanStructure> scan_structure;
-	unique_ptr<OperatorState> perfect_hash_join_state;
+	shared_ptr<OperatorState> perfect_hash_join_state;
 
 public:
 	void Finalize(PhysicalOperator *op, ExecutionContext &context) override {
@@ -207,6 +207,7 @@ unique_ptr<OperatorState> PhysicalHashJoin::GetOperatorState(ClientContext &cont
 	auto state = make_unique<PhysicalHashJoinState>();
 	auto &sink = (HashJoinGlobalState &)*sink_state;
 	if (sink.perfect_join_executor) {
+		std::cout << "Triggered perfect hash join" << std::endl;
 		state->perfect_hash_join_state = sink.perfect_join_executor->GetOperatorState(context);
 	} else {
 		state->join_keys.Initialize(condition_types);

@@ -31,7 +31,7 @@ SinkResultType PhysicalDelete::Sink(ExecutionContext &context, GlobalSinkState &
 }
 
 shared_ptr<GlobalSinkState> PhysicalDelete::GetGlobalSinkState(ClientContext &context) const {
-	return make_unique<DeleteGlobalState>();
+	return make_shared<DeleteGlobalState>();
 }
 
 //===--------------------------------------------------------------------===//

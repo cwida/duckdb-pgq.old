@@ -46,7 +46,7 @@ shared_ptr<GlobalSinkState> PhysicalOrder::GetGlobalSinkState(ClientContext &con
 	// Get the payload layout from the return types
 	RowLayout payload_layout;
 	payload_layout.Initialize(types);
-	auto state = make_unique<OrderGlobalState>(BufferManager::GetBufferManager(context), *this, payload_layout);
+	auto state = make_shared<OrderGlobalState>(BufferManager::GetBufferManager(context), *this, payload_layout);
 	// Set external (can be force with the PRAGMA)
 	state->global_sort_state.external = context.force_external;
 	// Memory usage per thread should scale with max mem / num threads

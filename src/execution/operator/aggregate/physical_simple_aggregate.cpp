@@ -98,11 +98,11 @@ public:
 };
 
 shared_ptr<GlobalSinkState> PhysicalSimpleAggregate::GetGlobalSinkState(ClientContext &context) const {
-	return make_unique<SimpleAggregateGlobalState>(aggregates);
+	return make_shared<SimpleAggregateGlobalState>(aggregates);
 }
 
 shared_ptr<LocalSinkState> PhysicalSimpleAggregate::GetLocalSinkState(ExecutionContext &context) const {
-	return make_unique<SimpleAggregateLocalState>(aggregates);
+	return make_shared<SimpleAggregateLocalState>(aggregates);
 }
 
 SinkResultType PhysicalSimpleAggregate::Sink(ExecutionContext &context, GlobalSinkState &state, LocalSinkState &lstate,
