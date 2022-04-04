@@ -2,6 +2,9 @@ statement ok
 PRAGMA enable_profiling
 
 statement ok
+PRAGMA enable_shared_hash_join
+
+statement ok
 CREATE TABLE Customer(cid bigint not null, name string);
 
 statement ok
