@@ -126,6 +126,7 @@ static void PathLengthFunction(DataChunk &args, ExpressionState &state, Vector &
 	idx_t result_size = 0;
 	result.SetVectorType(VectorType::FLAT_VECTOR);
 	auto result_data = FlatVector::GetData<uint64_t>(result);
+	auto &validity = FlatVector::Validity(result);
 
 	info.context.init_m = true;
 
@@ -180,15 +181,27 @@ static void PathLengthFunction(DataChunk &args, ExpressionState &state, Vector &
 			auto pos = iter.second.second;
 			for (auto index : pos) {
 				auto target_index = vdata_target.sel->get_index(index);
-				auto value = 0;
+				uint64_t value = 0;
 				if (bfs_depth < UINT8_MAX) {
 					value = (uint64_t)depth_map_uint8[bfs_num][target_data[target_index]];
+					if (value == UINT8_MAX) {
+						validity.SetInvalid(target_index);
+					}
 				} else if (bfs_depth >= UINT8_MAX && bfs_depth < UINT16_MAX) {
 					value = (uint64_t)depth_map_uint16[bfs_num][target_data[target_index]];
+					if (value == UINT16_MAX) {
+						validity.SetInvalid(target_index);
+					}
 				} else if (bfs_depth >= UINT16_MAX && bfs_depth < UINT32_MAX) {
 					value = (uint64_t)depth_map_uint32[bfs_num][target_data[target_index]];
+					if (value == UINT32_MAX) {
+						validity.SetInvalid(target_index);
+					}
 				} else if (bfs_depth >= UINT32_MAX && bfs_depth < UINT64_MAX) {
 					value = (uint64_t)depth_map_uint64[bfs_num][target_data[target_index]];
+					if (value == UINT64_MAX) {
+						validity.SetInvalid(target_index);
+					}
 				}
 				result_data[index] = value;
 			}
@@ -198,7 +211,7 @@ static void PathLengthFunction(DataChunk &args, ExpressionState &state, Vector &
 	auto end = std::chrono::high_resolution_clock::now();
 
 	auto int_s = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-
+	std::cout << "TEST" << std::endl;
 	std::cout << "PathLengthFunction() elapsed time is " << int_s.count() << " milliseconds )" << std::endl;
 }
 
