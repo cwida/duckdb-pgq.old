@@ -56,7 +56,7 @@ SELECT shortest_path(id, false, v_size, src, dst) FROM src_dest;
 ----
 2
 1
-255
+NULL
 1
 
 statement ok
