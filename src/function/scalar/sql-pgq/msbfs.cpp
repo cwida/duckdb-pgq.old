@@ -331,8 +331,8 @@ static void MsbfsFunction(DataChunk &args, ExpressionState &state, Vector &resul
 			}
 		}
 		result_size = result_size + curr_batch_size;
-		// log_file << "Batch size " << std::to_string(curr_batch_size) << endl;
-		// log_file << "Result size " << std::to_string(result_size) << endl;
+		 log_file << "Batch size " << std::to_string(curr_batch_size) << endl;
+		 log_file << "Result size " << std::to_string(result_size) << endl;
 	}
 	// outer_profiler.End();
 	// log_file << "Entire program time " << std::to_string(outer_profiler.Elapsed()) << endl;

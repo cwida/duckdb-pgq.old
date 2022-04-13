@@ -24,7 +24,11 @@ struct MsBfsFun {
 	static void RegisterFunction(BuiltinFunctions &set);
 };
 
-struct PathLengthFun {
+struct ShortestPathFun {
+	static void RegisterFunction(BuiltinFunctions &set);
+};
+
+struct CheapestPathFun {
 	static void RegisterFunction(BuiltinFunctions &set);
 };
 

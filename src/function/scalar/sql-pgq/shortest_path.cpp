@@ -2,22 +2,25 @@
 #include "duckdb/main/client_context.hpp"
 
 #include <iostream>
+#include "duckdb/common/fstream.hpp"
+#include "duckdb/common/profiler.hpp"
 
 namespace duckdb {
 
-struct PathLengthBindData : public FunctionData {
+struct ShortestPathBindData : public FunctionData {
 	ClientContext &context;
+	string file_name;
 
-	PathLengthBindData(ClientContext &context) : context(context) {
+	ShortestPathBindData(ClientContext &context, string &file_name) : context(context), file_name(file_name) {
 	}
 
 	unique_ptr<FunctionData> Copy() override {
-		return make_unique<PathLengthBindData>(context);
+		return make_unique<ShortestPathBindData>(context, file_name);
 	}
 };
 
 template <typename T, typename S>
-std::unordered_map<int16_t, std::vector<S>> createCopy(unordered_map<int16_t, std::vector<T>> const &dict) {
+std::unordered_map<int16_t, std::vector<S>> CreateCopy(unordered_map<int16_t, std::vector<T>> const &dict) {
 	unordered_map<int16_t, std::vector<S>> new_dict;
 
 	for (auto val : dict) {
@@ -103,10 +106,10 @@ static bool BfsWithoutArray(bool exit_early, int32_t id, int64_t input_size, Cli
 	return exit_early;
 }
 
-static void PathLengthFunction(DataChunk &args, ExpressionState &state, Vector &result) {
-	auto start = std::chrono::high_resolution_clock::now();
+static void ShortestPathFunction(DataChunk &args, ExpressionState &state, Vector &result) {
+//	auto start = std::chrono::high_resolution_clock::now();
 	auto &func_expr = (BoundFunctionExpression &)state.expr;
-	auto &info = (PathLengthBindData &)*func_expr.bind_info;
+	auto &info = (ShortestPathBindData &)*func_expr.bind_info;
 
 	int32_t id = args.data[0].GetValue(0).GetValue<int32_t>();
 	bool is_variant = args.data[1].GetValue(0).GetValue<bool>();
@@ -128,14 +131,23 @@ static void PathLengthFunction(DataChunk &args, ExpressionState &state, Vector &
 	auto result_data = FlatVector::GetData<uint64_t>(result);
 	auto &validity = FlatVector::Validity(result);
 
+	ofstream log_file;
+	Profiler<system_clock> phase_profiler, outer_profiler, init_profiler;
+	log_file.open(info.file_name, std::ios_base::app);
+	log_file << "Thread id: " << std::this_thread::get_id() << endl;
+	log_file << "Args size: " << std::to_string(args.size()) << endl;
+	outer_profiler.Start();
+	outer_profiler.Start();
+
 	info.context.init_m = true;
 
 	while (result_size < args.size()) {
 		vector<std::bitset<LANE_LIMIT>> seen(input_size);
 		vector<std::bitset<LANE_LIMIT>> visit(input_size);
 		vector<std::bitset<LANE_LIMIT>> visit_next(input_size);
-
+		 init_profiler.Start();
 		//! mapping of src_value ->  (bfs_num/lane, vector of indices in src_data)
+
 		unordered_map<int64_t, pair<int16_t, vector<int64_t>>> lane_map;
 		unordered_map<int16_t, vector<uint8_t>> depth_map_uint8;
 		unordered_map<int16_t, vector<uint16_t>> depth_map_uint16;
@@ -144,17 +156,22 @@ static void PathLengthFunction(DataChunk &args, ExpressionState &state, Vector &
 		uint64_t bfs_depth = 0;
 		auto curr_batch_size = InitialiseBfs(result_size, args.size(), src_data, vdata_src.sel, vdata_src.validity,
 		                                     seen, visit, visit_next, lane_map, bfs_depth, depth_map_uint8, input_size);
+		init_profiler.End();
+		log_file << "Init time: " << std::to_string(init_profiler.Elapsed()) << endl;
 		bool exit_early = false;
 		while (!exit_early) {
 			if (bfs_depth == UINT8_MAX) {
-				depth_map_uint16 = createCopy<uint8_t, uint16_t>(depth_map_uint8);
+				depth_map_uint16 = CreateCopy<uint8_t, uint16_t>(depth_map_uint8);
 			} else if (bfs_depth == UINT16_MAX) {
-				depth_map_uint32 = createCopy<uint16_t, uint32_t>(depth_map_uint16);
+				depth_map_uint32 = CreateCopy<uint16_t, uint32_t>(depth_map_uint16);
 			} else if (bfs_depth == UINT32_MAX) {
-				depth_map_uint64 = createCopy<uint32_t, uint64_t>(depth_map_uint32);
+				depth_map_uint64 = CreateCopy<uint32_t, uint64_t>(depth_map_uint32);
 			}
 			bfs_depth++;
 			exit_early = true;
+			log_file << "BFS depth: " << std::to_string(bfs_depth) << endl;
+			phase_profiler.Start();
+
 			if (bfs_depth < UINT8_MAX) {
 				exit_early = BfsWithoutArray(exit_early, id, input_size, info.context, seen, visit, visit_next, bfs_depth,
 				                             depth_map_uint8);
@@ -168,7 +185,8 @@ static void PathLengthFunction(DataChunk &args, ExpressionState &state, Vector &
 				exit_early = BfsWithoutArray(exit_early, id, input_size, info.context, seen, visit, visit_next, bfs_depth,
 				                             depth_map_uint64);
 			}
-
+			phase_profiler.End();
+			log_file << "BFS time: " << std::to_string(phase_profiler.Elapsed()) << endl;
 
 			visit = visit_next;
 			for (auto i = 0; i < input_size; i++) {
@@ -207,25 +225,36 @@ static void PathLengthFunction(DataChunk &args, ExpressionState &state, Vector &
 			}
 		}
 		result_size = result_size + curr_batch_size;
+		log_file << "Batch size: " << std::to_string(curr_batch_size) << endl;
+		log_file << "Result size: " << std::to_string(result_size) << endl;
 	}
-	auto end = std::chrono::high_resolution_clock::now();
-
-	auto int_s = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-	std::cout << "TEST" << std::endl;
-	std::cout << "PathLengthFunction() elapsed time is " << int_s.count() << " milliseconds )" << std::endl;
+//	auto end = std::chrono::high_resolution_clock::now();
+	outer_profiler.End();
+	log_file << "Entire program time: " << std::to_string(outer_profiler.Elapsed()) << endl;
+	log_file << "-" << endl;
+//	auto int_s = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+//	std::cout << "TEST" << std::endl;
+//	std::cout << "ShortestPathFunction() elapsed time is " << int_s.count() << " milliseconds )" << std::endl;
 }
 
-static unique_ptr<FunctionData> PathLengthBind(ClientContext &context, ScalarFunction &bound_function,
+static unique_ptr<FunctionData> ShortestPathBind(ClientContext &context, ScalarFunction &bound_function,
                                                vector<unique_ptr<Expression>> &arguments) {
-	return make_unique<PathLengthBindData>(context);
+	string file_name;
+	if (arguments.size() == 6) {
+		file_name = ExpressionExecutor::EvaluateScalar(*arguments[5]).GetValue<string>();
+	} else {
+		file_name = "timings-test.txt";
+	}
+
+	return make_unique<ShortestPathBindData>(context, file_name);
 }
 
-void PathLengthFun::RegisterFunction(BuiltinFunctions &set) {
+void ShortestPathFun::RegisterFunction(BuiltinFunctions &set) {
 	// params ->id, is_variant, v_size, source, target
 	set.AddFunction(ScalarFunction(
 	    "shortest_path",
 	    {LogicalType::INTEGER, LogicalType::BOOLEAN, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT},
-	    LogicalType::UBIGINT, PathLengthFunction, false, PathLengthBind));
+	    LogicalType::UBIGINT, ShortestPathFunction, false, ShortestPathBind));
 }
 
 } // namespace duckdb

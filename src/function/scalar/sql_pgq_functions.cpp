@@ -5,7 +5,7 @@ namespace duckdb {
 void BuiltinFunctions::RegisterSqlPgqFunctions() {
 	Register<CreateCsrFun>();
 	Register<MsBfsFun>();
-	Register<PathLengthFun>();
+	Register<ShortestPathFun>();
 }
 
 } // namespace duckdb

@@ -10,6 +10,7 @@
 
 #include "duckdb/common/chrono.hpp"
 #include "duckdb/common/helper.hpp"
+#include <iostream>
 
 namespace duckdb {
 
@@ -33,6 +34,7 @@ public:
 	//! right now.
 	double Elapsed() const {
 		auto _end = finished ? end : Tick();
+
 		return std::chrono::duration_cast<std::chrono::duration<double>>(_end - start).count();
 	}
 
