@@ -1,6 +1,8 @@
 #include "duckdb/function/scalar/sql_pgq_functions.hpp"
 #include "duckdb/main/client_context.hpp"
 
+#include <iostream>
+
 namespace duckdb {
 
 struct CheapestPathBindData : public FunctionData {
@@ -14,12 +16,29 @@ struct CheapestPathBindData : public FunctionData {
 		return make_unique<CheapestPathBindData>(context, file_name);
 	}
 };
+
+static void InitialiseBellmanFord(const DataChunk &args, int64_t input_size, const VectorData &vdata_src,
+                                  const int64_t *src_data, idx_t result_size,
+                                  unordered_map<int64_t, vector<int64_t>> &modified,
+                                  unordered_map<int64_t, vector<int64_t>> &dists) {
+	int16_t lanes = 0;
+	for (idx_t i = result_size; i < args.size() && lanes < LANE_LIMIT; i++) {
+		auto src_index = vdata_src.sel->get_index(i);
+		if (vdata_src.validity.RowIsValid(src_index)) {
+			const int64_t &src_entry = src_data[src_index];
+			auto entry = modified.find(src_entry);
+			if (entry == modified.end()) {
+				modified[src_entry] = std::vector<int64_t>(input_size, false);
+				dists[src_entry] = std::vector<int64_t>(input_size, INT64_MAX);
+			}
+		}
+	}
+}
 static void CheapestPathFunction(DataChunk &args, ExpressionState &state, Vector &result) {
 	auto &func_expr = (BoundFunctionExpression &)state.expr;
 	auto &info = (ShortestPathBindData &)*func_expr.bind_info;
 
 	int32_t id = args.data[0].GetValue(0).GetValue<int32_t>();
-	bool is_variant = args.data[1].GetValue(0).GetValue<bool>();
 	int64_t input_size = args.data[2].GetValue(0).GetValue<int64_t>();
 
 	auto &src = args.data[3];
@@ -37,7 +56,18 @@ static void CheapestPathFunction(DataChunk &args, ExpressionState &state, Vector
 	result.SetVectorType(VectorType::FLAT_VECTOR);
 	auto result_data = FlatVector::GetData<uint64_t>(result);
 	auto &validity = FlatVector::Validity(result);
+
+	info.context.init_m = true;
+	unordered_map<int64_t, vector<int64_t>> modified;
+	unordered_map<int64_t, vector<int64_t>> dists;
+
+	while (result_size < args.size()) {
+		InitialiseBellmanFord(args, input_size, vdata_src, src_data, result_size, modified, dists);
+		std::cout << "BREAK POINT" << std::endl;
+	}
+
 }
+
 
 static unique_ptr<FunctionData> CheapestPathBind(ClientContext &context, ScalarFunction &bound_function,
                                                  vector<unique_ptr<Expression>> &arguments) {
@@ -52,9 +82,9 @@ static unique_ptr<FunctionData> CheapestPathBind(ClientContext &context, ScalarF
 }
 
 void CheapestPathFun::RegisterFunction(BuiltinFunctions &set) {
-	//! params -> id, is_variant, v_size, source, target, weight
+	//! params -> id, v_size, source, target, weight
 	set.AddFunction(ScalarFunction("cheapest_path",
-	                               {LogicalType::INTEGER, LogicalType::BOOLEAN, LogicalType::BIGINT,
+	                               {LogicalType::INTEGER, LogicalType::BIGINT,
 	                                LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT},
 	                               LogicalType::UBIGINT, CheapestPathFunction, false, CheapestPathBind));
 }

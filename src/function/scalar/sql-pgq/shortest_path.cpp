@@ -137,7 +137,6 @@ static void ShortestPathFunction(DataChunk &args, ExpressionState &state, Vector
 	log_file << "Thread id: " << std::this_thread::get_id() << endl;
 	log_file << "Args size: " << std::to_string(args.size()) << endl;
 	outer_profiler.Start();
-	outer_profiler.Start();
 
 	info.context.init_m = true;
 
