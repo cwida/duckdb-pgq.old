@@ -1,12 +1,12 @@
-#include "duckdb/function/scalar/sql_pgq_functions.hpp"
-#include "duckdb/main/client_context.hpp"
-#include "duckdb/common/mutex.hpp"
-#include "duckdb/planner/expression/bound_function_expression.hpp"
-#include "duckdb/common/vector_operations/unary_executor.hpp"
-#include "duckdb/common/vector_operations/binary_executor.hpp"
 #include "duckdb/common/exception.hpp"
+#include "duckdb/common/mutex.hpp"
+#include "duckdb/common/vector_operations/binary_executor.hpp"
+#include "duckdb/common/vector_operations/unary_executor.hpp"
 #include "duckdb/common/vector_operations/vector_operations.hpp"
 #include "duckdb/execution/expression_executor.hpp"
+#include "duckdb/function/scalar/sql_pgq_functions.hpp"
+#include "duckdb/main/client_context.hpp"
+#include "duckdb/planner/expression/bound_function_expression.hpp"
 
 namespace duckdb {
 
@@ -25,7 +25,7 @@ struct CsrBindData : public FunctionData {
 	// }
 
 	// ~CsrBindData() {
-		// could possibly destroy the array here
+	// could possibly destroy the array here
 	// }
 
 	unique_ptr<FunctionData> Copy() override {
@@ -33,67 +33,113 @@ struct CsrBindData : public FunctionData {
 	}
 };
 
-static void CsrInitializeVertexOrEdge(ClientContext &context, int32_t id, int64_t v_size, int64_t e_size = 0,
-                                          bool is_vertex = true) {
-	// Vector result;
-	// auto csr = ((u_int64_t) id) < context.csr_list.size() ? context.csr_list[id] : make_unique<Csr>();
-	// auto csr = ((u_int64_t)id) < context.csr_list.size() ? move(context.csr_list[id]) : make_unique<Csr>();
-	// unique_pte here ?
-	if (is_vertex) {
-		lock_guard<mutex> csr_init_lock(context.csr_lock);
-		if (context.initialized_v) {
-			return;
-		}
-
-		try {
-			auto csr = make_unique<Csr>();
-			// extra 2 spaces required for CSR padding
-			// data contains a vector of elements so will need an anonymous function to apply the
-			// the first element id is repeated across, can I access the value directly?
-			csr->v = new std::atomic<int64_t>[v_size + 2];
-			for (idx_t i = 0; i < (idx_t)v_size + 2; i++) {
-				csr->v[i] = 0;
-			}
-			if (((u_int64_t)id) < context.csr_list.size()) {
-				context.csr_list[id] = move(csr);
-			}
-			else {
-				context.csr_list.push_back(move(csr));
-			}
-			// dont' forget to destroy
-			// }
-		} catch (std::bad_alloc const &) {
-			//  v_size + 2
-			throw Exception("Unable to initialise vector of size for csr vertex table representation");
-		}
-		context.initialized_v = true;
-		return;
-	} else {
-		lock_guard<mutex> csr_init_lock(context.csr_lock);
-		if (context.initialized_e) {
-			return;
-		}
-		try {
-			// csr->e = new std::atomic<int32_t>[e_size + 2];
-			context.csr_list[id]->e.resize(e_size, 0);
-
-		} catch (std::bad_alloc const &) {
-			throw Exception("Unable to initialise vector of size for csr edge table representation");
-		}
-
-		// 	//create running sum
-		for (auto i = 1; i < v_size + 2; i++) {
-			context.csr_list[id]->v[i] += context.csr_list[id]->v[i - 1];
-		}
-		context.initialized_e = true;
-		// if (((u_int64_t)id) < context.csr_list.size())
-		// 	context.csr_list[id] = move(csr);
-		// else
-		// 	context.csr_list.push_back(move(csr));
-
+static void CsrInitializeVertex(ClientContext &context, int32_t id, int64_t v_size) {
+	lock_guard<mutex> csr_init_lock(context.csr_lock);
+	if (context.initialized_v) {
 		return;
 	}
+	try {
+		auto csr = make_unique<Csr>();
+		// extra 2 spaces required for CSR padding
+		// data contains a vector of elements so will need an anonymous function to apply the
+		// the first element id is repeated across, can I access the value directly?
+		csr->v = new std::atomic<int64_t>[v_size + 2];
+		for (idx_t i = 0; i < (idx_t)v_size + 2; i++) {
+			csr->v[i] = 0;
+		}
+		if (((u_int64_t)id) < context.csr_list.size()) {
+			context.csr_list[id] = move(csr);
+		} else {
+			context.csr_list.push_back(move(csr));
+		}
+		// dont' forget to destroy
+		// }
+	} catch (std::bad_alloc const &) {
+		throw Exception("Unable to initialise vector of size for csr vertex table representation");
+	}
+	context.initialized_v = true;
+	return;
 }
+
+static void CsrInitializeEdge(ClientContext &context, int32_t id, int64_t v_size, int64_t e_size) {
+	lock_guard<mutex> csr_init_lock(context.csr_lock);
+	if (context.initialized_e) {
+		return;
+	}
+	try {
+		context.csr_list[id]->e.resize(e_size, 0);
+
+	} catch (std::bad_alloc const &) {
+		throw Exception("Unable to initialise vector of size for csr edge table representation");
+	}
+
+	for (auto i = 1; i < v_size + 2; i++) {
+		context.csr_list[id]->v[i] += context.csr_list[id]->v[i - 1];
+	}
+	context.initialized_e = true;
+	return;
+}
+
+//static void CsrInitializeVertexOrEdge(ClientContext &context, int32_t id, int64_t v_size, int64_t e_size = 0,
+//                                      bool is_vertex = true) {
+//	// Vector result;
+//	// auto csr = ((u_int64_t) id) < context.csr_list.size() ? context.csr_list[id] : make_unique<Csr>();
+//	// auto csr = ((u_int64_t)id) < context.csr_list.size() ? move(context.csr_list[id]) : make_unique<Csr>();
+//	// unique_pte here ?
+//	if (is_vertex) {
+//		lock_guard<mutex> csr_init_lock(context.csr_lock);
+//		if (context.initialized_v) {
+//			return;
+//		}
+//
+//		try {
+//			auto csr = make_unique<Csr>();
+//			// extra 2 spaces required for CSR padding
+//			// data contains a vector of elements so will need an anonymous function to apply the
+//			// the first element id is repeated across, can I access the value directly?
+//			csr->v = new std::atomic<int64_t>[v_size + 2];
+//			for (idx_t i = 0; i < (idx_t)v_size + 2; i++) {
+//				csr->v[i] = 0;
+//			}
+//			if (((u_int64_t)id) < context.csr_list.size()) {
+//				context.csr_list[id] = move(csr);
+//			} else {
+//				context.csr_list.push_back(move(csr));
+//			}
+//			// dont' forget to destroy
+//			// }
+//		} catch (std::bad_alloc const &) {
+//			//  v_size + 2
+//			throw Exception("Unable to initialise vector of size for csr vertex table representation");
+//		}
+//		context.initialized_v = true;
+//		return;
+//	} else {
+//		lock_guard<mutex> csr_init_lock(context.csr_lock);
+//		if (context.initialized_e) {
+//			return;
+//		}
+//		try {
+//			// csr->e = new std::atomic<int32_t>[e_size + 2];
+//			context.csr_list[id]->e.resize(e_size, 0);
+//
+//		} catch (std::bad_alloc const &) {
+//			throw Exception("Unable to initialise vector of size for csr edge table representation");
+//		}
+//
+//		// 	//create running sum
+//		for (auto i = 1; i < v_size + 2; i++) {
+//			context.csr_list[id]->v[i] += context.csr_list[id]->v[i - 1];
+//		}
+//		context.initialized_e = true;
+//		// if (((u_int64_t)id) < context.csr_list.size())
+//		// 	context.csr_list[id] = move(csr);
+//		// else
+//		// 	context.csr_list.push_back(move(csr));
+//
+//		return;
+//	}
+//}
 
 static void CreateCsrVertexFunction(DataChunk &args, ExpressionState &state, Vector &result) {
 	// D_ASSERT(args.ColumnCount() == 0);
@@ -102,28 +148,20 @@ static void CreateCsrVertexFunction(DataChunk &args, ExpressionState &state, Vec
 
 	int64_t input_size = args.data[1].GetValue(0).GetValue<int64_t>();
 	if (!info.context.initialized_v) {
-		CsrInitializeVertexOrEdge(info.context, info.id, input_size, 0, true);
-		// csr_initialize_vertex_or_edge(args, state, true);
+		CsrInitializeVertex(info.context, info.id, input_size);
 	}
-	// auto csr = move(info.context.csr_list[info.id]);
 
 	BinaryExecutor::Execute<int64_t, int64_t, int64_t>(args.data[2], args.data[3], result, args.size(),
 	                                                   [&](int64_t src, int64_t cnt) {
-		                                                   int64_t edge_count = 0;
-
-		                                                   // for(idx_t i = 0; i < src.size(); i++) {
-		                                                   // *csr.v[src[i+2]] = 1;
+//		                                                   int64_t edge_count = 0;
 		                                                   info.context.csr_list[info.id]->v[src + 2] = cnt;
-
-		                                                   edge_count = edge_count + cnt;
-		                                                   return edge_count;
+		                                                   return cnt;
 	                                                   });
-	// info.context.csr_list[info.id] = move(csr);
 	return;
 }
 
 static unique_ptr<FunctionData> CreateCsrVertexBind(ClientContext &context, ScalarFunction &bound_function,
-                                                       vector<unique_ptr<Expression>> &arguments) {
+                                                    vector<unique_ptr<Expression>> &arguments) {
 	// SequenceCatalogEntry *sequence = nullptr;
 	if (!arguments[0]->IsFoldable()) {
 		throw InvalidInputException("Id must be constant.");
@@ -144,7 +182,8 @@ static void CreateCsrEdgeFunction(DataChunk &args, ExpressionState &state, Vecto
 	int64_t vertex_size = args.data[1].GetValue(0).GetValue<int64_t>();
 	int64_t edge_size = args.data[2].GetValue(0).GetValue<int64_t>();
 	if (!info.context.initialized_e) {
-		CsrInitializeVertexOrEdge(info.context, info.id, vertex_size, edge_size, false);
+		CsrInitializeEdge(info.context, info.id, vertex_size, edge_size);
+//		CsrInitializeVertexOrEdge(info.context, info.id, vertex_size, edge_size, false);
 	}
 
 	// auto csr = move(info.context.csr_list[info.id]);
@@ -161,7 +200,7 @@ static void CreateCsrEdgeFunction(DataChunk &args, ExpressionState &state, Vecto
 }
 
 static unique_ptr<FunctionData> CreateCsrEdgeBind(ClientContext &context, ScalarFunction &bound_function,
-                                                     vector<unique_ptr<Expression>> &arguments) {
+                                                  vector<unique_ptr<Expression>> &arguments) {
 	if (!arguments[0]->IsFoldable()) {
 		throw InvalidInputException("Id must be constant.");
 	}
