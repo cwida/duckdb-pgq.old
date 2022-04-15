@@ -101,11 +101,11 @@ static void CreateCsrVertexFunction(DataChunk &args, ExpressionState &state, Vec
 
 	BinaryExecutor::Execute<int64_t, int64_t, int64_t>(args.data[2], args.data[3], result, args.size(),
 	                                                   [&](int64_t src, int64_t cnt) {
-		                                                   // edge_count = 0;
+		                                                   int64_t edge_count = 0;
 		                                                   info.context.csr_list[info.id]->v[src + 2] = cnt;
 		                                                   info.context.csr_list[info.id]->v_weight[src + 2] = cnt;
-
-		                                                   return cnt;
+		                                                   edge_count = edge_count + cnt;
+		                                                   return edge_count;
 	                                                   });
 	return;
 }

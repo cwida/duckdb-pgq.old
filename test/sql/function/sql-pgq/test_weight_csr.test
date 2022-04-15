@@ -59,3 +59,6 @@ FROM
   Transfers t
   JOIN Customer src ON t.from_id = src.cid
   JOIN Customer dst ON t.to_id = dst.cid
+
+#
+#
