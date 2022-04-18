@@ -8,6 +8,8 @@
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/planner/expression/bound_function_expression.hpp"
 
+#include <iostream>
+
 namespace duckdb {
 
 struct CsrBindData : public FunctionData {
@@ -98,7 +100,6 @@ static void CreateCsrVertexFunction(DataChunk &args, ExpressionState &state, Vec
 	if (!info.context.initialized_v) {
 		CsrInitializeVertex(info.context, info.id, input_size);
 	}
-
 	BinaryExecutor::Execute<int64_t, int64_t, int64_t>(args.data[2], args.data[3], result, args.size(),
 	                                                   [&](int64_t src, int64_t cnt) {
 		                                                   int64_t edge_count = 0;
@@ -130,11 +131,22 @@ static void CreateCsrEdgeFunction(DataChunk &args, ExpressionState &state, Vecto
 	if (!info.context.initialized_e) {
 		CsrInitializeEdge(info.context, info.id, vertex_size, edge_size);
 	}
+	if (!info.context.initialized_w) {
+		CsrInitializeWeight(info.context, info.id, vertex_size, edge_size);
+	}
 
 	BinaryExecutor::Execute<int64_t, int64_t, int32_t>(args.data[3], args.data[4], result, args.size(),
 	                                                   [&](int64_t src, int64_t dst) {
 		                                                   auto pos = ++info.context.csr_list[info.id]->v[src + 1];
 		                                                   info.context.csr_list[info.id]->e[(int64_t)pos - 1] = dst;
+		                                                   return 1;
+	                                                   });
+
+	BinaryExecutor::Execute<int64_t, int64_t, int32_t>(args.data[3], args.data[5], result, args.size(),
+	                                                   [&](int64_t src, int64_t weight) {
+		                                                   auto pos = ++info.context.csr_list[info.id]->v_weight[src + 1];
+		                                                   info.context.csr_list[info.id]->w[(int64_t)pos - 1] = weight;
+
 		                                                   return 1;
 	                                                   });
 
@@ -148,48 +160,40 @@ static unique_ptr<FunctionData> CreateCsrEdgeBind(ClientContext &context, Scalar
 	}
 
 	Value id = ExpressionExecutor::EvaluateScalar(*arguments[0]);
-	// Value vertex_size = ExpressionExecutor::EvaluateScalar(*arguments[1]);
-	// Value edge_size = ExpressionExecutor::EvaluateScalar(*arguments[2]);
 
 	return make_unique<CsrBindData>(context, id.GetValue<int32_t>());
 }
 
-static void CreateCsrWeightFunction(DataChunk &args, ExpressionState &state, Vector &result) {
-	auto &func_expr = (BoundFunctionExpression &)state.expr;
-	auto &info = (CsrBindData &)*func_expr.bind_info;
-	auto &weights = args.data[5];
-
-	VectorData vdata_weights;
-	weights.Orrify(args.size(), vdata_weights);
-
-	auto weights_data = (int64_t *)vdata_weights.data;
-
-	auto v_size = args.data[1].GetValue(0).GetValue<int64_t>();
-	int64_t edge_size = args.data[2].GetValue(0).GetValue<int64_t>();
-	if (!info.context.initialized_w) {
-		CsrInitializeWeight(info.context, info.id, v_size, edge_size);
-	}
-
-	BinaryExecutor::Execute<int64_t, int64_t, int32_t>(
-	    args.data[3], args.data[4], result, args.size(), [&](int64_t src, int64_t dst) {
-		    auto pos = ++info.context.csr_list[info.id]->v_weight[src + 1];
-		    info.context.csr_list[info.id]->w[(int64_t)pos - 1] = weights_data[pos - 1];
-
-		    return 1;
-	    });
-
-	return;
-}
-
-static unique_ptr<FunctionData> CreateCsrWeightBind(ClientContext &context, ScalarFunction &bound_function,
-                                                    vector<unique_ptr<Expression>> &arguments) {
-	if (!arguments[0]->IsFoldable()) {
-		throw InvalidInputException("Id must be constant.");
-	}
-
-	Value id = ExpressionExecutor::EvaluateScalar(*arguments[0]);
-	return make_unique<CsrBindData>(context, id.GetValue<int32_t>());
-}
+//static void CreateCsrWeightFunction(DataChunk &args, ExpressionState &state, Vector &result) {
+//	auto &func_expr = (BoundFunctionExpression &)state.expr;
+//	auto &info = (CsrBindData &)*func_expr.bind_info;
+//
+//	auto v_size = args.data[1].GetValue(0).GetValue<int64_t>();
+//	int64_t edge_size = args.data[2].GetValue(0).GetValue<int64_t>();
+//	if (!info.context.initialized_w) {
+//		CsrInitializeWeight(info.context, info.id, v_size, edge_size);
+//	}
+//
+//	BinaryExecutor::Execute<int64_t, int64_t, int32_t>(
+//	    args.data[3], args.data[4], result, args.size(), [&](int64_t src, int64_t weight) {
+//		    auto pos = ++info.context.csr_list[info.id]->v_weight[src + 1];
+//		    info.context.csr_list[info.id]->w[(int64_t)pos - 1] = weight;
+//
+//		    return 1;
+//	    });
+//
+//	return;
+//}
+//
+//static unique_ptr<FunctionData> CreateCsrWeightBind(ClientContext &context, ScalarFunction &bound_function,
+//                                                    vector<unique_ptr<Expression>> &arguments) {
+//	if (!arguments[0]->IsFoldable()) {
+//		throw InvalidInputException("Id must be constant.");
+//	}
+//
+//	Value id = ExpressionExecutor::EvaluateScalar(*arguments[0]);
+//	return make_unique<CsrBindData>(context, id.GetValue<int32_t>());
+//}
 
 void CreateCsrFun::RegisterFunction(BuiltinFunctions &set) {
 	// params -> id, size, src/dense_id, cnt
@@ -197,14 +201,14 @@ void CreateCsrFun::RegisterFunction(BuiltinFunctions &set) {
 	    "create_csr_vertex", {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT},
 	    LogicalType::BIGINT, CreateCsrVertexFunction, false, CreateCsrVertexBind));
 	// params -> id, v_size, num_edges, src_rowid, dst_rowid
-	set.AddFunction(ScalarFunction(
-	    "create_csr_edge",
-	    {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT},
-	    LogicalType::INTEGER, CreateCsrEdgeFunction, false, CreateCsrEdgeBind));
-	set.AddFunction(ScalarFunction("create_csr_weight",
+	set.AddFunction(ScalarFunction("create_csr_edge",
 	                               {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT,
 	                                LogicalType::BIGINT, LogicalType::BIGINT},
-	                               LogicalType::INTEGER, CreateCsrWeightFunction, false, CreateCsrWeightBind));
+	                               LogicalType::INTEGER, CreateCsrEdgeFunction, false, CreateCsrEdgeBind));
+	//	set.AddFunction(ScalarFunction("create_csr_weight",
+	//	                               {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT,
+	//LogicalType::BIGINT, 	                                LogicalType::BIGINT}, 	                               LogicalType::INTEGER, CreateCsrWeightFunction, false,
+	//CreateCsrWeightBind));
 }
 
 } // namespace duckdb

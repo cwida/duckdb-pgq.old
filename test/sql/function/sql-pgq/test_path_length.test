@@ -38,7 +38,7 @@ FROM (
     LEFT JOIN  Transfers t ON t.from_id = c.cid
     GROUP BY c.rowid
 ) sub) AS BIGINT),
-src.rowid, dst.rowid ))
+src.rowid, dst.rowid, t.amount))
 FROM
   Transfers t
   JOIN Customer src ON t.from_id = src.cid
@@ -52,7 +52,7 @@ INSERT INTO src_dest VALUES(0, 4, 0, 3), (0, 4, 1, 2), (0, 4, 1, 0), (0, 4, 0, 2
 
 #csr will be deleted after calling reachability.
 query T
-SELECT shortest_path(id, false, v_size, src, dst) FROM src_dest;
+SELECT cheapest_path(id, false, v_size, src, dst) FROM src_dest;
 ----
 2
 1

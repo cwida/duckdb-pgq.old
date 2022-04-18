@@ -128,6 +128,7 @@ public:
 
 	//! used by udfs to create vertex and edge tables csr representation
 	bool initialized_v = false;
+	bool v_set = false;
 	bool initialized_e = false;
 	bool initialized_w = false;
 	bool init_m = false;

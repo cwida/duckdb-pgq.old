@@ -29,9 +29,9 @@ static int16_t InitialiseBellmanFord(ClientContext &context, const DataChunk &ar
 		dists[i] = std::vector<int64_t>(args.size(), INT64_MAX);
 	}
 
-	int16_t lanes = 0;
+//	int16_t lanes = 0;
 	int16_t curr_batch_size = 0;
-	for (idx_t i = result_size; i < args.size() && lanes < LANE_LIMIT; i++) {
+	for (idx_t i = result_size; i < args.size(); i++) { // && lanes < LANE_LIMIT
 		auto src_index = vdata_src.sel->get_index(i);
 		if (vdata_src.validity.RowIsValid(src_index)) {
 			const int64_t &src_entry = src_data[src_index];
@@ -70,7 +70,6 @@ static void CheapestPathFunction(DataChunk &args, ExpressionState &state, Vector
 	unordered_map<int64_t, vector<int64_t>> modified;
 	unordered_map<int64_t, vector<int64_t>> dists;
 
-
 	while (result_size < args.size()) {
 		int16_t curr_batch_size = InitialiseBellmanFord(info.context, args, input_size, vdata_src, src_data, result_size, modified, dists);
 		bool changed = true;
@@ -83,12 +82,15 @@ static void CheapestPathFunction(DataChunk &args, ExpressionState &state, Vector
 					//! Loop through all the neighbours of v
 					for (auto index = (int64_t)info.context.csr_list[id]->v_weight[v]; index < (int64_t)info.context.csr_list[id]->v_weight[v + 1];
 					     index++) {
+						//! Get weight of (v,n)
 						auto n = info.context.csr_list[id]->e[index];
 						auto weight = info.context.csr_list[id]->w[index];
 						for (uint64_t i = 0; i < modified[v].size(); i++) {
 							if (modified[v][i]) {
 								auto new_dist = std::min(dists[n][i], dists[v][i] + weight);
+								//! If the new weight is shorter than existing
 								if (new_dist != dists[n][i]) {
+									//! Update the distance
 									dists[n][i] = new_dist;
 									modified[n][i] = true;
 									changed = true;
@@ -100,14 +102,11 @@ static void CheapestPathFunction(DataChunk &args, ExpressionState &state, Vector
 			}
 		}
 		for (idx_t i = 0; i < args.size(); i++) {
-			auto source_index = vdata_src.sel->get_index(i);
 			auto target_index = vdata_target.sel->get_index(i);
 
-			if (!vdata_src.validity.RowIsValid(source_index) || !vdata_target.validity.RowIsValid(target_index)) {
+			if (!vdata_target.validity.RowIsValid(target_index)) {
 				result_validity.SetInvalid(i);
 			}
-
-//			const auto &src_entry = src_data[source_index];
 			const auto &target_entry = target_data[target_index];
 			auto resulting_distance = dists[target_entry][i];
 			if (resulting_distance == INT64_MAX) {

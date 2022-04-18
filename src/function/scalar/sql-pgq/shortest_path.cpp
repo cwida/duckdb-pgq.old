@@ -72,7 +72,7 @@ static bool BfsWithoutArray(bool exit_early, int32_t id, int64_t input_size, Cli
 		}
 
 		D_ASSERT(context.csr_list[id]);
-		for (auto index = (int64_t)context.csr_list[id]->v[i]; index < (int64_t)context.csr_list[id]->v[i + 1];
+		for (auto index = (int64_t)context.csr_list[id]->v[i]; index < (int64_t)context.csr_list[id]->v[i + 1]; // v or v_weight depending on what was last called?
 		     index++) {
 			auto n = context.csr_list[id]->e[index];
 			visit_next[n] = visit_next[n] | visit[i];
@@ -107,7 +107,6 @@ static bool BfsWithoutArray(bool exit_early, int32_t id, int64_t input_size, Cli
 }
 
 static void ShortestPathFunction(DataChunk &args, ExpressionState &state, Vector &result) {
-//	auto start = std::chrono::high_resolution_clock::now();
 	auto &func_expr = (BoundFunctionExpression &)state.expr;
 	auto &info = (ShortestPathBindData &)*func_expr.bind_info;
 
