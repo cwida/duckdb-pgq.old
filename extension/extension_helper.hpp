@@ -38,6 +38,11 @@
 #include "visualizer-extension.hpp"
 #endif
 
+#ifdef BUILD_SQLPGQ_EXTENSION
+#include "sqlpgq-extension.hpp"
+#endif
+
+
 namespace duckdb {
 class DuckDB;
 
@@ -67,7 +72,10 @@ public:
 #ifdef BUILD_VISUALIZER_EXTENSION
 		db.LoadExtension<VisualizerExtension>();
 #endif
-	}
+#ifdef BUILD_SQLPGQ_EXTENSION
+		db.LoadExtension<SQLPGQExtension>();
+#endif
+}
 
 	static ExtensionLoadResult LoadExtension(DuckDB &db, std::string extension) {
 		if (extension == "parquet") {
@@ -118,7 +126,15 @@ public:
 			// visualizer extension required but not build: skip this test
 			return ExtensionLoadResult::NOT_LOADED;
 #endif
-		} else {
+		} else if (extension == "sqlpgq") {
+#ifdef BUILD_SQLPGQ_EXTENSION
+			db.LoadExtension<SQLPGQExtension>();
+#else
+			// sqlpgq extension required but not build: skip this test
+			return ExtensionLoadResult::NOT_LOADED;
+#endif
+		}
+		else {
 			// unknown extension
 			return ExtensionLoadResult::EXTENSION_UNKNOWN;
 		}

@@ -43,7 +43,7 @@ FROM (
     LEFT JOIN  knows k ON k.source = p.id
     GROUP BY p.rowid
 ) sub) AS BIGINT),
-src.rowid, dst.rowid, k.weight ))
+src.rowid, dst.rowid ))
 FROM
   knows k
   JOIN person src ON k.source = src.id

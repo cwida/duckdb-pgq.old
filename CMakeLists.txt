@@ -213,6 +213,7 @@ option(BUILD_SQLSMITH "Enable building of SQLSmith." FALSE)
 option(BUILD_TPCE "Enable building of the TPC-E tool." FALSE)
 option(JDBC_DRIVER "Build the DuckDB JDBC driver" FALSE)
 option(BUILD_ODBC_DRIVER "Build the DuckDB ODBC driver" FALSE)
+option(BUILD_SQLPGQ_EXTENSION "Build the SQL-PGQ DuckDB extension." FALSE)
 option(BUILD_PYTHON "Build the DuckDB Python extension" FALSE)
 option(USER_SPACE "Build the DuckDB Python in the user space" FALSE)
 option(FORCE_QUERY_LOG "If enabled, all queries will be logged to the specified path" OFF)
@@ -438,6 +439,11 @@ function(add_extension_definitions)
     add_definitions(-DBUILD_FTS_EXTENSION=${BUILD_FTS_EXTENSION})
   endif()
 
+  if(${BUILD_SLQPGQ_EXTENSION})
+    target_link_libraries(${CMAKE_SOURCE_DIR}/extension/sqlpgq/include)
+    add_definitions(-DBUILD_SQLPGQ_EXTENSION=${BUILD_SQLPGQ_EXTENSION})
+  endif()
+
   if(${BUILD_HTTPFS_EXTENSION})
     find_package(OpenSSL REQUIRED)
     include_directories(${CMAKE_SOURCE_DIR}/extension/httpfs/include ${OPENSSL_INCLUDE_DIR})
@@ -475,9 +481,74 @@ function(add_extension_dependencies LIBRARY)
     add_dependencies(${LIBRARY} httpfs_extension)
   endif()
 
+  if(${BUILD_SQLPGQ_EXTENSION})
+    add_dependencies(${LIBRARY} sqlpgq_extension)
+  endif()
+
   if(${BUILD_VISUALIZER_EXTENSION})
     add_dependencies(${LIBRARY} visualizer_extension)
   endif()
+endfunction()
+
+function(build_loadable_extension_directory NAME OUTPUT_DIRECTORY)
+  #  skip building extensions on mingw because its weird
+  if(WIN32 AND NOT MSVC)
+    return()
+  endif()
+
+  set(TARGET_NAME ${NAME}_loadable_extension)
+  # all parameters after output_directory
+  set(FILES ${ARGV})
+  # remove name
+  list(REMOVE_AT FILES 0)
+  # remove output_directory
+  list(REMOVE_AT FILES 0)
+
+  add_library(${TARGET_NAME} SHARED ${FILES})
+  set_target_properties(${TARGET_NAME} PROPERTIES OUTPUT_NAME ${NAME})
+  set_target_properties(${TARGET_NAME} PROPERTIES PREFIX "")
+  if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+    set_target_properties(${TARGET_NAME} PROPERTIES LINK_FLAGS "-undefined dynamic_lookup")
+  endif()
+  if(WIN32)
+    target_link_libraries(${TARGET_NAME} duckdb ${DUCKDB_EXTRA_LINK_FLAGS})
+  endif()
+  target_compile_definitions(${TARGET_NAME} PUBLIC -DDUCKDB_BUILD_LOADABLE_EXTENSION)
+  set_target_properties(${TARGET_NAME} PROPERTIES SUFFIX
+          ".duckdb_extension")
+
+  if(MSVC)
+    target_link_libraries(${TARGET_NAME} delayimp)
+    set_target_properties(
+            ${TARGET_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY_DEBUG
+            "${CMAKE_BINARY_DIR}/${OUTPUT_DIRECTORY}")
+    set_target_properties(
+            ${TARGET_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY_RELEASE
+            "${CMAKE_BINARY_DIR}/${OUTPUT_DIRECTORY}")
+  endif()
+
+  if(WIN32)
+    set_target_properties(${TARGET_NAME}
+            PROPERTIES LINK_FLAGS_DEBUG "/DELAYLOAD:duckdb.dll")
+    set(CMAKE_EXE_LINKER_FLAGS_DEBUG
+            "${CMAKE_EXE_LINKER_FLAGS_DEBUG}  /DELAYLOAD:duckdb.dll")
+    set_target_properties(${TARGET_NAME}
+            PROPERTIES LINK_FLAGS_RELEASE "/DELAYLOAD:duckdb.dll")
+    set(CMAKE_EXE_LINKER_FLAGS_RELEASE
+            "${CMAKE_EXE_LINKER_FLAGS_RELEASE}  /DELAYLOAD:duckdb.dll")
+    # This is only strictly required in non-Visual-Studio builds like Ninja:
+    target_link_libraries(${TARGET_NAME}
+            delayimp)
+  endif()
+
+endfunction()
+
+function(build_loadable_extension NAME)
+  # all parameters after name
+  set(FILES ${ARGV})
+  list(REMOVE_AT FILES 0)
+
+  build_loadable_extension_directory(${NAME} extension/${NAME} ${FILES})
 endfunction()
 
 function(link_extension_libraries LIBRARY)
@@ -495,6 +566,10 @@ function(link_extension_libraries LIBRARY)
 
   if(${BUILD_TPCDS_EXTENSION})
     target_link_libraries(${LIBRARY} tpcds_extension)
+  endif()
+
+  if (${BUILD_SQLPGQ_EXTENSION})
+    target_link_libraries(${LIBRARY} sqlpgq_extension)
   endif()
 
   if(${BUILD_FTS_EXTENSION})

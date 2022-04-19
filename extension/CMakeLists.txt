@@ -14,6 +14,10 @@ if(${BUILD_TPCDS_EXTENSION})
   add_subdirectory(tpcds)
 endif()
 
+if(${BUILD_SQLPGQ_EXTENSION})
+  add_subdirectory(sqlpgq)
+endif()
+
 if(${BUILD_FTS_EXTENSION})
   add_subdirectory(fts)
 endif()
