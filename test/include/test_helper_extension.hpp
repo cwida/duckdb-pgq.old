@@ -15,6 +15,7 @@ namespace duckdb {
 class TestHelperExtension : public Extension {
 public:
 	void Load(DuckDB &db) override;
+	std::string Name() override;
 
 	//! Report the last error message.
 	static void SetLastError(const string &error);

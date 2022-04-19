@@ -200,9 +200,9 @@ static unique_ptr<FunctionData> CreateCsrEdgeBind(ClientContext &context, Scalar
 
 void CreateCsrFun::RegisterFunction(BuiltinFunctions &set) {
 	// params -> id, size, src/dense_id, cnt
-	set.AddFunction(ScalarFunction(
-	    "create_csr_vertex", {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT},
-	    LogicalType::BIGINT, CreateCsrVertexFunction, false, CreateCsrVertexBind));
+//	set.AddFunction(ScalarFunction(
+//	    "create_csr_vertex", {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT},
+//	    LogicalType::BIGINT, CreateCsrVertexFunction, false, CreateCsrVertexBind));
 	// params -> id, v_size, num_edges, src_rowid, dst_rowid
 	set.AddFunction(ScalarFunction("create_csr_edge_and_weight",
 	   {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT,
@@ -213,10 +213,10 @@ void CreateCsrFun::RegisterFunction(BuiltinFunctions &set) {
 	    {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT},
 	    LogicalType::INTEGER, CreateCsrEdgeFunction, false, CreateCsrEdgeBind));
 
-	//	set.AddFunction(ScalarFunction("create_csr_weight",
-	//	                               {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT,
-	// LogicalType::BIGINT, 	                                LogicalType::BIGINT}, LogicalType::INTEGER,
-	// CreateCsrWeightFunction, false, CreateCsrWeightBind));
+//		set.AddFunction(ScalarFunction("create_csr_weight",
+//		                               {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT,
+//	 LogicalType::BIGINT, 	                                LogicalType::BIGINT}, LogicalType::INTEGER,
+//	 CreateCsrWeightFunction, false, CreateCsrWeightBind));
 }
 
 } // namespace duckdb

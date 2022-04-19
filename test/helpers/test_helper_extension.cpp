@@ -35,6 +35,10 @@ void TestHelperExtension::Load(DuckDB &db) {
 	conn.Commit();
 }
 
+std::string TestHelperExtension::Name() {
+	return "test_helper";
+}
+
 void TestHelperExtension::SetLastError(const string &error) {
 	last_error = make_unique<string>(error);
 }

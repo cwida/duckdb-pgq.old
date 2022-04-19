@@ -139,6 +139,9 @@ DuckDB::DuckDB(const char *path, DBConfig *new_config) : instance(make_shared<Da
 DuckDB::DuckDB(const string &path, DBConfig *config) : DuckDB(path.c_str(), config) {
 }
 
+DuckDB::DuckDB(DatabaseInstance &instance_p) : instance(instance_p.shared_from_this()) {
+}
+
 DuckDB::~DuckDB() {
 }
 

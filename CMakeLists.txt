@@ -439,8 +439,8 @@ function(add_extension_definitions)
     add_definitions(-DBUILD_FTS_EXTENSION=${BUILD_FTS_EXTENSION})
   endif()
 
-  if(${BUILD_SLQPGQ_EXTENSION})
-    target_link_libraries(${CMAKE_SOURCE_DIR}/extension/sqlpgq/include)
+  if(${BUILD_SQLPGQ_EXTENSION})
+    include_directories(${CMAKE_SOURCE_DIR}/extension/sqlpgq/include)
     add_definitions(-DBUILD_SQLPGQ_EXTENSION=${BUILD_SQLPGQ_EXTENSION})
   endif()
 

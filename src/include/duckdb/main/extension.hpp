@@ -19,7 +19,7 @@ class Extension {
 public:
 	DUCKDB_API virtual void Load(DuckDB &db) = 0;
 	DUCKDB_API virtual ~Extension() = default;
-//	DUCKDB_API virtual std::string Name() = 0;
+	DUCKDB_API virtual std::string Name() = 0;
 };
 
 } // namespace duckdb

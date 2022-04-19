@@ -1,3 +1,5 @@
+require sqlpgq
+
 statement ok
 CREATE TABLE Customer(cid bigint not null, name string);
 
@@ -35,7 +37,7 @@ FROM (
 ) sub,  (SELECT count(c.cid) as vcount FROM Customer c) v
 
 statement ok
-SELECT min(CREATE_CSR_EDGE(0, (SELECT count(c.cid) as vcount FROM Customer c),
+SELECT min(CREATE_CSR_EDGE_AND_WEIGHT(0, (SELECT count(c.cid) as vcount FROM Customer c),
 CAST ((SELECT sum(CREATE_CSR_VERTEX(0, (SELECT count(c.cid) as vcount FROM Customer c),
 sub.dense_id, sub.cnt )) AS numEdges
 FROM (

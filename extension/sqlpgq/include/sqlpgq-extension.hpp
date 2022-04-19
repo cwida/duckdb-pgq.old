@@ -15,7 +15,7 @@ namespace duckdb {
 class SQLPGQExtension : public Extension {
 public:
 	void Load(DuckDB &db) override;
-//	std::string Name() override;
+	std::string Name() override;
 };
 
 } // namespace duckdb

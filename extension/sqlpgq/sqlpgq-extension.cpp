@@ -3,9 +3,9 @@
 
 #include "duckdb/catalog/catalog_entry/macro_catalog_entry.hpp"
 #include "duckdb/catalog/default/default_functions.hpp"
-#include "duckdb/common/winapi.hpp"
 #include "sqlpgq_functions.hpp"
 #include "duckdb.hpp"
+#include <iostream>
 
 
 namespace duckdb {
@@ -28,23 +28,27 @@ void SQLPGQExtension::Load(DuckDB &db) {
 	con.Commit();
 }
 
+std::string SQLPGQExtension::Name() {
+	return "sqlpgq";
+}
+
 //std::string SQLPGQExtension::Name() {
 //	return "sqlpgq";
 //}
 
 } // namespace duckdb
 
-//extern "C" {
-//
-//DUCKDB_EXTENSION_API void sqlpgq_init(duckdb::DatabaseInstance &db) {
-//	duckdb::DuckDB db_wrapper(db);
-//	db_wrapper.LoadExtension<duckdb::SQLPGQExtension>();
-//}
-//
-//DUCKDB_EXTENSION_API const char *sqlpgq_version() {
-//	return duckdb::DuckDB::LibraryVersion();
-//}
-//}
+extern "C" {
+
+DUCKDB_EXTENSION_API void sqlpgq_init(duckdb::DatabaseInstance &db) {
+	duckdb::DuckDB db_wrapper(db);
+	db_wrapper.LoadExtension<duckdb::SQLPGQExtension>();
+}
+
+DUCKDB_EXTENSION_API const char *sqlpgq_version() {
+	return duckdb::DuckDB::LibraryVersion();
+}
+}
 
 #ifndef DUCKDB_EXTENSION_MAIN
 #error DUCKDB_EXTENSION_MAIN not defined
