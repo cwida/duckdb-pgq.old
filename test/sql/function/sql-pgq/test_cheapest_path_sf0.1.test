@@ -1,9 +1,6 @@
 require sqlpgq
 
 statement ok
-pragma enable_verification
-
-statement ok
 CREATE TABLE person (id bigint);
 
 statement ok
@@ -39,7 +36,7 @@ FROM (
 ) sub,  (SELECT count(p.id) as vcount FROM person p) v;
 
 statement ok
-SELECT min(CREATE_CSR_EDGE_AND_WEIGHT(0, (SELECT count(p.id) as vcount FROM person p),
+SELECT min(CREATE_CSR_EDGE(0, (SELECT count(p.id) as vcount FROM person p),
 CAST ((SELECT sum(CREATE_CSR_VERTEX(0, (SELECT count(p.id) as vcount FROM person p),
 sub.dense_id , sub.cnt )) AS numEdges
 FROM (
@@ -180,6 +177,3 @@ order by p.id, p2.id;
 35184372089012	28587302322876	3
 35184372089012	28587302323188	2
 35184372089012	28587302323208	3
-
-statement ok
-1=2

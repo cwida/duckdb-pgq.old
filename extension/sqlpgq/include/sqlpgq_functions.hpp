@@ -9,7 +9,6 @@
 #pragma once
 
 #include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
-#include <iostream>
 
 namespace duckdb {
 
@@ -24,7 +23,9 @@ public:
 
 		// Create functions
 		functions.push_back(GetCsrVertexFunction());
-//		functions.push_back(GetObjectFunction());
+		functions.push_back(GetCsrEdgeFunction());
+		functions.push_back(GetShortestPathFunction());
+		functions.push_back(GetCheapestPathFunction());
 //		AddAliases({"to_json", "json_quote"}, GetToJSONFunction(), functions);
 //		functions.push_back(GetArrayToJSONFunction());
 //		functions.push_back(GetRowToJSONFunction());
@@ -44,10 +45,10 @@ public:
 
 private:
 	static CreateScalarFunctionInfo GetCsrVertexFunction();
-//	static CreateScalarFunctionInfo GetExtractStringFunction();
-//
-//	static CreateScalarFunctionInfo GetArrayFunction();
-//	static CreateScalarFunctionInfo GetObjectFunction();
+	static CreateScalarFunctionInfo GetCsrEdgeFunction();
+
+	static CreateScalarFunctionInfo GetShortestPathFunction();
+	static CreateScalarFunctionInfo GetCheapestPathFunction();
 //	static CreateScalarFunctionInfo GetToJSONFunction();
 //	static CreateScalarFunctionInfo GetArrayToJSONFunction();
 //	static CreateScalarFunctionInfo GetRowToJSONFunction();

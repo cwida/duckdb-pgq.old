@@ -135,8 +135,8 @@ static unique_ptr<FunctionData> CheapestPathBind(ClientContext &context, ScalarF
 
 void CheapestPathFun::RegisterFunction(BuiltinFunctions &set) {
 	//! params -> id, v_size, source, target, weight
-	set.AddFunction(ScalarFunction(
-	    "cheapest_path", {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT},
-	    LogicalType::BIGINT, CheapestPathFunction, false, CheapestPathBind));
+//	set.AddFunction(ScalarFunction(
+//	    "cheapest_path", {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT},
+//	    LogicalType::BIGINT, CheapestPathFunction, false, CheapestPathBind));
 }
 } // namespace duckdb

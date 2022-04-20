@@ -1,3 +1,5 @@
+require sqlpgq
+
 statement ok
 CREATE TABLE Customer(cid bigint not null, name string);
 
@@ -38,7 +40,7 @@ FROM (
     LEFT JOIN  Transfers t ON t.from_id = c.cid
     GROUP BY c.rowid
 ) sub) AS BIGINT),
-src.rowid, dst.rowid, t.amount))
+src.rowid, dst.rowid))
 FROM
   Transfers t
   JOIN Customer src ON t.from_id = src.cid
@@ -52,7 +54,7 @@ INSERT INTO src_dest VALUES(0, 4, 0, 3), (0, 4, 1, 2), (0, 4, 1, 0), (0, 4, 0, 2
 
 #csr will be deleted after calling reachability.
 query T
-SELECT cheapest_path(id, false, v_size, src, dst) FROM src_dest;
+SELECT shortest_path(id, false, v_size, src, dst) FROM src_dest;
 ----
 2
 1

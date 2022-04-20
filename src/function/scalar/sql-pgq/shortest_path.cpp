@@ -249,10 +249,10 @@ static unique_ptr<FunctionData> ShortestPathBind(ClientContext &context, ScalarF
 
 void ShortestPathFun::RegisterFunction(BuiltinFunctions &set) {
 	// params ->id, is_variant, v_size, source, target
-	set.AddFunction(ScalarFunction(
-	    "shortest_path",
-	    {LogicalType::INTEGER, LogicalType::BOOLEAN, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT},
-	    LogicalType::UBIGINT, ShortestPathFunction, false, ShortestPathBind));
+//	set.AddFunction(ScalarFunction(
+//	    "shortest_path",
+//	    {LogicalType::INTEGER, LogicalType::BOOLEAN, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT},
+//	    LogicalType::UBIGINT, ShortestPathFunction, false, ShortestPathBind));
 }
 
 } // namespace duckdb
