@@ -26,6 +26,7 @@ public:
 		functions.push_back(GetCsrEdgeFunction());
 		functions.push_back(GetShortestPathFunction());
 		functions.push_back(GetCheapestPathFunction());
+		functions.push_back(GetAnyShortestPathFunction());
 //		AddAliases({"to_json", "json_quote"}, GetToJSONFunction(), functions);
 //		functions.push_back(GetArrayToJSONFunction());
 //		functions.push_back(GetRowToJSONFunction());
@@ -49,7 +50,7 @@ private:
 
 	static CreateScalarFunctionInfo GetShortestPathFunction();
 	static CreateScalarFunctionInfo GetCheapestPathFunction();
-//	static CreateScalarFunctionInfo GetToJSONFunction();
+	static CreateScalarFunctionInfo GetAnyShortestPathFunction();
 //	static CreateScalarFunctionInfo GetArrayToJSONFunction();
 //	static CreateScalarFunctionInfo GetRowToJSONFunction();
 //
