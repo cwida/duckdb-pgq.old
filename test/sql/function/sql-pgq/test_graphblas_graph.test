@@ -16,10 +16,12 @@ INSERT INTO Transfers VALUES
   (607, 1, 4, 250),
   (184, 1, 6, 350),
   (955, 2, 5, 150),
+  (769, 3, 0, 100),
   (769, 3, 2, 50),
   (607, 4, 5, 250),
   (955, 5, 2, 150),
   (769, 6, 2, 50),
+  (769, 6, 3, 50),
   (769, 6, 4, 50);
 
 statement ok
@@ -60,14 +62,19 @@ statement ok
 INSERT INTO src_dest VALUES(0, 7, 0, 5), (0, 7, 1, 5), (0, 7, 1, 6), (0, 7, 1, 1), (0, 7, 1, 0), (0, 7, 3, 0), (0, 7, 0, 2), (0, 7, 0, 6);
 
 #csr will be deleted after calling reachability.
-query T
-SELECT any_shortest_path(id, false, v_size, src, dst) FROM src_dest;
+query III
+SELECT s.src, s.dst, any_shortest_path(s.id, false, v_size, s.src, s.dst) FROM src_dest s
 ----
-[0, 3, 2, 5]
-[1, 4, 5]
-[1, 6]
-[1]
-[]
-[3, 0]
-[0, 3, 2]
-[0, 1, 6]
+0	5	[0, 3, 2, 5]
+1	5	[1, 4, 5]
+1	6	[1, 6]
+1	1	[1]
+1	0	[1, 6, 3, 0]
+3	0	[3, 0]
+0	2	[0, 3, 2]
+0	6	[0, 1, 6]
+a
+#SELECT c.id, c2.id, shortest_path(s.id, false, v_size, s.src, s.dst) FROM src_dest s
+#LEFT JOIN Customer c ON s.src = c.rowid
+#LEFT JOIN Customer p2 ON s.dst = c2.rowid
+#order by c.id, c2.id;

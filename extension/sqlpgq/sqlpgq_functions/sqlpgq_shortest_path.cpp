@@ -119,10 +119,10 @@ static int16_t InitialiseBfs(idx_t curr_batch, idx_t size, int64_t *src_data, co
 				depth_map[lanes] = vector<uint8_t>(input_size, UINT8_MAX);
 				depth_map[lanes][src_entry] = (uint8_t)bfs_depth;
 				if (final_path.find(src_entry) == final_path.end()) {
-					final_path[src_entry] = vector<int64_t>(input_size, -1);
-					final_path[src_entry][src_entry] = -2;
-					intermediate_path[src_entry] = vector<BfsParent>(input_size, BfsParent(-1));
-					intermediate_path[src_entry][src_entry] = BfsParent(src_entry, true);
+					final_path[lanes] = vector<int64_t>(input_size, -1);
+					final_path[lanes][src_entry] = -2;
+					intermediate_path[lanes] = vector<BfsParent>(input_size, BfsParent(-1));
+					intermediate_path[lanes][src_entry] = BfsParent(src_entry, true);
 				}
 				lanes++;
 			}
@@ -210,7 +210,6 @@ static bool BfsWithoutArray(bool exit_early, int32_t id, int64_t input_size, Any
 			visit_next[n] = visit_next[n] | visit[i];
 			for (uint64_t idx = 0; idx < visit_next[n].size(); idx++) {
 				if (intermediate_path.find(idx) != intermediate_path.end()) {
-					std::cout << idx << std::endl;
 					if (visit_next[n][idx] && !intermediate_path[idx][n].is_set) {
 						intermediate_path[idx][n] = BfsParent(i, true);
 					}
@@ -219,14 +218,25 @@ static bool BfsWithoutArray(bool exit_early, int32_t id, int64_t input_size, Any
 		}
 	}
 
-	for (uint64_t path_index = 0; path_index < intermediate_path.size(); path_index++) {
-		for (uint64_t map_index = 0; map_index < intermediate_path[path_index].size(); map_index++) {
-			if (final_path[path_index][map_index] == -1 && intermediate_path[path_index][map_index].is_set) {
-				final_path[path_index][map_index] = intermediate_path[path_index][map_index].index;
-				intermediate_path[path_index][map_index].index = map_index;
+
+
+	for (const auto &element : intermediate_path) {
+		for (uint64_t map_index = 0; map_index < intermediate_path[element.first].size(); map_index++) {
+			if (final_path[element.first][map_index] == -1 && intermediate_path[element.first][map_index].is_set) {
+				final_path[element.first][map_index] = intermediate_path[element.first][map_index].index;
+				intermediate_path[element.first][map_index].index = map_index;
 			}
 		}
 	}
+
+//	for (uint64_t path_index = 0; path_index < intermediate_path.size(); path_index++) {
+//		for (uint64_t map_index = 0; map_index < intermediate_path[element.first].size(); map_index++) {
+	//			if (final_path[element.first][map_index] == -1 && intermediate_path[element.first][map_index].is_set) {
+	//				final_path[element.first][map_index] = intermediate_path[element.first][map_index].index;
+	//				intermediate_path[element.first][map_index].index = map_index;
+	//			}
+	//		}
+//	}
 
 	for (uint64_t bfs_index = 0; bfs_index < visit_next.size(); bfs_index++) {
 		if (!visit_next[bfs_index].any()) {
@@ -469,19 +479,21 @@ static void AnyShortestPathFunction(DataChunk &args, ExpressionState &state, Vec
 				result_validity.SetInvalid(i);
 			}
 
+
 			const auto &target_entry = target_data[target_index];
 			const auto &source_entry = src_data[source_index];
+			const auto &bfs_num = lane_map[source_entry].first;
 			auto index = target_entry;
 			std::vector<int64_t> output_vector;
 			if (index == -2) { // TODO TEST THIS
-				output_vector.push_back(source_entry);
+				output_vector.push_back(src_data[target_index]); //! Source == target in this case
 				break;
 			}
 			while (index != -2) { //! -2 is used to signify source of path, -1 is used to signify no parent
 				output_vector.push_back(index);
-				index = final_path[source_entry][index];
+				index = final_path[bfs_num][index];
 				if (index == -1) {
-					output_vector.clear();
+					result_validity.SetInvalid(i);
 					break;
 				}
 			}
