@@ -115,6 +115,10 @@ static ScalarFunction GetICUFunction(string collation) {
 	                      ICUCollateBind);
 }
 
+std::string ICUExtension::Name() {
+	return "icu";
+}
+
 void ICUExtension::Load(DuckDB &db) {
 	// load the collations
 	Connection con(db);

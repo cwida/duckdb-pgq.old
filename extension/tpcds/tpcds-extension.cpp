@@ -156,6 +156,10 @@ static string PragmaTpcdsQuery(ClientContext &context, const FunctionParameters 
 	return tpcds::DSDGenWrapper::GetQuery(index);
 }
 
+std::string TPCDSExtension::Name() {
+	return "tpcds";
+}
+
 void TPCDSExtension::Load(DuckDB &db) {
 	Connection con(db);
 	con.BeginTransaction();

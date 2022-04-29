@@ -11,4 +11,8 @@ void HTTPFsExtension::Load(DuckDB &db) {
 	fs.RegisterSubSystem(make_unique<S3FileSystem>());
 }
 
+std::string HTTPFsExtension::Name() {
+	return "httpfs";
+}
+
 } // namespace duckdb

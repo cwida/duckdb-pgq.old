@@ -109,6 +109,10 @@ static void PragmaVisualizeDiffProfilingOutput(ClientContext &context, const Fun
 	WriteToFile(file_name, ToHTML(context, first_json_path, second_json_path));
 }
 
+std::string VisualizerExtension::Name() {
+	return "visualizer";
+}
+
 void VisualizerExtension::Load(DuckDB &db) {
 	Connection con(db);
 	con.BeginTransaction();

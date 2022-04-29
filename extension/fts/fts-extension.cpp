@@ -47,6 +47,10 @@ static void stem_function(DataChunk &args, ExpressionState &state, Vector &resul
 	    });
 }
 
+std::string FTSExtension::Name() {
+	return "fts";
+}
+
 void FTSExtension::Load(DuckDB &db) {
 	ScalarFunction stem_func("stem", {LogicalType::VARCHAR, LogicalType::VARCHAR}, LogicalType::VARCHAR, stem_function);
 	CreateScalarFunctionInfo stem_info(stem_func);
