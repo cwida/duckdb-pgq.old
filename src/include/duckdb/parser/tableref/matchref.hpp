@@ -28,6 +28,7 @@ public:
 	string schema;
 
 	string pg_name;
+	MatchDistanceType distance_type;
 	vector<unique_ptr<GraphElementPattern>> param_list;
 	// vector<string> columns;
 	vector<unique_ptr<ParsedExpression>> columns;

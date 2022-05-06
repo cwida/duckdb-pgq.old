@@ -1,8 +1,9 @@
 %type <list> ColumnList 
 %type <list> ColumnsClauseOptional
 %type <list> PathPatternList
+%type <list> DistancePathPatternList
 %type <str> PathPatternNameOptional 
-%type <node> ElementPattern 
+%type <node> ElementPattern
 %type <list> PathConcatenation
 %type <node> VertexPattern
 %type <node> VertexPatternFiller

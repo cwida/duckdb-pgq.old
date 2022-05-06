@@ -81,7 +81,18 @@ unique_ptr<TableRef> Transformer::TransformMatch(duckdb_libpgquery::PGMatchPatte
 
 	result->name = qname.name;
 	result->pg_name = string(root->pg_name);
+	switch (root->distance_type) {
 
+	case duckdb_libpgquery::PG_DISTANCE_TYPE_SHORTEST:
+		result->distance_type = MatchDistanceType::SHORTEST;
+		break;
+	case duckdb_libpgquery::PG_DISTANCE_TYPE_CHEAPEST:
+		result->distance_type = MatchDistanceType::CHEAPEST;
+
+		break;
+	default:
+		throw NotImplementedException("Unrecognized distance type. Should either be SHORTEST or CHEAPEST");
+	}
 	for (auto node = root->pattern->head; node != nullptr; node = node->next) {
 		// list of second member
 		// root->pattern->head->data.ptr_value

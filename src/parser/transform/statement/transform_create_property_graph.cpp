@@ -18,7 +18,7 @@ namespace duckdb {
 // }
 
 unique_ptr<PropertyGraphTable>
-Transformer::TranformPropertyGraphTable(duckdb_libpgquery::PGPropertyGraphTable *table,
+Transformer::TransformPropertyGraphTable(duckdb_libpgquery::PGPropertyGraphTable *table,
                                         unordered_map<string, PropertyGraphTable *> &label_map_1) {
 
 	vector<string> keys, labels, source_key, destination_key;
@@ -108,7 +108,7 @@ unique_ptr<CreateStatement> Transformer::TransformCreatePropertyGraph(duckdb_lib
 		case duckdb_libpgquery::T_PGPropertyGraphTable: {
 			auto graph_table = reinterpret_cast<duckdb_libpgquery::PGPropertyGraphTable *>(c->data.ptr_value);
 			auto qname = TransformQualifiedName(graph_table->name);
-			auto pg_table = TranformPropertyGraphTable(graph_table, label_map_1);
+			auto pg_table = TransformPropertyGraphTable(graph_table, label_map_1);
 			info->vertex_tables.push_back(move(pg_table));
 			break;
 		}
@@ -126,7 +126,7 @@ unique_ptr<CreateStatement> Transformer::TransformCreatePropertyGraph(duckdb_lib
 			auto graph_table = reinterpret_cast<duckdb_libpgquery::PGPropertyGraphTable *>(c->data.ptr_value);
 			// (void)graph_table;
 			auto qname = TransformQualifiedName(graph_table->name);
-			auto pg_table = TranformPropertyGraphTable(graph_table, label_map_1);
+			auto pg_table = TransformPropertyGraphTable(graph_table, label_map_1);
 			info->edge_tables.push_back(move(pg_table));
 			break;
 		}

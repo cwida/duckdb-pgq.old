@@ -4,28 +4,59 @@
 // opt_target_list ColumnList
 //ident is pg name 
 GraphTableStmt:                 
-	'(' IDENT ',' MATCH 
-    PathPatternList
+	'(' IDENT ',' MATCH SHORTEST PathPatternList
 	where_clause
     ColumnsClauseOptional
      ')' qualified_name
     {
         PGMatchPattern *n = makeNode(PGMatchPattern);
         n->pg_name = $2;
-        n->pattern = $5;
-        n->where_clause = $6;
-        n->columns = $7;
-        
-        n->name = $9;
-        // n->pg_name = $6;
-        // n->pattern = $9;
-        // n->where_clause = $10;
-        // n->columns = $11;
-        
-        // n->name = $13;
+        n->distance_type = PG_DISTANCE_TYPE_SHORTEST;
+        n->pattern = $6;
+        n->where_clause = $7;
+        n->columns = $8;
+        n->name = $10;
         $$ = (PGNode *) n;
     }
-	;
+	|
+	'(' IDENT ',' MATCH CHEAPEST PathPatternList
+        	where_clause
+            ColumnsClauseOptional
+             ')' qualified_name
+            {
+                PGMatchPattern *n = makeNode(PGMatchPattern);
+                n->pg_name = $2;
+                n->distance_type = PG_DISTANCE_TYPE_CHEAPEST;
+                n->pattern = $6;
+                n->where_clause = $7;
+                n->columns = $8;
+                n->name = $10;
+                $$ = (PGNode *) n;
+            }
+            |
+	'(' IDENT ',' MATCH PathPatternList
+		where_clause
+		ColumnsClauseOptional
+		 ')' qualified_name
+		{
+		    PGMatchPattern *n = makeNode(PGMatchPattern);
+		    n->pg_name = $2;
+		    n->distance_type = PG_DISTANCE_TYPE_SHORTEST;
+		    n->pattern = $5;
+		    n->where_clause = $6;
+		    n->columns = $7;
+		    n->name = $9;
+		    $$ = (PGNode *) n;
+		}
+;
+
+
+//OptionalShortestOrCheapest:
+//	SHORTEST { $$ = PG_DISTANCE_TYPE_SHORTEST; }
+//	| CHEAPEST { $$ = PG_DISTANCE_TYPE_CHEAPEST; }
+//	|  /* EMPTY */ { $$ = NULL; }
+//	;
+
 
 // Columns optional
 ColumnsClauseOptional:
@@ -44,6 +75,26 @@ ColumnList:
                 }
             ;
 
+//DistancePathPatternList:
+//	SHORTEST PathPatternList {
+//		PGDistancePattern *n = makeNode(PGDistancePattern);
+//		n->distance_type = PG_DISTANCE_TYPE_SHORTEST;
+//		n->pattern = $2;
+//		$$ = (PGNode *) n;
+//	}
+//	| CHEAPEST PathPatternList {
+//		PGDistancePattern *n = makeNode(PGDistancePattern);
+//		n->distance_type = PG_DISTANCE_TYPE_CHEAPEST;
+//		n->pattern = $2;
+//		$$ = (PGNode *) n;
+//	}
+//	| PathPatternList {
+//		PGDistancePattern *n = makeNode(PGDistancePattern);
+//		n->distance_type = PG_DISTANCE_TYPE_SHORTEST;
+//		n->pattern = $1;
+//		$$ = (PGNode *) n;
+//}
+
 PathPatternList:
 	PathPatternNameOptional PathConcatenation                   
     { 
@@ -53,7 +104,7 @@ PathPatternList:
     { 
         $$ = lappend($1, list_make1(list_make2($3,$4)));
     }
-	;
+;
 
 // Identifier is a Path Name.
 PathPatternNameOptional:
@@ -79,7 +130,6 @@ ElementPatternFillerOptional:
                 n->alias_name = $1;
                 n->label_name = $2;
                 $$ = (PGNode *) n;
-                
             }
 VertexPatternFiller: 
             IDENT IsLabelExpressionOptional
@@ -143,7 +193,7 @@ EdgePattern:
             // | 
             // AbbreviatedEdgePattern                                
             // {
-                //how to handle this for conversion in tranform
+	    // how to handle this for conversion in tranform
             //     $$ = (PGNode *) makeString($1);
             // }
         ;

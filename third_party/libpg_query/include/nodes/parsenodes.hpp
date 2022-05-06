@@ -2067,15 +2067,28 @@ typedef struct PGPropertyGraphTable {
 	// PGConstraint *destination;
 } PGPropertyGraphTable;
 
+typedef enum PGDistanceType {
+	PG_DISTANCE_TYPE_SHORTEST,
+	PG_DISTANCE_TYPE_CHEAPEST
+} PGDistanceType;
+
+//typedef struct PGDistancePattern {
+//	PGNodeTag type;
+//	PGList *pattern;
+//	PGDistanceType distance_type;
+//} PGDistancePattern;
+
 typedef struct PGMatchPattern {
 	PGNodeTag type;
 	PGRangeVar *name;
 	char *pg_name;
+	PGDistanceType distance_type;
 	PGList *pattern;
 	PGNode *where_clause;
 	PGList *columns;
-
 } PGMatchPattern;
+
+
 
 typedef enum PGMatchDirection {
 	PG_MATCH_DIR_LEFT,

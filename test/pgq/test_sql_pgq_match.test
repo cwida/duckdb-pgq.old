@@ -22,8 +22,8 @@ INSERT Into account VALUES (10), (20), (30);
 statement ok
 CREATE TABLE owns (OID INTEGER PRIMARY KEY, CID INTEGER, AID INTEGER, Since DATE);
 
-# statement ok
-# INSERT Into owns VALUES (110, 100, 10, '2019-01-01'), (220, 200, 20, '2019-02-02'), (330, 300, 30, '2019-03-03');
+statement ok
+INSERT Into owns VALUES (110, 100, 10, '2019-01-01'), (220, 200, 20, '2019-02-02'), (330, 300, 30, '2019-03-03');
 
 statement ok
 CREATE TABLE transfers (TID INTEGER, FROM_ID INTEGER, TO_ID INTEGER, Transfer_Date DATE, Amount INTEGER);
@@ -44,79 +44,79 @@ VERTEX TABLES ( account KEY ( AID ) LABEL acct, customer KEY ( CID ) LABEL custo
 EDGE TABLES ( transfers KEY ( from_id ) SOURCE KEY ( from_id ) REFERENCES account DESTINATION KEY ( to_id ) REFERENCES account LABEL transfers )
 
 
-# statement ok
-# CREATE PROPERTY GRAPH aml_abbr 
-# VERTEX TABLES ( a KEY ( AID ) LABEL account, c KEY ( CID ) LABEL customer )
-# EDGE TABLES ( t KEY ( from_id ) SOURCE KEY ( from_id ) REFERENCES a DESTINATION KEY ( to_id ) REFERENCES a LABEL transfer )
+statement ok
+CREATE PROPERTY GRAPH aml_abbr
+VERTEX TABLES ( account KEY ( AID ) LABEL account, customer KEY ( CID ) LABEL customer )
+EDGE TABLES ( transfers KEY ( from_id ) SOURCE KEY ( from_id ) REFERENCES account DESTINATION KEY ( to_id ) REFERENCES account LABEL transfer )
 
 
 
 
-# statement ok
-# SELECT c1id, c2id 
-# FROM
-# (SELECT c1.cid AS c1id, c2.cid AS c2id 
-# FROM customer c1, customer c2, transfers t1
-# WHERE c1.cid = t1.from_id
-#     AND c2.cid = t1.to_id) gt
+statement ok
+SELECT c1id, c2id
+FROM
+(SELECT c1.cid AS c1id, c2.cid AS c2id
+FROM customer c1, customer c2, transfers t1
+WHERE c1.cid = t1.from_id
+ AND c2.cid = t1.to_id) gt
 
-# # and, a_expr, column_ref, 
+# and, a_expr, column_ref,
 
-# statement ok 
-# select c1id, c2id 
-# from GRAPH_TABLE (aml, MATCH (c1 IS CUSTOMER)-[t1 IS TRANSFERS]->(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
-# # # -[IS transfers]->(c2 IS customer)-[IS transfers]-(c3 IS customer)-[IS transfers]-(c1) COLUMNS (c1.cid AS c1id, c2.cid AS c2id, c3.cid AS c3id)
+statement ok
+select c1id, c2id
+from GRAPH_TABLE (aml_complete, MATCH (c1 IS CUSTOMER)-[t1 IS TRANSFERS]->(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
+# # -[IS transfers]->(c2 IS customer)-[IS transfers]-(c3 IS customer)-[IS transfers]-(c1) COLUMNS (c1.cid AS c1id, c2.cid AS c2id, c3.cid AS c3id)
 
-# statement ok 
-# select c1id, c2id 
-# from GRAPH_TABLE (aml, MATCH (c1 IS CUSTOMER)<-[t1 IS TRANSFERS]-(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
+statement ok
+select c1id, c2id
+from GRAPH_TABLE (aml_complete, MATCH (c1 IS CUSTOMER)<-[t1 IS TRANSFERS]-(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
 
-# statement ok 
-# select c1id, c2id 
-# from GRAPH_TABLE (aml, MATCH (c1 IS CUSTOMER)-[t1 IS TRANSFERS]-(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
+statement ok
+select c1id, c2id
+from GRAPH_TABLE (aml_complete, MATCH (c1 IS CUSTOMER)-[t1 IS TRANSFERS]-(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
 
-# statement error
-# select c1id, c2id 
-# from GRAPH_TABLE (aml, MATCH (c1 IS CUSTOMER)<-[t1 IS TRANSFERS]->(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
-
-
-# statement error 
-# select c1id, c2id 
-# from GRAPH_TABLE (aml, MATCH (c1 IS CUSTOMER)-[t1 IS TRANSFERS]->(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
-
-# statement error
-# select c1id, c2id 
-# from GRAPH_TABLE (aml, MATCH (C1 IS CUSTOMER)-[c1 IS TRANSFERS]->(C2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt1
-
-# statement ok
-# select c1id
-# from GRAPH_TABLE (aml, MATCH (C1 IS CUSTOMER)-[T1 IS TRANSFERS]->(C1 IS CUSTOMER) COLUMNS (c1.cid AS c1id)) gt1
-
-# statement ok
-# select c1id
-# from GRAPH_TABLE (aml, MATCH (C1 IS CUSTOMER) COLUMNS (c1.cid AS c1id)) gt1
-
-# statement ok 
-# select c1id, c2id
-# from GRAPH_TABLE (aml, MATCH (c1 IS CUSTOMER)-[t1 IS TRANSFERS]->(c2 IS CUSTOMER)-[t2 IS TRANSFERS]-(c3 IS CUSTOMER)-[t3 IS TRANSFERS]->(c1 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id, c3.cid AS c3id)) gt3 
+statement error
+select c1id, c2id
+from GRAPH_TABLE (aml_complete, MATCH (c1 IS CUSTOMER)<-[t1 IS TRANSFERS]->(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
 
 
-# query II
-# select c1id, c2id 
-# from GRAPH_TABLE (aml, MATCH (c1 IS CUSTOMER)-[t1 IS TRANSFERS]->(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
-# ORDER by c1id, c2id;
-# ----
-# 10	20
-# 10	30
-# 30	20
+statement error
+select c1id, c2id
+from GRAPH_TABLE (aml, MATCH (c1 IS CUSTOMER)-[t1 IS TRANSFERS]->(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
 
-# query I
-# select c1id
-# from GRAPH_TABLE (aml, MATCH (C1 IS CUSTOMER) COLUMNS (c1.cid AS c1id)) gt1
-# ----
-# 10
-# 20
-# 30
+statement error
+select c1id, c2id
+from GRAPH_TABLE (aml, MATCH (C1 IS CUSTOMER)-[c1 IS TRANSFERS]->(C2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt1
+
+statement ok
+select c1id
+from GRAPH_TABLE (aml_complete, MATCH (C1 IS CUSTOMER)-[T1 IS TRANSFERS]->(C1 IS CUSTOMER) COLUMNS (c1.cid AS c1id)) gt1
+
+statement ok
+select c1id
+from GRAPH_TABLE (aml_complete, MATCH (C1 IS CUSTOMER) COLUMNS (c1.cid AS c1id)) gt1
+
+statement ok
+select c1id, c2id
+from GRAPH_TABLE (aml_complete, MATCH (c1 IS CUSTOMER)-[t1 IS TRANSFERS]->(c2 IS CUSTOMER)-[t2 IS TRANSFERS]-(c3 IS CUSTOMER)-[t3 IS TRANSFERS]->(c1 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id, c3.cid AS c3id)) gt3
+
+
+query II
+select c1id, c2id
+from GRAPH_TABLE (aml_complete, MATCH (c1 IS CUSTOMER)-[t1 IS TRANSFERS]->(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
+ORDER by c1id, c2id;
+----
+10	20
+10	30
+30	20
+
+query I
+select c1id
+from GRAPH_TABLE (aml_complete, MATCH (C1 IS CUSTOMER) COLUMNS (c1.cid AS c1id)) gt1
+----
+10
+20
+30
 
 statement ok
 SELECT c1.cid as c1id, c2.cid as c2id, c3.cid as c3id
@@ -129,46 +129,46 @@ WHERE c1.cid = t1.from_id
     AND t3.to_id = c1.cid
 
 
-# statement error
-# select c1id, c2id, c3id 
-# from GRAPH_TABLE (aml, MATCH (c1 IS customer)-[IS transfers]->(c2 IS customer)-[IS transfers]->(c3 IS customer)-[IS transfers]->(c1) COLUMNS (c1.cid AS c1id, c2.cid AS c2id, c3.cid AS c3id)
-# ) gt
+statement error
+select c1id, c2id, c3id
+from GRAPH_TABLE (aml, MATCH (c1 IS customer)-[IS transfers]->(c2 IS customer)-[IS transfers]->(c3 IS customer)-[IS transfers]->(c1) COLUMNS (c1.cid AS c1id, c2.cid AS c2id, c3.cid AS c3id)
+) gt
 
-# statement ok
-# select c1id, c2id, c3id 
-# from GRAPH_TABLE (aml, MATCH -[IS customer]-> COLUMNS (c1.cid AS c1id, c2.cid AS c2id, c3.cid AS c3id)
-# ) gt
+statement ok
+select c1id, c2id, c3id
+from GRAPH_TABLE (aml_complete, MATCH -[IS customer]-> COLUMNS (c1.cid AS c1id, c2.cid AS c2id, c3.cid AS c3id)
+) gt
 
-# statement ok
-# select c1id, c2id, c3id 
-# from GRAPH_TABLE (aml, MATCH (c1 IS customer)-(c2) COLUMNS (c1.cid AS c1id, c2.cid AS c2id, c3.cid AS c3id)
-# ) gt
+statement ok
+select c1id, c2id, c3id
+from GRAPH_TABLE (aml_complete, MATCH (c1 IS customer)-(c2) COLUMNS (c1.cid AS c1id, c2.cid AS c2id, c3.cid AS c3id)
+) gt
 
-# statement error
-# select c1id, c2id, c3id 
-# from GRAPH_TABLE (aml, MATCH (c1 IS customer)-[IS transfers]->(c2) COLUMNS (c1.cid AS c1id, c2.cid AS c2id, c3.cid AS c3id)
-# ) gt
+statement error
+select c1id, c2id, c3id
+from GRAPH_TABLE (aml, MATCH (c1 IS customer)-[IS transfers]->(c2) COLUMNS (c1.cid AS c1id, c2.cid AS c2id, c3.cid AS c3id)
+) gt
 
-# statement ok
-# select c1id, c2id, c3id 
-# from GRAPH_TABLE (aml, 
-# MATCH (c1 IS customer)-[IS transfers]->(c2 IS customer)-[t2 IS transfers]->(c3 IS customer)-[t3 IS transfers]->(c1) 
-# COLUMNS (c1.cid AS c1id, c2.cid AS c2id, c3.cid AS c3id) gt
+statement ok
+select c1id, c2id, c3id
+from GRAPH_TABLE (aml_complete,
+MATCH (c1 IS customer)-[IS transfers]->(c2 IS customer)-[t2 IS transfers]->(c3 IS customer)-[t3 IS transfers]->(c1)
+COLUMNS (c1.cid AS c1id, c2.cid AS c2id, c3.cid AS c3id) gt
 
-# from_clause
-# //columns for join you get from property graph source and dest key in edge tables
-# put temp variables for edge, vertices, 
-# this moves onto binder
-# transformed to 
+#from_clause
+#//columns for join you get from property graph source and dest key in edge tables
+#put temp variables for edge, vertices,
+#this moves onto binder
+#transformed to
 
-# Create AST of this query
-# select c1id, c2id, c3id 
-# from 
-# (select c1.cid as c1id, c2.cid as c2id, c3.cid as c3id
-# from customer c1
-# JOIN transfers t1 ON c1.cid = t1.from_id
-# JOIN customer c2 ON c2.cid = t1.to_id
-# JOIN transfers t2 ON c2.cid = t2.from_id
-# JOIN customer c3 ON c3.cid = t2.to_id
-# JOIN transfers t3 ON t3.from_id = c3.cid AND t3.to_id = c1.cid) gt
+#Create AST of this query
+#select c1id, c2id, c3id
+#from
+#(select c1.cid as c1id, c2.cid as c2id, c3.cid as c3id
+#from customer c1
+#JOIN transfers t1 ON c1.cid = t1.from_id
+#JOIN customer c2 ON c2.cid = t1.to_id
+#JOIN transfers t2 ON c2.cid = t2.from_id
+#JOIN customer c3 ON c3.cid = t2.to_id
+#JOIN transfers t3 ON t3.from_id = c3.cid AND t3.to_id = c1.cid) gt
 

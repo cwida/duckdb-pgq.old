@@ -822,6 +822,8 @@ std::string Transformer::NodetypeToString(duckdb_libpgquery::PGNodeTag type) { /
 		return "T_PGGraphVariablePattern";
 	case duckdb_libpgquery::T_PGGraphElementPattern:
 		return "T_PGGraphElementPattern";
+	case duckdb_libpgquery::T_PGDistancePattern:
+		return "T_PGDistancePattern";
 	default:
 		return "(UNKNOWN)";
 	}

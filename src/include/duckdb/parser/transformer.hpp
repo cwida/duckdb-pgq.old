@@ -12,15 +12,14 @@
 #include "duckdb/common/enums/expression_type.hpp"
 #include "duckdb/common/types.hpp"
 #include "duckdb/common/unordered_map.hpp"
+#include "duckdb/parser/graph_element_pattern.hpp"
+#include "duckdb/parser/group_by_node.hpp"
+#include "duckdb/parser/parsed_data/create_info.hpp"
+#include "duckdb/parser/property_graph_table.hpp"
 #include "duckdb/parser/qualified_name.hpp"
 #include "duckdb/parser/tokens.hpp"
-#include "duckdb/parser/parsed_data/create_info.hpp"
-#include "duckdb/parser/group_by_node.hpp"
-#include "duckdb/parser/property_graph_table.hpp"
-#include "duckdb/parser/graph_element_pattern.hpp"
-
-#include "pg_definitions.hpp"
 #include "nodes/parsenodes.hpp"
+#include "pg_definitions.hpp"
 
 namespace duckdb {
 
@@ -203,8 +202,9 @@ private:
 	void TransformCTE(duckdb_libpgquery::PGWithClause *de_with_clause, QueryNode &select);
 	unique_ptr<SelectStatement> TransformRecursiveCTE(duckdb_libpgquery::PGCommonTableExpr *node,
 	                                                  CommonTableExpressionInfo &info);
-	unique_ptr<PropertyGraphTable> TranformPropertyGraphTable(duckdb_libpgquery::PGPropertyGraphTable *table,
-	                                                          unordered_map<string, PropertyGraphTable *> &label_map_1);
+	unique_ptr<PropertyGraphTable>
+	TransformPropertyGraphTable(duckdb_libpgquery::PGPropertyGraphTable *table,
+	                            unordered_map<string, PropertyGraphTable *> &label_map_1);
 	unique_ptr<GraphElementPattern> TransformElementPattern(duckdb_libpgquery::PGGraphElementPattern *element_pattern);
 	// Operator String to ExpressionType (e.g. + => OPERATOR_ADD)
 	ExpressionType OperatorToExpressionType(const string &op);

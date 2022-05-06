@@ -22,7 +22,7 @@
 	char				chr;
 	bool				boolean;
 	PGJoinType			jtype;
-	PGDropBehavior		dbehavior;
+	PGDropBehavior			dbehavior;
 	PGOnCommitAction		oncommit;
 	PGOnCreateConflict		oncreateconflict;
 	PGList				*list;
@@ -31,8 +31,8 @@
 	PGObjectType			objtype;
 	PGTypeName			*typnam;
 	PGObjectWithArgs		*objwithargs;
-	PGDefElem				*defelt;
-	PGSortBy				*sortby;
+	PGDefElem			*defelt;
+	PGSortBy			*sortby;
 	PGWindowDef			*windef;
 	PGJoinExpr			*jexpr;
 	PGIndexElem			*ielem;
@@ -41,18 +41,18 @@
 	PGIntoClause			*into;
 	PGWithClause			*with;
 	PGInferClause			*infer;
-	PGOnConflictClause	*onconflict;
+	PGOnConflictClause		*onconflict;
 	PGAIndices			*aind;
 	PGResTarget			*target;
 	PGInsertStmt			*istmt;
 	PGVariableSetStmt		*vsetstmt;
-	PGOverridingKind       override;
-	PGSortByDir            sortorder;
-	PGSortByNulls          nullorder;
-	PGLockClauseStrength lockstrength;
-	PGLockWaitPolicy lockwaitpolicy;
-	PGSubLinkType subquerytype;
-	PGViewCheckOption viewcheckoption;
+	PGOverridingKind       		override;
+	PGSortByDir            		sortorder;
+	PGSortByNulls          		nullorder;
+	PGLockClauseStrength 		lockstrength;
+	PGLockWaitPolicy 		lockwaitpolicy;
+	PGSubLinkType 			subquerytype;
+	PGViewCheckOption 		viewcheckoption;
 }
 
 %type <node> stmt
