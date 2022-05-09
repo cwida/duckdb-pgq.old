@@ -22,6 +22,7 @@ public:
 //		AddAliases({"json_extract_string", "json_extract_path_text", "->>"}, GetExtractStringFunction(), functions);
 
 		// Create functions
+		functions.push_back(GetCsrFunction());
 		functions.push_back(GetCsrVertexFunction());
 		functions.push_back(GetCsrEdgeFunction());
 		functions.push_back(GetShortestPathFunction());
@@ -45,6 +46,7 @@ public:
 	}
 
 private:
+	static CreateScalarFunctionInfo GetCsrFunction();
 	static CreateScalarFunctionInfo GetCsrVertexFunction();
 	static CreateScalarFunctionInfo GetCsrEdgeFunction();
 

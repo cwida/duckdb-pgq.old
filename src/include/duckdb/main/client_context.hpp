@@ -47,27 +47,18 @@ public:
 	Csr() {
 	}
 
-	// vector<unique_ptr<std::atomic<int>>> v;
 	std::atomic<int64_t> *v;
 
 	std::atomic<int64_t> *v_weight;
 
-	bool v_index_modified = false;
-	// std::atomic<int32_t>* e;
+	bool v_index_modified = false; //! Check if this is required
 	vector<int64_t> e;
 
 	vector<int64_t> w;
-	// int x;
-	// std::atomic<int> v;
-
-	// unique_ptr<std::atomic<int>> v;
-	// std::vector<std::unique_ptr<std::atomic<int>>> examp;
-	// vector<atomicwrapper<int>> v;
-	// vector<std::atomic<int>> e;
-	// csr() = delete;
-	// csr(const csr&) = delete;
-	// csr(csr&&) = default;
+	vector<double_t> w_double;
 };
+
+
 //! The ClientContext holds information relevant to the current client session
 //! during execution
 class ClientContext : public std::enable_shared_from_this<ClientContext> {
