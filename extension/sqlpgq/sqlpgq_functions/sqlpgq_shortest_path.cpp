@@ -315,7 +315,7 @@ static void ShortestPathFunction(DataChunk &args, ExpressionState &state, Vector
 	log_file << "Args size: " << std::to_string(args.size()) << endl;
 	outer_profiler.Start();
 
-	info.context.init_m = true;
+//	info.context.init_m = true;
 
 	while (result_size < args.size()) {
 		vector<std::bitset<LANE_LIMIT>> seen(input_size);
@@ -418,7 +418,7 @@ static void AnyShortestPathFunction(DataChunk &args, ExpressionState &state, Vec
 	result.SetVectorType(VectorType::FLAT_VECTOR);
 	auto result_data = FlatVector::GetData<list_entry_t>(result);
 	auto &result_validity = FlatVector::Validity(result);
-	info.context.init_m = true;
+//	info.context.init_m = true;
 	idx_t total_len = 0;
 
 	while (result_size < args.size()) {

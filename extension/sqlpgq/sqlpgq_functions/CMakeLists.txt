@@ -4,6 +4,7 @@ add_library_unity(
     sqlpgq_csr_creation.cpp
     sqlpgq_shortest_path.cpp
     sqlpgq_cheapest_path.cpp
+    sqlpgq_reachability.cpp
 )
 
 set(ALL_OBJECT_FILES

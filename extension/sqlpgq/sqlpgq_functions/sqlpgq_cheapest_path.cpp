@@ -48,7 +48,9 @@ static void CheapestPathFunction(DataChunk &args, ExpressionState &state, Vector
 
 	auto &func_expr = (BoundFunctionExpression &)state.expr;
 	auto &info = (CheapestPathBindData &)*func_expr.bind_info;
-	D_ASSERT(info.context.initialized_w);
+
+	// TODO Add check if the csr was initialized
+//	D_ASSERT(info.context.initialized_w);
 	int32_t id = args.data[0].GetValue(0).GetValue<int32_t>();
 	int64_t input_size = args.data[1].GetValue(0).GetValue<int64_t>();
 
@@ -68,7 +70,7 @@ static void CheapestPathFunction(DataChunk &args, ExpressionState &state, Vector
 	auto result_data = FlatVector::GetData<int64_t>(result);
 	auto &result_validity = FlatVector::Validity(result);
 
-	info.context.init_m = true;
+//	info.context.init_m = true;
 	unordered_map<int64_t, vector<int64_t>> modified;
 	unordered_map<int64_t, vector<int64_t>> dists;
 

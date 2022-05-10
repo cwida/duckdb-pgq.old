@@ -13,6 +13,7 @@ set(SQLPGQ_EXTENSION_FILES
     sqlpgq_functions/sqlpgq_cheapest_path.cpp
     sqlpgq_functions/sqlpgq_shortest_path.cpp
     sqlpgq_functions/sqlpgq_csr_creation.cpp
+    sqlpgq_functions/sqlpgq_reachability.cpp
 #        ${VECTORCLASS_OBJECT_FILES}
     )
 

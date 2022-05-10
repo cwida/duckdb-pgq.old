@@ -13,23 +13,23 @@
 
 namespace duckdb {
 
-#define LANE_LIMIT         1024
-#define VISIT_SIZE_DIVISOR 2
+//#define LANE_LIMIT         1024
+//#define VISIT_SIZE_DIVISOR 2
 
-struct CreateCsrFun {
-	static void RegisterFunction(BuiltinFunctions &set);
-};
-
-struct MsBfsFun {
-	static void RegisterFunction(BuiltinFunctions &set);
-};
-
-struct ShortestPathFun {
-	static void RegisterFunction(BuiltinFunctions &set);
-};
-
-struct CheapestPathFun {
-	static void RegisterFunction(BuiltinFunctions &set);
-};
+//struct CreateCsrFun {
+//	static void RegisterFunction(BuiltinFunctions &set);
+//};
+//
+//struct MsBfsFun {
+//	static void RegisterFunction(BuiltinFunctions &set);
+//};
+//
+//struct ShortestPathFun {
+//	static void RegisterFunction(BuiltinFunctions &set);
+//};
+//
+//struct CheapestPathFun {
+//	static void RegisterFunction(BuiltinFunctions &set);
+//};
 
 } // namespace duckdb

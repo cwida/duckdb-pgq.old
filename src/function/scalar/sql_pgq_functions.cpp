@@ -2,11 +2,11 @@
 
 namespace duckdb {
 
-void BuiltinFunctions::RegisterSqlPgqFunctions() {
-	Register<CreateCsrFun>();
-	Register<MsBfsFun>();
-	Register<ShortestPathFun>();
-	Register<CheapestPathFun>();
-}
+//void BuiltinFunctions::RegisterSqlPgqFunctions() {
+//	Register<CreateCsrFun>();
+//	Register<MsBfsFun>();
+//	Register<ShortestPathFun>();
+//	Register<CheapestPathFun>();
+//}
 
 } // namespace duckdb

@@ -110,8 +110,8 @@ INSERT INTO Transfers_float VALUES
   (127, 101, 406, 150.0),
   (126, 807, 101, 100.0);
 
-statement ok
-SELECT CREATE_CSR(
+query I
+SELECT DISTINCT CREATE_CSR(
 0,
 v.vcount,
 sub.dense_id,
@@ -125,12 +125,40 @@ FROM (
     FROM Customer c
     LEFT JOIN  Transfers_float t ON t.from_id = c.cid
     GROUP BY c.rowid
-) sub, (SELECT count(c.cid) as vcount FROM Customer c) v, (SELECT src.rowid as src, dst.rowid as dst, t.amount as weight
-                                                            FROM Transfers_float t
-                                                            JOIN Customer src ON t.from_id = src.cid
-                                                            JOIN Customer dst ON t.to_id = dst.cid) r
-                                                            WHERE r.src = sub.dense_id;
+) sub,
+    (SELECT count(c.cid) as vcount FROM Customer c) v,
+    (SELECT src.rowid as src, dst.rowid as dst, t.amount as weight
+        FROM Transfers_float t
+        JOIN Customer src ON t.from_id = src.cid
+        JOIN Customer dst ON t.to_id = dst.cid) r
+    WHERE r.src = sub.dense_id;
+----
+{'id': 0, 'vertices': 7, 'edges': 10}
 
+query I
+SELECT DISTINCT CREATE_CSR(
+1,
+v.vcount,
+sub.dense_id,
+sub.cnt,
+r.src,
+r.dst,
+r.weight
+) AS numEdges
+FROM (
+    SELECT c.rowid as dense_id, count(t.from_id) as cnt
+    FROM Customer c
+    LEFT JOIN  Transfers_float t ON t.from_id = c.cid
+    GROUP BY c.rowid
+) sub,
+    (SELECT count(c.cid) as vcount FROM Customer c) v,
+    (SELECT src.rowid as src, dst.rowid as dst, t.amount as weight
+        FROM Transfers_float t
+        JOIN Customer src ON t.from_id = src.cid
+        JOIN Customer dst ON t.to_id = dst.cid) r
+    WHERE r.src = sub.dense_id;
+----
+{'id': 1, 'vertices': 7, 'edges': 10}
 
 #SELECT
 #0 as id,

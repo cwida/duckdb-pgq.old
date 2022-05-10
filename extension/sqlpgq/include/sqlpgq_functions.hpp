@@ -12,6 +12,10 @@
 
 namespace duckdb {
 
+#define LANE_LIMIT         1024
+#define VISIT_SIZE_DIVISOR 2
+
+
 class SQLPGQFunctions {
 public:
 	static vector<CreateScalarFunctionInfo> GetFunctions() {
@@ -28,6 +32,7 @@ public:
 		functions.push_back(GetShortestPathFunction());
 		functions.push_back(GetCheapestPathFunction());
 		functions.push_back(GetAnyShortestPathFunction());
+		functions.push_back(GetReachabilityFunction());
 //		AddAliases({"to_json", "json_quote"}, GetToJSONFunction(), functions);
 //		functions.push_back(GetArrayToJSONFunction());
 //		functions.push_back(GetRowToJSONFunction());
@@ -53,7 +58,7 @@ private:
 	static CreateScalarFunctionInfo GetShortestPathFunction();
 	static CreateScalarFunctionInfo GetCheapestPathFunction();
 	static CreateScalarFunctionInfo GetAnyShortestPathFunction();
-//	static CreateScalarFunctionInfo GetArrayToJSONFunction();
+	static CreateScalarFunctionInfo GetReachabilityFunction();
 //	static CreateScalarFunctionInfo GetRowToJSONFunction();
 //
 //	static CreateScalarFunctionInfo GetStructureFunction();
