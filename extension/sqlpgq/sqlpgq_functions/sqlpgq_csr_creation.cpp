@@ -15,8 +15,8 @@ struct CsrBindData : public FunctionData {
 	ClientContext &context;
 	int32_t id;
 	bool weighted = false;
-	int64_t num_of_vertices = 0;
-	int64_t num_of_edges = 0;
+//	int64_t num_of_vertices = 0;
+//	int64_t num_of_edges = 0;
 
 	CsrBindData(ClientContext &context, int32_t id, bool weighted) : context(context), id(id), weighted(weighted) {
 	}
@@ -48,15 +48,15 @@ static void CsrInitializeVertex(ClientContext &context, int32_t id, int64_t v_si
 	} catch (std::bad_alloc const &) {
 		throw Exception("Unable to initialise vector of size for csr vertex table representation");
 	}
-//	context.initialized_v = true;
+	context.initialized_v = true;
 	return;
 }
 
 static void CsrInitializeEdge(ClientContext &context, int32_t id, int64_t v_size, int64_t e_size) {
 	lock_guard<mutex> csr_init_lock(context.csr_lock);
-//	if (context.initialized_e) {
-//		return;
-//	}
+	if (context.initialized_e) {
+		return;
+	}
 	try {
 		context.csr_list[id]->e.resize(e_size, 0);
 
@@ -67,15 +67,15 @@ static void CsrInitializeEdge(ClientContext &context, int32_t id, int64_t v_size
 	for (auto i = 1; i < v_size + 2; i++) {
 		context.csr_list[id]->v[i] += context.csr_list[id]->v[i - 1];
 	}
-//	context.initialized_e = true;
+	context.initialized_e = true;
 	return;
 }
 
 static void CsrInitializeWeight(ClientContext &context, int32_t id, int64_t v_size, int64_t e_size, PhysicalType weight_type) {
 	lock_guard<mutex> csr_init_lock(context.csr_lock);
-//	if (context.initialized_w) {
-//		return;
-//	}
+	if (context.initialized_w) {
+		return;
+	}
 	try {
 		if (weight_type == PhysicalType::INT64) {
 			context.csr_list[id]->w.resize(e_size, 0);
@@ -92,7 +92,7 @@ static void CsrInitializeWeight(ClientContext &context, int32_t id, int64_t v_si
 	for (auto i = 1; i < v_size + 2; i++) {
 		context.csr_list[id]->v_weight[i] += context.csr_list[id]->v_weight[i - 1];
 	}
-//	context.initialized_w = true;
+	context.initialized_w = true;
 	return;
 }
 
@@ -121,7 +121,7 @@ static unique_ptr<FunctionData> CreateCsrBind(ClientContext &context, ScalarFunc
 
 	Value id = ExpressionExecutor::EvaluateScalar(*arguments[0]);
 	bound_function.return_type = LogicalType::STRUCT(move(struct_children));
-	return make_unique<CsrBindData>(context, id.GetValue<int32_t>(), true); // TODO Add unweighted version as well
+	return make_unique<CsrBindData>(context, id.GetValue<int32_t>(), false); // TODO Add unweighted version as well
 }
 
 static void CreateCsrFunction(DataChunk &args, ExpressionState &state, Vector &result) {
@@ -130,12 +130,9 @@ static void CreateCsrFunction(DataChunk &args, ExpressionState &state, Vector &r
 
 	int64_t input_size = args.data[1].GetValue(0).GetValue<int64_t>();
 	bool weighted = false;
-	if (args.data.size() == 7) { // 7th argument defines the weights of the edges. If there are 6 arguments, the edges are unweighted.
+	if (args.data.size() == 7) { //! 7th argument defines the weights of the edges. If there are 6 arguments, the edges are unweighted.
 		weighted = true;
 	}
-
-
-	//	switch (args.data[1].GetType().InternalType()
 
 	CsrInitializeVertex(info.context, info.id, input_size);
 	auto &child_entries = StructVector::GetEntries(result);
@@ -155,7 +152,6 @@ static void CreateCsrFunction(DataChunk &args, ExpressionState &state, Vector &r
 		                                                   info.context.csr_list[info.id]->e[(int64_t)pos - 1] = dst;
 		                                                   return 1;
 	                                                   });
-	info.num_of_vertices = input_size;
 	if (weighted) {
 		auto weight_type = args.data[6].GetType().InternalType();
 		CsrInitializeWeight(info.context, info.id, input_size, args.size(), weight_type);
@@ -167,23 +163,19 @@ static void CreateCsrFunction(DataChunk &args, ExpressionState &state, Vector &r
 				    return 1;
 			    });
 		} else if (weight_type == PhysicalType::DOUBLE) {
-			BinaryExecutor::Execute<int64_t, int64_t, int32_t>(
-			    args.data[4], args.data[6], *child_entries[2], args.size(), [&](int64_t src, int64_t weight) {
+			BinaryExecutor::Execute<int64_t, double_t, int32_t>(
+			    args.data[4], args.data[6], *child_entries[2], args.size(), [&](int64_t src, double_t weight) {
 				    auto pos = ++info.context.csr_list[info.id]->v_weight[src + 1];
 				    info.context.csr_list[info.id]->w_double[(int64_t)pos - 1] = weight;
 				    return 1;
 			    });
 		}
 	}
-	info.num_of_edges = args.size();
 
 	result.SetVectorType(VectorType::CONSTANT_VECTOR);
-
 	child_entries[0]->Reference(args.data[0]);
-	child_entries[1]->Reference(Value(info.num_of_vertices));
-	child_entries[2]->Reference(Value(info.num_of_edges));
-
-	result.Verify(3);
+	child_entries[1]->Reference(Value(input_size));
+	child_entries[2]->Reference(Value((int64_t)args.size()));
 	return;
 }
 
@@ -192,9 +184,9 @@ static void CreateCsrVertexFunction(DataChunk &args, ExpressionState &state, Vec
 	auto &info = (CsrBindData &)*func_expr.bind_info;
 
 	int64_t input_size = args.data[1].GetValue(0).GetValue<int64_t>();
-//	if (!info.context.initialized_v) {
-	CsrInitializeVertex(info.context, info.id, input_size);
-//	}
+	if (!info.context.initialized_v) {
+		CsrInitializeVertex(info.context, info.id, input_size);
+	}
 	BinaryExecutor::Execute<int64_t, int64_t, int64_t>(args.data[2], args.data[3], result, args.size(),
 	                                                   [&](int64_t src, int64_t cnt) {
 		                                                   int64_t edge_count = 0;
@@ -213,9 +205,7 @@ static void CreateCsrEdgeFunction(DataChunk &args, ExpressionState &state, Vecto
 
 	int64_t vertex_size = args.data[1].GetValue(0).GetValue<int64_t>();
 	int64_t edge_size = args.data[2].GetValue(0).GetValue<int64_t>();
-//	if (!info.context.initialized_e) {
 	CsrInitializeEdge(info.context, info.id, vertex_size, edge_size);
-//	}
 
 	BinaryExecutor::Execute<int64_t, int64_t, int32_t>(args.data[3], args.data[4], result, args.size(),
 	                                                   [&](int64_t src, int64_t dst) {
@@ -224,9 +214,7 @@ static void CreateCsrEdgeFunction(DataChunk &args, ExpressionState &state, Vecto
 		                                                   return 1;
 	                                                   });
 	if (info.weighted) {
-//		if (!info.context.initialized_w) {
 		CsrInitializeWeight(info.context, info.id, vertex_size, edge_size, args.data[5].GetType().InternalType());
-//		}
 		BinaryExecutor::Execute<int64_t, int64_t, int32_t>(
 		    args.data[3], args.data[5], result, args.size(), [&](int64_t src, int64_t weight) {
 			    auto pos = ++info.context.csr_list[info.id]->v_weight[src + 1];
@@ -284,7 +272,6 @@ CreateScalarFunctionInfo SQLPGQFunctions::GetCsrFunction() {
 	     LogicalType::BIGINT},
 	    LogicalTypeId::STRUCT, CreateCsrFunction, false, CreateCsrBind));
 	return CreateScalarFunctionInfo(set);
-	//	LogicalTypeId::STRUCT struct_pack.cpp
 }
 
 CreateScalarFunctionInfo SQLPGQFunctions::GetCsrEdgeFunction() {

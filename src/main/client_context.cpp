@@ -94,9 +94,9 @@ void ClientContext::Cleanup() {
 void ClientContext::CleanupCSR() {
 
 	delete[] csr_list[0]->v;
-//	initialized_v = false;
-//	initialized_e = false;
-//	init_m = false;
+	initialized_v = false;
+	initialized_e = false;
+	init_m = false;
 }
 
 unique_ptr<DataChunk> ClientContext::Fetch() {
@@ -492,9 +492,9 @@ unique_ptr<QueryResult> ClientContext::RunStatementOrPreparedStatement(ClientCon
 		}
 	}
 	// TODO FIX Cleanup
-//	if (initialized_v && initialized_e && init_m) {
-//	CleanupCSR();
-//	}
+	if (initialized_v && initialized_e && init_m) {
+		CleanupCSR();
+	}
 	return result;
 }
 

@@ -54,7 +54,6 @@ private:
 	static CreateScalarFunctionInfo GetCsrFunction();
 	static CreateScalarFunctionInfo GetCsrVertexFunction();
 	static CreateScalarFunctionInfo GetCsrEdgeFunction();
-
 	static CreateScalarFunctionInfo GetShortestPathFunction();
 	static CreateScalarFunctionInfo GetCheapestPathFunction();
 	static CreateScalarFunctionInfo GetAnyShortestPathFunction();

@@ -3,6 +3,8 @@
 #include "duckdb/execution/expression_executor.hpp"
 #include "duckdb/planner/expression/bound_function_expression.hpp"
 #include "sqlpgq_functions.hpp"
+#include <float.h>
+
 
 namespace duckdb {
 
@@ -18,15 +20,16 @@ struct CheapestPathBindData : public FunctionData {
 	}
 };
 
+template <typename T>
 static int16_t InitialiseBellmanFord(ClientContext &context, const DataChunk &args, int64_t input_size,
                                      const VectorData &vdata_src, const int64_t *src_data, idx_t result_size,
                                      unordered_map<int64_t, vector<int64_t>> &modified,
-                                     unordered_map<int64_t, vector<int64_t>> &dists) {
+                                     unordered_map<int64_t, vector<T>> &dists) {
 	for (int64_t i = 0; i < input_size; i++) {
 		//! Whatever is in v[i] is the offset to the start of the edge indexes. Not the vertex id itself.
 		//! auto offset = (int64_t)context.csr_list[id]->v[i];
 		modified[i] = std::vector<int64_t>(args.size(), false);
-		dists[i] = std::vector<int64_t>(args.size(), INT64_MAX);
+		dists[i] = std::vector<T>(args.size(), std::numeric_limits<T>::max());
 	}
 
 	//	int16_t lanes = 0;
@@ -65,17 +68,20 @@ static void CheapestPathFunction(DataChunk &args, ExpressionState &state, Vector
 	target.Orrify(args.size(), vdata_target);
 	auto target_data = (int64_t *)vdata_target.data;
 
+
+
 	idx_t result_size = 0;
 	result.SetVectorType(VectorType::FLAT_VECTOR);
 	auto result_data = FlatVector::GetData<int64_t>(result);
 	auto &result_validity = FlatVector::Validity(result);
 
-//	info.context.init_m = true;
 	unordered_map<int64_t, vector<int64_t>> modified;
 	unordered_map<int64_t, vector<int64_t>> dists;
 
 	while (result_size < args.size()) {
-		int16_t curr_batch_size = InitialiseBellmanFord(info.context, args, input_size, vdata_src, src_data, result_size, modified, dists);
+		int16_t curr_batch_size = 0;
+		curr_batch_size = InitialiseBellmanFord<double_t>(info.context, args, input_size, vdata_src, src_data, result_size, modified, dists_double);
+		curr_batch_size = InitialiseBellmanFord<int64_t>(info.context, args, input_size, vdata_src, src_data, result_size, modified, dists);
 		bool changed = true;
 		while (changed) {
 			changed = false;
