@@ -170,6 +170,8 @@ IsOrColon:
             | ':'
         ;
 
+EdgeCostPattern:
+	'(' FullEdgePattern COST
 
 //ident is GraphPatternVariableDeclaration
 MandatoryEdgePatternFiller:
@@ -333,6 +335,7 @@ FullEdgeAnyDirection:
                     $$ = (PGNode *) n;
                 }
             ;
+
 //avoiding unions can scope out
 //scoped out
 // AbbreviatedEdgePattern:
