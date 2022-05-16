@@ -159,12 +159,15 @@ static void CheapestPathFunction(DataChunk &args, ExpressionState &state, Vector
 static unique_ptr<FunctionData> CheapestPathBind(ClientContext &context, ScalarFunction &bound_function,
                                                  vector<unique_ptr<Expression>> &arguments) {
 	string file_name;
-	if (arguments.size() == 6) {
-		file_name = ExpressionExecutor::EvaluateScalar(*arguments[5]).GetValue<string>();
 
+	int32_t id = ExpressionExecutor::EvaluateScalar(*arguments[0]).GetValue<int32_t>();
+
+	if (context.csr_list[id]->w.empty()) {
+		bound_function.return_type = LogicalType::DOUBLE;
 	} else {
-		file_name = "timings-test_cheapest.txt";
+		bound_function.return_type = LogicalType::BIGINT;
 	}
+
 	return make_unique<CheapestPathBindData>(context, file_name);
 }
 
@@ -176,7 +179,7 @@ CreateScalarFunctionInfo SQLPGQFunctions::GetCheapestPathFunction() {
 //	                          LogicalType::BIGINT, CheapestPathFunction, false, CheapestPathBind));
 	set.AddFunction(ScalarFunction(
 	    {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT},
-	    LogicalType::DOUBLE, CheapestPathFunction, false, CheapestPathBind));
+	    LogicalType::ANY, CheapestPathFunction, false, CheapestPathBind));
 
 	return CreateScalarFunctionInfo(set);
 

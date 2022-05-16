@@ -116,7 +116,7 @@ FROM (
         JOIN Customer dst ON t.to_id = dst.cid) r
     WHERE r.src = sub.dense_id;
 ----
-{'id': 0, 'vertices': 6, 'edges': 10}
+{'id': 0, 'vertices': 6, 'edges': 10, 'weight': double}
 
 statement ok
 CREATE TABLE src_dest(id int, v_size bigint, src bigint, dst bigint);
@@ -126,7 +126,7 @@ INSERT INTO src_dest VALUES(0, 6, 0, 5), (0, 6, 0, 4), (0, 6, 5, 3), (0, 6, 0, 2
 
 
 query I
-SELECT cheapest_path(id, v_size, src, dst) FROM src_dest;
+SELECT cheapest_path(0, v_size, src, dst) FROM src_dest;
 ----
 181.200000
 281.700000
