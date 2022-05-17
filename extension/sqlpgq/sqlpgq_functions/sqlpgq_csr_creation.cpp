@@ -128,34 +128,76 @@ static void CreateCsrFunction(DataChunk &args, ExpressionState &state, Vector &r
 	auto &func_expr = (BoundFunctionExpression &)state.expr;
 	auto &info = (CsrBindData &)*func_expr.bind_info;
 
+//	SelectionVector
+
 	int64_t input_size = args.data[1].GetValue(0).GetValue<int64_t>();
 	int64_t edge_size = args.data[2].GetValue(0).GetValue<int64_t>();
-	bool weighted = false;
-	if (args.data.size() == 8) { //! 7th argument defines the weights of the edges. If there are 6 arguments, the edges are unweighted.
-		weighted = true;
-	}
 
 	CsrInitializeVertex(info.context, info.id, input_size);
 	CsrInitializeEdge(info.context, info.id, input_size, edge_size);
+	args.data[3].SetVectorType(VectorType::FLAT_VECTOR);
+	args.data[4].SetVectorType(VectorType::FLAT_VECTOR);
+	args.data[6].SetVectorType(VectorType::FLAT_VECTOR);
 
-	auto &child_entries = StructVector::GetEntries(result);
-	int64_t last_src_set = -1;
-	TernaryExecutor::Execute<int64_t, int64_t, int64_t, int64_t>(
-	    args.data[3], args.data[4], args.data[6], *child_entries[1], args.size(),
-	    [&](int64_t src, int64_t cnt, int64_t dst) {
-		    if (src != last_src_set) {
-			    if (last_src_set != -1) {
-				    info.context.csr_list[info.id]->v[src+1] += info.context.csr_list[info.id]->v[src-1];
-			    }
-			    last_src_set = src;
-				info.context.csr_list[info.id]->v[src + 2] = cnt;
-			    info.context.csr_list[info.id]->v_weight[src + 2] = cnt;
-		    }
-		    int64_t pos = ++info.context.csr_list[info.id]->v[src + 1];
-		    std::cout << "src: " << src << "\tcnt: " << cnt << "\tdst: " << dst << "\tpos:" << pos << std::endl;
-		    info.context.csr_list[info.id]->e[pos - 1] = dst;
-		    return pos;
-	    });
+
+	for (idx_t i = 0; i < args.size(); i += args.size()) {
+		Vector row_vector(args.data[3], i);
+		Vector cnt_vector(args.data[4], i);
+		Vector dst_vector(args.data[6], i);
+
+
+
+		auto &child_entries = StructVector::GetEntries(result);
+//		int64_t last_src_set = -1;
+
+		TernaryExecutor::Execute<int64_t, int64_t, int64_t, int64_t>(
+			row_vector, cnt_vector, dst_vector, *child_entries[1], args.size(),
+			[&](int64_t src, int64_t cnt, int64_t dst) {
+//				if (src != last_src_set) {
+//					if (last_src_set != -1) {
+//						info.context.csr_list[info.id]->v[src+1] += info.context.csr_list[info.id]->v[src-1];
+//					}
+//					last_src_set = src;
+//					info.context.csr_list[info.id]->v[src + 2] = cnt;
+//					info.context.csr_list[info.id]->v_weight[src + 2] = cnt;
+//				}
+//				int64_t pos = ++info.context.csr_list[info.id]->v[src + 1];
+				std::cout << "src: " << src << "\tcnt: " << cnt << "\tdst: " << dst  << std::endl; // << "\tpos:" << pos
+//				info.context.csr_list[info.id]->e[pos - 1] = dst;
+				return 1;
+			});
+
+	}
+
+//	bool weighted = false;
+//	if (args.data.size() == 8) { //! 7th argument defines the weights of the edges. If there are 6 arguments, the edges are unweighted.
+//		weighted = true;
+//	}
+//
+
+//
+//
+//
+//	auto &child_entries = StructVector::GetEntries(result);
+//	int64_t last_src_set = -1;
+//
+//
+//	TernaryExecutor::Execute<int64_t, int64_t, int64_t, int64_t>(
+//	    args.data[3], args.data[4], args.data[6], *child_entries[1], args.size(),
+//	    [&](int64_t src, int64_t cnt, int64_t dst) {
+//		    if (src != last_src_set) {
+//			    if (last_src_set != -1) {
+//				    info.context.csr_list[info.id]->v[src+1] += info.context.csr_list[info.id]->v[src-1];
+//			    }
+//			    last_src_set = src;
+//				info.context.csr_list[info.id]->v[src + 2] = cnt;
+//			    info.context.csr_list[info.id]->v_weight[src + 2] = cnt;
+//		    }
+//		    int64_t pos = ++info.context.csr_list[info.id]->v[src + 1];
+//		    std::cout << "src: " << src << "\tcnt: " << cnt << "\tdst: " << dst << "\tpos:" << pos << std::endl;
+//		    info.context.csr_list[info.id]->e[pos - 1] = dst;
+//		    return pos;
+//	    });
 
 //	BinaryExecutor::Execute<int64_t, int64_t, int64_t>(args.data[3], args.data[4], *child_entries[1], args.size(),
 //	                                                   [&](int64_t src, int64_t cnt) {
@@ -177,36 +219,36 @@ static void CreateCsrFunction(DataChunk &args, ExpressionState &state, Vector &r
 //		                                                   info.context.csr_list[info.id]->e[pos - 1] = dst;
 //		                                                   return pos;
 //	                                                   });
-	if (weighted) {
-		auto weight_type = args.data[7].GetType().InternalType();
-		CsrInitializeWeight(info.context, info.id, input_size, edge_size, weight_type);
-		if (weight_type == PhysicalType::INT64) {
-			BinaryExecutor::Execute<int64_t, int64_t, int32_t>(
-			    args.data[5], args.data[7], *child_entries[2], args.size(), [&](int64_t src, int64_t weight) {
-				    auto pos = ++info.context.csr_list[info.id]->v_weight[src + 1];
-				    info.context.csr_list[info.id]->w[(int64_t)pos - 1] = weight;
-				    return 1;
-			    });
-			child_entries[3]->Reference(Value("integer"));
-
-		} else if (weight_type == PhysicalType::DOUBLE) {
-			BinaryExecutor::Execute<int64_t, double_t, int32_t>(
-			    args.data[5], args.data[7], *child_entries[2], args.size(), [&](int64_t src, double_t weight) {
-				    auto pos = ++info.context.csr_list[info.id]->v_weight[src + 1];
-				    info.context.csr_list[info.id]->w_double[(int64_t)pos - 1] = weight;
-				    return 1;
-			    });
-			child_entries[3]->Reference(Value("double"));
-		}
-	}
-
-	result.SetVectorType(VectorType::CONSTANT_VECTOR);
-	child_entries[0]->Reference(args.data[0]);
-	child_entries[1]->Reference(Value(input_size));
-	child_entries[2]->Reference(Value((int64_t)args.size()));
-	if (!weighted) { // TODO Test if works.
-		child_entries[3]->Reference(Value("none"));
-	}
+//	if (weighted) {
+//		auto weight_type = args.data[7].GetType().InternalType();
+//		CsrInitializeWeight(info.context, info.id, input_size, edge_size, weight_type);
+//		if (weight_type == PhysicalType::INT64) {
+//			BinaryExecutor::Execute<int64_t, int64_t, int32_t>(
+//			    args.data[5], args.data[7], *child_entries[2], args.size(), [&](int64_t src, int64_t weight) {
+//				    auto pos = ++info.context.csr_list[info.id]->v_weight[src + 1];
+//				    info.context.csr_list[info.id]->w[(int64_t)pos - 1] = weight;
+//				    return 1;
+//			    });
+//			child_entries[3]->Reference(Value("integer"));
+//
+//		} else if (weight_type == PhysicalType::DOUBLE) {
+//			BinaryExecutor::Execute<int64_t, double_t, int32_t>(
+//			    args.data[5], args.data[7], *child_entries[2], args.size(), [&](int64_t src, double_t weight) {
+//				    auto pos = ++info.context.csr_list[info.id]->v_weight[src + 1];
+//				    info.context.csr_list[info.id]->w_double[(int64_t)pos - 1] = weight;
+//				    return 1;
+//			    });
+//			child_entries[3]->Reference(Value("double"));
+//		}
+//	}
+//
+//	result.SetVectorType(VectorType::CONSTANT_VECTOR);
+//	child_entries[0]->Reference(args.data[0]);
+//	child_entries[1]->Reference(Value(input_size));
+//	child_entries[2]->Reference(Value((int64_t)args.size()));
+//	if (!weighted) { // TODO Test if works.
+//		child_entries[3]->Reference(Value("none"));
+//	}
 	return;
 }
 
@@ -241,7 +283,7 @@ static void CreateCsrEdgeFunction(DataChunk &args, ExpressionState &state, Vecto
 	BinaryExecutor::Execute<int64_t, int64_t, int32_t>(
 	    args.data[3], args.data[4], result, args.size(), [&](int64_t src, int64_t dst) {
 		    auto pos = ++info.context.csr_list[info.id]->v[src + 1];
-		    std::cout << "Edge: pos: " << pos << "\tdst: " << dst << "\tsrc: " << src << std::endl;
+//		    std::cout << "Edge: pos: " << pos << "\tdst: " << dst << "\tsrc: " << src << std::endl;
 		    info.context.csr_list[info.id]->e[(int64_t)pos - 1] = dst;
 		    return 1;
 	    });
