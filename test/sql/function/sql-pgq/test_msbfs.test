@@ -32,7 +32,7 @@ SELECT v.vcount FROM (SELECT count(c.cid) as vcount FROM Customer c) v
 5
 
 query I
-SELECT sum(CREATE_CSR_VERTEX(0, (SELECT count(c.cid) as vcount FROM Customer c), 
+SELECT sum(CREATE_CSR_VERTEX(0, (SELECT max(c.rowid) + 1 as vcount FROM Customer c), 
 sub.dense_id , sub.cnt)) AS numEdges
 FROM (
     SELECT c.rowid as dense_id, count(t.from_id) as cnt
@@ -47,7 +47,7 @@ FROM (
 query II rowsort
 WITH cte1 AS (
 SELECT min(CREATE_CSR_EDGE(0, (SELECT count(c.cid) as vcount FROM Customer c), 
-CAST ((SELECT sum(CREATE_CSR_VERTEX(0, (SELECT count(c.cid) as vcount FROM Customer c), 
+CAST ((SELECT sum(CREATE_CSR_VERTEX(0, (SELECT max(c.rowid) + 1 as vcount FROM Customer c), 
 sub.dense_id , sub.cnt )) as numEdges 
 FROM (
     SELECT c.rowid as dense_id, count(t.from_id) as cnt
@@ -55,7 +55,7 @@ FROM (
     LEFT JOIN  Transfers t ON t.from_id = c.cid
     GROUP BY c.rowid
 ) sub) AS BIGINT), 
-src.rowid, dst.rowid ) ) as temp, (SELECT count(c.cid) FROM Customer c) as vcount
+src.rowid, dst.rowid ) ) as temp, (SELECT max(c.rowid) + 1 FROM Customer c) as vcount
 FROM 
   Transfers t 
   JOIN Customer src ON t.from_id = src.cid
@@ -101,8 +101,8 @@ INSERT INTO src_dest VALUES(0, 5, 0, 1), (0, 5, 0, 3), (0, 5, 0, 4), (0, 5, 3, 4
 
 
 statement ok
-SELECT min(CREATE_CSR_EDGE(0, (SELECT count(c.cid) as vcount FROM Customer c), 
-CAST ((SELECT sum(CREATE_CSR_VERTEX(0, (SELECT count(c.cid) as vcount FROM Customer c), 
+SELECT min(CREATE_CSR_EDGE(0, (SELECT max(c.rowid) + 1 as vcount FROM Customer c), 
+CAST ((SELECT sum(CREATE_CSR_VERTEX(0, (SELECT max(c.rowid) + 1 as vcount FROM Customer c), 
 sub.dense_id , sub.cnt )) as numEdges 
 FROM (
     SELECT c.rowid as dense_id, count(t.from_id) as cnt

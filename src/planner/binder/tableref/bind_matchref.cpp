@@ -147,20 +147,21 @@ static unique_ptr<SelectStatement> GetCountTable(PropertyGraphTable *vertex_entr
 	auto select_inner = make_unique<SelectNode>();
 	auto ref = make_unique<BaseTableRef>();
 	ref->schema_name = DEFAULT_SCHEMA;
-	// ref->table_name = move(name); // doubt?
 	ref->table_name = vertex_entry->name;
 
-	// auto statement = make_unique<SelectNode>();
 	select_inner->from_table = move(ref);
-	// auto colref = make_unique<ColumnRefExpression>("personid", "person");
-	auto colref = make_unique<ColumnRefExpression>(vertex_entry->keys[0], vertex_entry->name);
+	auto colref = make_unique<ColumnRefExpression>("rowid", vertex_entry->name);
 	vector<unique_ptr<ParsedExpression>> children;
 	children.push_back(move(colref));
-	auto count_function = make_unique<FunctionExpression>("count", move(children));
+	auto max_function = make_unique<FunctionExpression>("max", move(children));
+	auto size_constant = make_unique<ConstantExpression>(Value::INTEGER((int32_t)1));
 
-	// vector<unique_ptr<ParsedExpression>> vcount_target;
-	select_inner->select_list.push_back(move(count_function));
-	//  = vcount_target;
+	vector<unique_ptr<ParsedExpression>> plus_children;
+	plus_children.push_back(move(max_function));
+	plus_children.push_back(move(size_constant));
+	auto plus_function = make_unique<FunctionExpression>("+", move(plus_children));
+	plus_function->is_operator = true;
+	select_inner->select_list.push_back(move(plus_function));
 	select_count->node = move(select_inner);
 	return select_count;
 }
@@ -168,23 +169,16 @@ static unique_ptr<SelectStatement> GetCountTable(PropertyGraphTable *vertex_entr
 static unique_ptr<JoinRef> GetJoinRef(PropertyGraphTable *vertex_entry, PropertyGraphTable *edge_entry) {
 	auto first_join_ref = make_unique<JoinRef>();
 	first_join_ref->type = JoinType::INNER;
-
 	auto second_join_ref = make_unique<JoinRef>();
 	second_join_ref->type = JoinType::INNER;
-	//
-	// first_join_ref->right =
 	auto edge_base_ref = make_unique<BaseTableRef>();
+	
 	edge_base_ref->table_name = edge_entry->name;
-	// edge_base_ref->table_name = "Person_knows_Person";
-	// edge_base_ref->alias = "pkp";
 	auto src_base_ref = make_unique<BaseTableRef>();
-	// src_base_ref->table_name = "person";
 	src_base_ref->table_name = vertex_entry->name;
 	src_base_ref->alias = "src";
 	second_join_ref->left = move(edge_base_ref);
 	second_join_ref->right = move(src_base_ref);
-	// auto t_from_ref = make_unique<ColumnRefExpression>("person1id", "pkp");
-	// auto src_cid_ref = make_unique<ColumnRefExpression>("personid", "src");
 	auto t_from_ref = make_unique<ColumnRefExpression>(edge_entry->source_key[0], edge_entry->name);
 	auto src_cid_ref = make_unique<ColumnRefExpression>(vertex_entry->keys[0], "src");
 	second_join_ref->condition =
@@ -195,8 +189,6 @@ static unique_ptr<JoinRef> GetJoinRef(PropertyGraphTable *vertex_entry, Property
 	first_join_ref->left = move(second_join_ref);
 	first_join_ref->right = move(dst_base_ref);
 
-	// auto t_to_ref = make_unique<ColumnRefExpression>("person2id", "pkp");
-	// auto dst_cid_ref = make_unique<ColumnRefExpression>("personid", "dst");
 	auto t_to_ref = make_unique<ColumnRefExpression>(edge_entry->destination_key[0], edge_entry->name);
 	auto dst_cid_ref = make_unique<ColumnRefExpression>(vertex_entry->keys[0], "dst");
 
@@ -232,12 +224,9 @@ static unique_ptr<SelectStatement> CreateInnerSelectStatement(PropertyGraphTable
                                                         PropertyGraphTable *edge_entry) {
 	auto inner_select_statment = make_unique<SelectStatement>();
 	auto inner_select_node = make_unique<SelectNode>();
-	// auto c_rowid_colref = make_unique<ColumnRefExpression>("rowid", "person");
 	auto c_rowid_colref = make_unique<ColumnRefExpression>("rowid", vertex_entry->name);
-	// c will be label -> get TablefromLabel
 	c_rowid_colref->alias = "dense_id";
 
-	// auto t_fromid_colref = make_unique<ColumnRefExpression>("person1id", "person_knows_person"); // t label
 	auto t_fromid_colref = make_unique<ColumnRefExpression>(edge_entry->source_key[0], edge_entry->name); // t label
 	vector<unique_ptr<ParsedExpression>> inner_count_children;
 	inner_count_children.push_back(move(t_fromid_colref));
@@ -245,40 +234,28 @@ static unique_ptr<SelectStatement> CreateInnerSelectStatement(PropertyGraphTable
 	inner_count_function->alias = "cnt";
 	inner_select_node->select_list.push_back(move(c_rowid_colref));
 	inner_select_node->select_list.push_back(move(inner_count_function));
-	// vector<unique_ptr<ParsedExpression>> inner_group_by;
-	// auto c_rowid_colref_1 = make_unique<ColumnRefExpression>("rowid", "person"); // c label
 	auto c_rowid_colref_1 = make_unique<ColumnRefExpression>("rowid", vertex_entry->name); // c label
+	
 	GroupByNode gnode;
 	vector<idx_t> indexes;
-
-	// inner_select_node->groups.push_back(move(c_rowid_colref_1));
 	GroupingExpressionMap map;
 
 	AddGroupByExpression(move(c_rowid_colref_1), map, inner_select_node->groups, indexes);
-	// inner_select_node->groups = inner_group_by;
-
-	// inner_select_node->groups.grouping_sets = move(indexes);
 	inner_select_node->groups.grouping_sets.push_back(VectorToGroupingSet(indexes));
-	//  = inner_select_list;
 	auto inner_join_ref = make_unique<JoinRef>();
 	inner_join_ref->type = JoinType::LEFT;
 	auto left_base_ref = make_unique<BaseTableRef>();
-	// left_base_ref->table_name = "person";
 	left_base_ref->table_name = vertex_entry->name;
 	auto right_base_ref = make_unique<BaseTableRef>();
-	// right_base_ref->table_name = "person_knows_person";
 	right_base_ref->table_name = edge_entry->name;
 	inner_join_ref->left = move(left_base_ref);
 	inner_join_ref->right = move(right_base_ref);
 	// quals for ON
-	// auto t_join_colref = make_unique<ColumnRefExpression>("person1id", "person_knows_person"); // t label
-	// auto c_join_colref = make_unique<ColumnRefExpression>("personid", "person");               // c label
 	auto t_join_colref = make_unique<ColumnRefExpression>(edge_entry->source_key[0], edge_entry->name); // t label
 	auto c_join_colref = make_unique<ColumnRefExpression>(vertex_entry->keys[0], vertex_entry->name);               // c label
-	// alias column names vector look
 	inner_join_ref->condition =
 	    make_unique<ComparisonExpression>(ExpressionType::COMPARE_EQUAL, move(t_join_colref), move(c_join_colref));
-	// TransformBinaryOperator("=", t_join_colref, c_join_colref);
+	
 	inner_select_node->from_table = move(inner_join_ref);
 	inner_select_statment->node = move(inner_select_node);
 	return inner_select_statment;
@@ -289,14 +266,10 @@ static unique_ptr<CastExpression> CreateCastExpression(PropertyGraphTable *verte
 	auto cast_subquery_expr = make_unique<SubqueryExpression>();
 	auto cast_select_node = make_unique<SelectNode>();
 
-	// auto inner_from_subquery = make_unique<SubqueryExpression>();
 	auto inner_select_statement = CreateInnerSelectStatement(vertex_entry, edge_entry);
 	auto inner_from_subquery = make_unique<SubqueryRef>(move(inner_select_statement), "sub");
-	// inner_from_subquery->column_name_alias = "sub";
-	// inner_from_subquery->subquery = move(inner_select_statment);
-
+	
 	cast_select_node->from_table = move(inner_from_subquery);
-	// auto sum_function = CreateSumFunction("person");
 	auto sum_function = CreateSumFunction(vertex_entry);
 	cast_select_node->select_list.push_back(move(sum_function));
 	auto cast_select_stmt = make_unique<SelectStatement>();
@@ -307,7 +280,6 @@ static unique_ptr<CastExpression> CreateCastExpression(PropertyGraphTable *verte
 	return make_unique<CastExpression>(LogicalType::BIGINT, move(cast_subquery_expr));
 }
 
-// static unique_ptr<FunctionExpression> CreateCsrEdgeFunction() {
 static unique_ptr<FunctionExpression> CreateCsrEdgeFunction(PropertyGraphTable *vertex_entry,
                                                             PropertyGraphTable *edge_entry) {
 
@@ -316,13 +288,11 @@ static unique_ptr<FunctionExpression> CreateCsrEdgeFunction(PropertyGraphTable *
 	auto subquery_expr = make_unique<SubqueryExpression>();
 
 	subquery_expr->subquery = move(GetCountTable(vertex_entry));
-	// subquery_expr->subquery = move(GetCountTable("person"));
 	subquery_expr->subquery_type = SubqueryType::SCALAR;
 
 	auto cast_expression = CreateCastExpression(vertex_entry, edge_entry);
 
 	auto src_rowid_colref = make_unique<ColumnRefExpression>("rowid", "src");
-	// src_rowid_colref->alias = "src_row";
 	auto dst_rowid_colref = make_unique<ColumnRefExpression>("rowid", "dst");
 
 	vector<unique_ptr<ParsedExpression>> csr_edge_children;
@@ -337,15 +307,10 @@ static unique_ptr<FunctionExpression> CreateCsrEdgeFunction(PropertyGraphTable *
 
 static unique_ptr<FunctionExpression> CreateReachabilityFunction() {
 	vector<unique_ptr<ParsedExpression>> reachability_children;
-	// auto cte_where_src_row = make_unique<ColumnRefExpression>("src_row", "cte1");
-	// auto cte_where_dst_row = make_unique<ColumnRefExpression>("dst_row", "cte1");
 	auto cte_where_src_row = make_unique<ColumnRefExpression>("rowid", "src");
 	auto cte_where_dst_row = make_unique<ColumnRefExpression>("rowid", "dst");
 	auto cte_vcount = make_unique<ColumnRefExpression>("vcount", "cte1");
-	// auto reachability_subquery_expr = make_unique<SubqueryExpression>();
-	// reachability_subquery_expr->subquery = move(GetCountTable("person"));
-	// reachability_subquery_expr->subquery_type = SubqueryType::SCALAR;
-
+	
 	auto reachability_id_constant = make_unique<ConstantExpression>(Value::INTEGER((int32_t)0));
 	auto reachability_is_variant = make_unique<ConstantExpression>(Value::BOOLEAN(false));
 	reachability_children.push_back(move(reachability_id_constant));
@@ -366,10 +331,6 @@ static unique_ptr<SelectStatement> CreateOuterSelectStatement(PropertyGraphTable
 
 	auto create_csr_edge_function = CreateCsrEdgeFunction(vertex_entry, edge_entry);
 
-	// auto outer_src_rowid = make_unique<ColumnRefExpression>("rowid", "src" );
-	// outer_src_rowid->alias = "src_row";
-	// auto outer_dst_rowid = make_unique<ColumnRefExpression>("rowid", "dst");
-	// outer_dst_rowid->alias = "dst_row";
 	vector<unique_ptr<ParsedExpression>> min_children;
 	min_children.push_back(move(create_csr_edge_function));
 
@@ -378,24 +339,19 @@ static unique_ptr<SelectStatement> CreateOuterSelectStatement(PropertyGraphTable
 	auto vcount_subquery = make_unique<SubqueryExpression>();
 	vcount_subquery->subquery_type = SubqueryType::SCALAR;
 
-	// vcount_subquery->subquery = move(GetCountTable("person"));
 	vcount_subquery->subquery = move(GetCountTable(vertex_entry));
 	vcount_subquery->alias = "vcount";
 	outer_select_node->select_list.push_back(move(min_function));
 	outer_select_node->select_list.push_back(move(vcount_subquery));
-	// outer_select_node->select_list.push_back(move(outer_src_rowid));
-	// outer_select_node->select_list.push_back(move(outer_dst_rowid));
 	outer_select_node->from_table = move(GetJoinRef(vertex_entry, edge_entry));
 
-	// auto outer_subquery_exp = make_unique<SubqueryExpression>();
 	outer_select_statment->node = move(outer_select_node);
 	return outer_select_statment;
 }
 
 static unique_ptr<SelectStatement> CreateCTESelectStatement(PropertyGraphTable *previous_vertex,
                                                             PropertyGraphTable *edge_entry,
-                                                            PropertyGraphTable *vertex_entry,
-                                                            unordered_map<string, string> &label_column_map) {
+                                                            PropertyGraphTable *vertex_entry) {
 
 	auto info = make_unique<CommonTableExpressionInfo>();
 	auto cte_select_statement = make_unique<SelectStatement>();
@@ -403,41 +359,32 @@ static unique_ptr<SelectStatement> CreateCTESelectStatement(PropertyGraphTable *
 	if (previous_vertex->name != vertex_entry->name) {
 		throw BinderException("We currently only support CSR creation for the same vertex tables.");
 	}
-	// vertex_entry->
 	info->query = move(CreateOuterSelectStatement(vertex_entry, edge_entry));
 
 	auto cte_select_node = make_unique<SelectNode>();
 	// TODO: handle multiple
 	cte_select_node->cte_map["cte1"] = move(info);
 
-	// auto src_cid_col_ref = make_unique<ColumnRefExpression>("personid", "src");
-	// auto src_cid_col_ref = make_unique<ColumnRefExpression>("personid", "src");
-	// auto src_cid_col_ref = make_unique<ColumnRefExpression>(vertex_entry->keys[0], "src");
 	auto src_cid_col_ref = make_unique<ColumnRefExpression>(vertex_entry->keys[0], "src");
 	src_cid_col_ref->alias = "c1id";
-	// auto dst_cid_col_ref = make_unique<ColumnRefExpression>("personid", "dst");
 	auto dst_cid_col_ref = make_unique<ColumnRefExpression>(vertex_entry->keys[0], "dst");
 	dst_cid_col_ref->alias = "c2id";
 	auto cte_col_ref = make_unique<ColumnRefExpression>("temp", "cte1");
 	cte_col_ref->alias = "csr";
 	cte_select_node->select_list.push_back(move(src_cid_col_ref));
 	cte_select_node->select_list.push_back(move(dst_cid_col_ref));
-	// cte_select_node->select_list.push_back(move(cte_col_ref));
-
+	
 	auto cte_ref = make_unique<BaseTableRef>();
 	cte_ref->schema_name = DEFAULT_SCHEMA;
 	cte_ref->table_name = "cte1";
 	auto outer_cross_ref = make_unique<CrossProductRef>();
 	outer_cross_ref->left = move(cte_ref);
 	auto src_base_ref = make_unique<BaseTableRef>();
-	// src_base_ref->table_name = "person";
 	src_base_ref->table_name = vertex_entry->name;
 	src_base_ref->alias = "src";
 	outer_cross_ref->right = move(src_base_ref);
 
-	// cross_ref->right = move(GetJoinRef("src", "dst"));
 	auto dst_base_ref = make_unique<BaseTableRef>();
-	// dst_base_ref->table_name = "person";
 	dst_base_ref->table_name = vertex_entry->name;
 	dst_base_ref->alias = "dst";
 	auto cross_ref = make_unique<CrossProductRef>();
@@ -462,7 +409,6 @@ unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
 	if (!pg_table) {
 		throw BinderException("Property Graph Table %s does not exist.", ref.pg_name);
 	}
-	// pg_table->label_map;
 	vector<string> vertex_columns;
 	vector<string> vertex_aliases;
 	vector<vector<string>> edge_columns;
@@ -471,7 +417,6 @@ unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
 	// mapping alias to tuple (table name, is_vertex_table, label)
 	unordered_map<string, std::tuple<string, bool, string>> alias_table_map;
 	vector<unique_ptr<ParsedExpression>> conditions;
-	unordered_map<string, string> label_column_map;
 
 	auto select_node = make_unique<SelectNode>();
 	auto subquery = make_unique<SelectStatement>();
@@ -485,23 +430,11 @@ unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
 	}
 	auto previous_vertex_pattern = move(ref.param_list[0]);
 
-	for (idx_t i = 0; i < ref.columns.size(); i++) {
-		// label_column_map[]
-		// auto &expr_ref = *ref.columns;
-		// ref.columns[i]->alias;
-		label_column_map[((ColumnRefExpression &)*ref.columns[i]).table_name] = ref.columns[i]->alias;
-		// (ColumnRefExpression &)ref.columns[i]
-	}
-
-	// if(!previous_vertex_pattern->label_name){
-	// 	throw BinderException("First vertex label cannot be empty");
-	// }
 	auto previous_vertex_entry = GetPropertyGraphEntry(pg_table, previous_vertex_pattern->label_name);
 	auto table = TransformFromTable(previous_vertex_pattern->alias_name, previous_vertex_entry->name);
 
 	alias_table_map[previous_vertex_pattern->alias_name] = std::make_tuple(
 	    previous_vertex_entry->name, previous_vertex_pattern->is_vertex_pattern, previous_vertex_pattern->label_name);
-	// table.get();
 	from_tables.insert(move(table));
 
 	for (idx_t i = 1; i < ref.param_list.size(); i = i + 2) {
@@ -529,13 +462,10 @@ unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
 				flag = true;
 
 				cte_select_statement =
-				    CreateCTESelectStatement(previous_vertex_entry, edge_entry, vertex_entry, label_column_map);
+				    CreateCTESelectStatement(previous_vertex_entry, edge_entry, vertex_entry);
 				//! Insert into from_tables and call continue with an alias. check if this can be use with BaseTableRef.
 				// outer_subquery_exp->subquery = move(outer_select_statment);
 				break;
-				// select_inner->from_table = make_unique<BaseTableRef>()
-				// vector<unique_ptr<ParsedExpression>> children;
-				// // if (root->args != nullptr) {
 			}
 			case MatchStarPattern::BOUNDED: {
 			}

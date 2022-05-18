@@ -28,8 +28,8 @@ statement ok
 INSERT INTO src_dest (id, v_size, src, dst) SELECT 0, 100, c1.cid, c2.cid FROM Customer c1, Customer c2;
 
 statement ok
-SELECT CREATE_CSR_EDGE(0, (SELECT count(c.cid) as vcount FROM Customer c), 
-CAST ((SELECT sum(CREATE_CSR_VERTEX(0, (SELECT count(c.cid) as vcount FROM Customer c), 
+SELECT CREATE_CSR_EDGE(0, (SELECT max(c.rowid) + 1 as vcount FROM Customer c), 
+CAST ((SELECT sum(CREATE_CSR_VERTEX(0, (SELECT max(c.rowid) + 1 as vcount FROM Customer c), 
 sub.dense_id , sub.cnt )) as numEdges 
 FROM (
     SELECT c.rowid as dense_id, count(t.from_id) as cnt
