@@ -31,9 +31,9 @@ struct CreatePropertyGraphInfo : public CreateInfo {
 	//! List of edge tabels
 	vector<unique_ptr<PropertyGraphTable>> edge_tables;
 	//! Labels to table name map : used in match
-	unordered_map<string, string> label_map;
+	// unordered_map<string, string> label_map;
 
-	//!
+	//! label map to store the reference; use in place of label_map
 	unordered_map<string, PropertyGraphTable *> label_map_1;
 
 public:

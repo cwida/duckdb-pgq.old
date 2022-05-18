@@ -1,0 +1,34 @@
+# name: test/sql/function/sql-pgq/test_snb_kleene_star.test
+# description: Test match query with star
+# group: [sql-pgq]
+
+# Can only be run if sf0.1 snb data is stored under data/ldbc-snb/ directory
+
+# statement ok
+# CREATE TABLE Person(PersonId bigint NOT NULL);
+
+# statement ok
+# COPY Person(PersonId) FROM  'data/ldbc-snb/social-network-sf0.1-projected-fk/Person.csv'       ( HEADER, FORMAT csv);
+
+# statement ok
+# CREATE TABLE Person_knows_Person      (Person1Id bigint NOT NULL, Person2Id    bigint NOT NULL);
+
+# statement ok
+# COPY Person_knows_Person (Person1id, Person2id) FROM 'data/ldbc-snb/social-network-sf0.1-projected-fk/Person_knows_Person.csv'       (DELIMITER '|', HEADER, FORMAT csv);
+
+# statement ok
+# COPY Person_knows_Person (Person2id, Person1id) FROM 'data/ldbc-snb/social-network-sf0.1-projected-fk/Person_knows_Person.csv'       (DELIMITER '|', HEADER, FORMAT csv);
+
+# statement ok
+# CREATE PROPERTY GRAPH aml1 
+# VERTEX TABLES ( person KEY ( personid ) LABEL person )
+# EDGE TABLES ( Person_knows_Person KEY ( Person1Id ) SOURCE KEY ( Person1Id ) REFERENCES Person DESTINATION KEY ( Person2Id ) REFERENCES Person LABEL Person_knows_Person )
+
+
+# statement ok
+# select p1id, p2id 
+# from GRAPH_TABLE (aml1, MATCH (p1 IS PERSON)-[pkp IS Person_knows_Person]->(p2 IS Person) COLUMNS (p1.personid AS p1id, p2.personid AS p2id)) gt
+
+# statement ok
+# select min(gt.c1id)
+# from GRAPH_TABLE (aml1, MATCH (p1 IS PERSON)-[pkp IS Person_knows_Person*]->(p2 IS Person) COLUMNS (p1.personid AS p1id, p2.personid AS p2id)) gt

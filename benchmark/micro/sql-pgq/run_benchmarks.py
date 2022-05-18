@@ -42,7 +42,7 @@ debug = False
 def replace_string(mode, in_file, lane, thread_count, sf_count, divisor, timing_file_name):
 	write_lines = list()
 	print(mode)
-	# new_line = create_line(mode, lane_count, thread_count, vertex_count)
+	# new_line = create_line(mode, lane_count, thread_count, src_count)
 	for lines in in_file.readlines():
 		if(mode == Mode.LANE):
 			if DEFINE_STRING in lines:
@@ -65,7 +65,7 @@ def replace_string(mode, in_file, lane, thread_count, sf_count, divisor, timing_
 				write_lines.append(copy.deepcopy(lines))
 		elif(mode == Mode.SF):
 			if SF_STRING in lines:
-				# new_sql = SQL_STRING + str(vertex_count) + ") ORDER BY RANDOM();\n"
+				# new_sql = SQL_STRING + str(src_count) + ") ORDER BY RANDOM();\n"
 				prefix = lines.find("sf")
 				suffix = lines.find("-projected")
 				new_sql = lines[:prefix] + "sf" + str(sf_count) + lines[suffix:] 
@@ -154,10 +154,18 @@ def run_benchmark( bc_file, output_dir, output_file):
 	# 	print(text)
 
 
+def check_timeout(file_name):
+	with open(file_name) as f:
+		line = f.readline().strip()
+		if(line == "TIMEOUT"):
+			return True
+	return False
+
 thread_values = [1, 2, 4, 8, 12, 16]
 # thread_values = [2]
 # thread_values = [1, 2, 4]
-vertex_count = 1000
+src_count = 500
+pairs = 10000
 variant = 10
 nruns = 5
 def thread_benchmark(sf):
@@ -171,16 +179,16 @@ def thread_benchmark(sf):
 	# f.write("sf " + str(sf) + "########\n")
 	# f.close()
 	
-	lane_count = 64
-	edge_mapping = {"vertex":1000000, "edge":1000000, "msbfs":1000000, "fullquery":1000000}
+	lane_count = 256
+	# edge_mapping = {"src":1000000, "pairs":1000000, "msbfs":1000000, "fullquery":10000}
 	# msbfs.benchmark
 	if debug:
 		output_dir = os.path.join(OUTPUT_DIR, "thread_debug")
 		output_dir = os.path.join(output_dir,  str(sf))
 	else:
-		output_dir = os.path.join(OUTPUT_DIR, "thread")
+		output_dir = os.path.join(OUTPUT_DIR, "thread_256")
 		output_dir = os.path.join(output_dir,  str(sf))
-	debug_dir = os.path.join(DEBUG_DIR, "thread")
+	debug_dir = os.path.join(DEBUG_DIR, "thread_256")
 	debug_dir = os.path.join(debug_dir, str(sf))
 	
 
@@ -200,28 +208,30 @@ def thread_benchmark(sf):
 					print(debug_file)
 					read_and_replace(Mode.TIMING, timing_file=thread_file, timing_output_file=debug_file)
 				
-				edge_count = edge_mapping[output_base]
-				output_file = output_base +  '_' + "lane" + str(lane_count) + '_' + "vertex" + str(vertex_count) + '_' + "edge" + \
-				str(edge_count) + '_' + "thread" + str(thread_count) + "_variant" + str(variant) + '_run' + str(run) + ".out"
+				# edge_count = edge_mapping[output_base]
+				output_file = output_base +  '_' + "lane" + str(lane_count) + '_' + "src" + str(src_count) + '_' + "pairs" + \
+				str(pairs) + '_' + "thread" + str(thread_count) + "_variant" + str(variant) + '_run' + str(run) + ".out"
 				run_benchmark(thread_file, output_dir, output_file)
+				if check_timeout(os.path.join(output_dir, output_file)):
+					break
 				# if output_file == "TIMEOUT":
 				# 	continue
-				# run_benchmark(thread_file, output_dir, output_base +  '_' + str(lane_count) + '_' +  str(vertex_count) + '_' + str(edge_count) + '_' + str(thread_count) + ".out")
+				# run_benchmark(thread_file, output_dir, output_base +  '_' + str(lane_count) + '_' +  str(src_count) + '_' + str(edge_count) + '_' + str(thread_count) + ".out")
 	# f.close()
 
 
 
 def lane_benchmark(sf):
-	lane_values = [ 16, 32, 128, 256, 512]
+	lane_values = [ 128, 256, 512]
 	# lane_values = [16, 64, 256]
 	# lane_values = [256]
 	# f = open('timings-test.txt', 'a')
 	# f = open('timings-test.txt', 'a')
 	# f.write("sf " + str(sf) + "########\n")
-	edge_count = 1000000
+	# edge_count = 10000
 	output_dir = os.path.join(OUTPUT_DIR, "lane_runs")
 	output_dir = os.path.join(output_dir,  str(sf))
-	file = "msbfs.benchmark"
+	file = "fullquery.benchmark"
 	# variant = 5
 	for lane in lane_values:
 		read_and_replace(Mode.LANE, lane=lane)
@@ -233,13 +243,15 @@ def lane_benchmark(sf):
 			# read_and_replace(Mode.TIMING, timing_file_name=name)
 			output_base = file.split(".")[0]
 			print(sf, thread_count, lane)
-			for runs in range(nruns):
+			for run in range(nruns):
 				thread_file = os.path.join(BENCHMARK_DIR, file)			
 				read_and_replace(Mode.THREAD, thread_file=thread_file, thread_count=thread_count)
-				output_file = output_base +  '_' + "lane" + str(lane) + '_' + "vertex" + str(vertex_count) + '_' + "edge" + \
-				str(edge_count) + '_' + "thread" + str(thread_count) + "_variant" + str(variant) + '_run' + str(run) + ".out"
+				output_file = output_base +  '_' + "lane" + str(lane) + '_' + "src" + str(src_count) + '_' + "pairs" + \
+				str(pairs) + '_' + "thread" + str(thread_count) + "_variant" + str(variant) + '_run' + str(run) + ".out"
 				run_benchmark(thread_file, output_dir, output_file)
-			# run_benchmark(thread_file, output_dir, file.split(".")[0] + '_' + str(lane) + '_' + str(vertex_count)  + '_' + str(edge_count) + '_' + str(thread_count) + '_' + str(run) + ".out")
+				if check_timeout(os.path.join(output_dir, output_file)):
+					break
+			# run_benchmark(thread_file, output_dir, file.split(".")[0] + '_' + str(lane) + '_' + str(src_count)  + '_' + str(edge_count) + '_' + str(thread_count) + '_' + str(run) + ".out")
 	# f.close()
 
 
@@ -248,28 +260,33 @@ def msbfs_variant_benchmark(sf):
 	# msbfs_divisors = [2]
 	# f = open('my_file.txt', 'a')
 	# f.write("########\n")
-	edge_count = 1000000
+	file = "fullquery.benchmark"
+	# edge_count = 1000000
 	output_dir = os.path.join(OUTPUT_DIR, "variant")
 	output_dir = os.path.join(output_dir,  str(sf))
-	output_base = msbfs_file.split(".")[0]
-	lane = 64
+	output_base = file.split(".")[0]
+	lane = 512
+	# read_and_replace(Mode.VARIANT, is_variant=true)
 	read_and_replace(Mode.LANE, lane=lane)
 	for divisor in msbfs_divisors:
 		read_and_replace(Mode.MSBFS, divisor=divisor)
 		run_make()
 		for thread_count in thread_values:
-			thread_file = os.path.join(BENCHMARK_DIR, msbfs_file)
+			print(str(sf) + ' ' + str(thread_count))
+			thread_file = os.path.join(BENCHMARK_DIR, file)
 			read_and_replace(Mode.THREAD, thread_file=thread_file, thread_count=thread_count)
 			for run in range(nruns):
-				output_file = output_base +  '_' + "lane" + str(lane) + '_' + "vertex" + str(vertex_count) + '_' + "edge" + \
-				str(edge_count) + '_' + "thread" + str(thread_count) + '_' + str(run) + ".out"
+				output_file = output_base +  '_' + "lane" + str(lane) + '_' + "src" + str(src_count) + '_' + "pairs" + \
+				str(pairs) + '_' + "thread" + str(thread_count) + "_variant" + str(divisor) + '_run' + str(run) + ".out"
 
 				run_benchmark(thread_file, output_dir, output_file)
+				if check_timeout(os.path.join(output_dir, output_file)):
+					break
 
 
-sf_values = [0.1, 0.3, 1, 3, 10]
-# sf_values = [0.1, 0.3, 1, 3]
-# sf_values = [0.1, 0.3]
+#sf_values = [0.1, 0.3, 1, 3, 10]
+sf_values = [30, 100]
+#sf_values = [0.1, 0.3]
 sf_files = ["snb.sql", "create_csr.sql", "fullquery.sql"]
 debug = False
 
@@ -277,19 +294,8 @@ for sf in sf_values:
 	for f in sf_files:
 		sf_file = os.path.join(BENCHMARK_DIR, f)
 		read_and_replace(Mode.SF, sf_count=sf, sf_file=sf_file)
-		
-	
 	thread_benchmark(sf)
-	# lane_benchmark(sf)
-	# msbfs_variant_benchmark(sf)
+	#lane_benchmark(sf)
+	#msbfs_variant_benchmark(sf)
 
-
-# WITH cte AS 
-# (
-# 	SELECT count(p.personid) AS vcount FROM Person p 
-# )
-# SELECT count(src.rowid)
-# FROM cte, Person_Subset_l src, Person_Subset_r dst 
-# WHERE  
-# ( reachability(0, false, cte.vcount, src.rid, dst.rid) = 1);
 

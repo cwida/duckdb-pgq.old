@@ -26,7 +26,7 @@ public:
 	string name;
 	vector<unique_ptr<PropertyGraphTable>> vertex_tables;
 	vector<unique_ptr<PropertyGraphTable>> edge_tables;
-	unordered_map<string, string> label_map;
+	// unordered_map<string, string> label_map;
 	unordered_map<string, PropertyGraphTable *> label_map_1;
 	vector<LogicalType> types;
 

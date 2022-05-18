@@ -2,8 +2,6 @@
 # description: Test msbfs threads 
 # group: [sql-pgq]
 
-# statement ok
-# PRAGMA enable_verification;
 statement ok
 PRAGMA threads=2;
 
