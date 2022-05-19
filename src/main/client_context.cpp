@@ -95,7 +95,9 @@ void ClientContext::CleanupCSR() {
 	csr_list[0].reset();
 	initialized_v = false;
 	initialized_e = false;
+	initialized_w = false;
 	init_shortest_path = false;
+	init_cheapest_path = false;
 	csr_list.erase(csr_list.begin());
 //	init_m = false;
 }
@@ -494,6 +496,9 @@ unique_ptr<QueryResult> ClientContext::RunStatementOrPreparedStatement(ClientCon
 	}
 	// TODO FIX Cleanup
 	if (initialized_v && initialized_e && init_shortest_path) {
+		CleanupCSR();
+	}
+	if (initialized_v && initialized_e && init_cheapest_path && initialized_w) {
 		CleanupCSR();
 	}
 	return result;

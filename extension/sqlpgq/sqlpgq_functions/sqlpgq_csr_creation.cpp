@@ -91,9 +91,9 @@ static void CsrInitializeWeight(ClientContext &context, int32_t id, int64_t v_si
 		throw Exception("Unable to initialise vector of size for csr weight table representation");
 	}
 
-	for (auto i = 1; i < v_size + 2; i++) {
-		context.csr_list[id]->v_weight[i] += context.csr_list[id]->v_weight[i - 1];
-	}
+//	for (auto i = 1; i < v_size + 2; i++) {
+//		context.csr_list[id]->v_weight[i] += context.csr_list[id]->v_weight[i - 1];
+//	}
 	context.initialized_w = true;
 	return;
 }
@@ -136,24 +136,59 @@ static void CreateCsrFunction(DataChunk &args, ExpressionState &state, Vector &r
 
 	CsrInitializeVertex(info.context, info.id, input_size);
 	CsrInitializeEdge(info.context, info.id, input_size, edge_size);
-	BinaryExecutor::Execute<int64_t, int64_t, int64_t>(
-		args.data[3], args.data[6], result, args.size(),
-		[&](int64_t src, int64_t dst) {
-			if (info.context.csr_list[info.id]->v[src + 1] == 0) {
-			    info.context.csr_list[info.id]->v[src + 1] += info.context.csr_list[info.id]->v[src];
-		    }
-			int64_t pos = ++info.context.csr_list[info.id]->v[src + 1];
-			std::cout << "src: " << src << "\tdst: " << dst << "\tpos:" << pos << std::endl;
-			info.context.csr_list[info.id]->e[pos - 1] = dst;
-			return 1;
-		});
+	if (args.ColumnCount() == 5) { //! Unweighted variant
+		BinaryExecutor::Execute<int64_t, int64_t, int64_t>(
+		    args.data[3], args.data[4], result, args.size(),
+		    [&](int64_t src, int64_t dst) {
+			    if (info.context.csr_list[info.id]->v[src + 1] == 0) {
+				    info.context.csr_list[info.id]->v[src + 1] += info.context.csr_list[info.id]->v[src];
+			    }
+			    int64_t pos = ++info.context.csr_list[info.id]->v[src + 1];
+			    info.context.csr_list[info.id]->e[pos - 1] = dst;
+			    return 1;
+		    });
+	} else { // TODO Test for integer and float
+		auto weight_type = args.data[5].GetType().InternalType();
+		CsrInitializeWeight(info.context, info.id, input_size, edge_size, weight_type);
+		if (weight_type == PhysicalType::INT64) {
+			TernaryExecutor::Execute<int64_t, int64_t, int64_t, int64_t>(
+			    args.data[3], args.data[4], args.data[5], result, args.size(),
+			    [&](int64_t src, int64_t dst, int64_t weight) {
+				    if (info.context.csr_list[info.id]->v[src + 1] == 0) {
+					    info.context.csr_list[info.id]->v[src + 1] += info.context.csr_list[info.id]->v[src];
+					    info.context.csr_list[info.id]->v_weight[src + 1] += info.context.csr_list[info.id]->v_weight[src];
+				    }
+				    int64_t pos = ++info.context.csr_list[info.id]->v[src + 1];
+				    info.context.csr_list[info.id]->e[pos - 1] = dst;
+				    int64_t pos_weight = ++info.context.csr_list[info.id]->v_weight[src + 1];
+				    info.context.csr_list[info.id]->w[pos_weight - 1] = weight;
+				    return 1;
+			    });
+		} else {
+			TernaryExecutor::Execute<int64_t, int64_t, double_t, int64_t>(
+			    args.data[3], args.data[4], args.data[5], result, args.size(),
+			    [&](int64_t src, int64_t dst, double_t weight) {
+				    if (info.context.csr_list[info.id]->v[src + 1] == 0) {
+					    info.context.csr_list[info.id]->v[src + 1] += info.context.csr_list[info.id]->v[src];
+					    info.context.csr_list[info.id]->v_weight[src + 1] += info.context.csr_list[info.id]->v_weight[src];
+				    }
+				    int64_t pos = ++info.context.csr_list[info.id]->v[src + 1];
+				    info.context.csr_list[info.id]->e[pos - 1] = dst;
+				    int64_t pos_weight = ++info.context.csr_list[info.id]->v_weight[src + 1];
+				    info.context.csr_list[info.id]->w_double[pos_weight - 1] = weight;
+				    return 1;
+			    });
+		}
 
-
-	bool weighted = false;
-// # TODO Change to column count as in list_contains_or_position.cpp
-	if (args.data.size() == 8) { //! 7th argument defines the weights of the edges. If there are 6 arguments, the edges are unweighted.
-		weighted = true;
 	}
+
+
+
+//	bool weighted = false;
+// # TODO Change to column count as in list_contains_or_position.cpp
+//	if (args.data.size() == 8) { //! 7th argument defines the weights of the edges. If there are 6 arguments, the edges are unweighted.
+//		weighted = true;
+//	}
 
 //	result.SetVectorType(VectorType::CONSTANT_VECTOR);
 //	child_entries[0]->Reference(args.data[0]);
@@ -246,18 +281,30 @@ CreateScalarFunctionInfo SQLPGQFunctions::GetCsrVertexFunction() {
 CreateScalarFunctionInfo SQLPGQFunctions::GetCsrFunction() {
 	ScalarFunctionSet set("create_csr");
 
-	set.AddFunction(ScalarFunction( //! Integers as edge weights
-	    {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT,
-	     LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT},
-	    LogicalTypeId::BIGINT, CreateCsrFunction, false, CreateCsrBind));
-	set.AddFunction(ScalarFunction( //! Double as edge weights
-	    {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT,
-	     LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::DOUBLE},
-	    LogicalTypeId::BIGINT, CreateCsrFunction, false, CreateCsrBind));
-	set.AddFunction(ScalarFunction( //! Unweighted variation
-	    {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT,
-	     LogicalType::BIGINT, LogicalType::BIGINT},
-	    LogicalTypeId::BIGINT, CreateCsrFunction, false, CreateCsrBind));
+	set.AddFunction(ScalarFunction( //! Simplified unweighted
+	    {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT},
+	    LogicalTypeId::BIGINT, CreateCsrFunction, false, CreateCsrBind
+	    ));
+	set.AddFunction(ScalarFunction( //! Simplified weighted integers
+	    {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT},
+	    LogicalTypeId::BIGINT, CreateCsrFunction, false, CreateCsrBind
+	    ));
+	set.AddFunction(ScalarFunction( //! Simplified weighted doubles
+	    {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::DOUBLE},
+	    LogicalTypeId::BIGINT, CreateCsrFunction, false, CreateCsrBind
+	    ));
+//	set.AddFunction(ScalarFunction( //! Integers as edge weights
+//	    {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT,
+//	     LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT},
+//	    LogicalTypeId::BIGINT, CreateCsrFunction, false, CreateCsrBind));
+//	set.AddFunction(ScalarFunction( //! Double as edge weights
+//	    {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT,
+//	     LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::DOUBLE},
+//	    LogicalTypeId::BIGINT, CreateCsrFunction, false, CreateCsrBind));
+//	set.AddFunction(ScalarFunction( //! Unweighted variation
+//	    {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT,
+//	     LogicalType::BIGINT, LogicalType::BIGINT},
+//	    LogicalTypeId::BIGINT, CreateCsrFunction, false, CreateCsrBind));
 	return CreateScalarFunctionInfo(set);
 }
 

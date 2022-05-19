@@ -164,8 +164,6 @@ static bool BfsWithoutArray(bool exit_early, int32_t id, int64_t input_size, Sho
 		for (auto index = (int64_t)info.context.csr_list[id]->v[i];
 		     index < (int64_t)info.context.csr_list[id]->v[i + 1]; // v or v_weight depending on what was last called?
 		     index++) {
-			std::cout << "index " << index << " i " << (int64_t)info.context.csr_list[id]->v[i] << " i+1 "
-			          << (int64_t)info.context.csr_list[id]->v[i + 1] << " i " << i << std::endl;
 			auto n = info.context.csr_list[id]->e[index];
 			visit_next[n] = visit_next[n] | visit[i];
 		}
@@ -504,6 +502,9 @@ static void AnyShortestPathFunction(DataChunk &args, ExpressionState &state, Vec
 
 static unique_ptr<FunctionData> ShortestPathBind(ClientContext &context, ScalarFunction &bound_function,
                                                  vector<unique_ptr<Expression>> &arguments) {
+	if (!(context.initialized_v && context.initialized_e)) {
+		throw ConstraintException("Need to initialize CSR before doing shortest path");
+	}
 	string file_name;
 	if (arguments.size() == 6) {
 		file_name = ExpressionExecutor::EvaluateScalar(*arguments[5]).GetValue<string>();

@@ -127,7 +127,7 @@ public:
 	bool initialized_e = false;
 	bool initialized_w = false;
 	bool init_shortest_path = false;
-//	bool init_m = false;
+	bool init_cheapest_path = false;
 	vector<unique_ptr<Csr>> csr_list;
 	std::mutex csr_lock;
 

@@ -70,7 +70,6 @@ void TemplatedBellmanFord(CheapestPathBindData &info, DataChunk &args, int64_t i
 	result.SetVectorType(VectorType::FLAT_VECTOR);
 	auto result_data = FlatVector::GetData<T>(result);
 	auto &result_validity = FlatVector::Validity(result);
-
 	unordered_map<int64_t, vector<int64_t>> modified;
 	unordered_map<int64_t, vector<T>> dists;
 
@@ -124,6 +123,7 @@ void TemplatedBellmanFord(CheapestPathBindData &info, DataChunk &args, int64_t i
 		}
 		result_size += curr_batch_size;
 	}
+	info.context.init_cheapest_path = true;
 }
 
 
@@ -161,6 +161,9 @@ static unique_ptr<FunctionData> CheapestPathBind(ClientContext &context, ScalarF
 	string file_name;
 
 	int32_t id = ExpressionExecutor::EvaluateScalar(*arguments[0]).GetValue<int32_t>();
+	if (!(context.initialized_v && context.initialized_e && context.initialized_w)) {
+		throw ConstraintException("Need to initialize CSR before doing cheapest path");
+	}
 
 	if (context.csr_list[id]->w.empty()) {
 		bound_function.return_type = LogicalType::DOUBLE;

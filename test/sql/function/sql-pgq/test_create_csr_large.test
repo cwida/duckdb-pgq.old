@@ -89,43 +89,14 @@ statement ok
 SELECT CREATE_CSR(
                0,
                v.vcount,
-               e.ecount,
-               sub.dense_id,
-               sub.cnt,
+               r.ecount,
                r.src,
                r.dst,
                r.weight
            )
-FROM (SELECT p.rowid as dense_id, count(k.src) as cnt
-      FROM PersonInteractions p
-               LEFT JOIN weights k ON k.src = p.id
-      GROUP BY p.rowid) sub,
-      (select count(w.src) as ecount FROM weights w) e,
+           FROM
      (SELECT count(p.id) as vcount FROM PersonInteractions p) v,
-     (SELECT src.rowid as src, dst.rowid as dst, t.weight as weight
+     (SELECT src.rowid as src, dst.rowid as dst, t.weight as weight,  count(src.rowid) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) as ecount
       FROM weights t
            JOIN PersonInteractions src ON t.src = src.id
-           JOIN PersonInteractions dst ON t.dst = dst.id) r
-WHERE r.src = sub.dense_id;
-
-
-
-SELECT (0,
-                       v.vcount,
-                       e.ecount,
-                       sub.cnt,
-                       r.src,
-                       r.dst,
-                       r.weight)
-
-        FROM (SELECT p.rowid as dense_id, count(k.src) as cnt
-              FROM PersonInteractions p
-                       LEFT JOIN weights k ON k.src = p.id
-              GROUP BY p.rowid) sub,
-              (select count(w.src) as ecount FROM weights w) e,
-             (SELECT count(p.id) as vcount FROM PersonInteractions p) v,
-             (SELECT src.rowid as src, dst.rowid as dst, t.weight as weight
-              FROM weights t
-                   JOIN PersonInteractions src ON t.src = src.id
-                   JOIN PersonInteractions dst ON t.dst = dst.id) r
-        WHERE r.src = sub.dense_id;
+           JOIN PersonInteractions dst ON t.dst = dst.id) r;
