@@ -1,3 +1,5 @@
+# name: test/pgq/test_match_shortest.test
+# group: [pgq]
 statement ok
 CREATE TABLE customer (CID INTEGER PRIMARY KEY, NAME TEXT, CITY TEXT);
 

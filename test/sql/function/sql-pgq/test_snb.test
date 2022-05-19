@@ -51,7 +51,7 @@
 # statement ok
 # INSERT INTO src_dest (id, is_variant, v_size, src, dst) 
 # WITH cte as (
-# 	SELECT count(p.personid) as vcount FROM Person p
+# 	SELECT max(p.rowid) + 1 as vcount FROM Person p
 # 	)
 # SELECT 0, false, cte.vcount, p.lid, p.rid FROM cte, Person_ids p;
 
@@ -62,8 +62,8 @@
 # INSERT INTO t VALUES(1);
 
 # statement ok
-# SELECT min(CREATE_CSR_EDGE(0, (SELECT count(p.personid) as vcount FROM Person p), 
-# CAST ((SELECT sum(CREATE_CSR_VERTEX(0, (SELECT count(p.personid) as vcount FROM Person p), 
+# SELECT min(CREATE_CSR_EDGE(0, (SELECT max(p.rowid) + 1 as vcount FROM Person p), 
+# CAST ((SELECT sum(CREATE_CSR_VERTEX(0, (SELECT max(p.rowid) + 1 as vcount FROM Person p), 
 # sub.dense_id , sub.cnt )) AS numEdges
 # FROM (
 #     SELECT p.rowid as dense_id, count(pkp.person1id) as cnt
@@ -84,8 +84,8 @@
 # 1677	0
 
 # statement ok
-# SELECT min(CREATE_CSR_EDGE(0, (SELECT count(p.personid) as vcount FROM Person p), 
-# CAST ((SELECT sum(CREATE_CSR_VERTEX(0, (SELECT count(p.personid) as vcount FROM Person p), 
+# SELECT min(CREATE_CSR_EDGE(0, (SELECT max(p.rowid) + 1 as vcount FROM Person p), 
+# CAST ((SELECT sum(CREATE_CSR_VERTEX(0, (SELECT max(p.rowid) + 1 as vcount FROM Person p), 
 # sub.dense_id , sub.cnt )) AS numEdges
 # FROM (
 #     SELECT p.rowid as dense_id, count(pkp.person1id) as cnt

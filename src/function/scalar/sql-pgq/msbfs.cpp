@@ -25,7 +25,6 @@ struct MsbfsBindData : public FunctionData {
 	}
 };
 
-
 static int16_t InitialiseBfs(idx_t curr_batch, idx_t size, int64_t *src_data, const SelectionVector *src_sel,
                              const ValidityMask &src_validity, vector<std::bitset<LANE_LIMIT>> &seen,
                              vector<std::bitset<LANE_LIMIT>> &visit, vector<std::bitset<LANE_LIMIT>> &visit_next,
@@ -90,8 +89,7 @@ static bool BfsWithoutArray(bool exit_early, int32_t id, int64_t input_size, Msb
                             vector<std::bitset<LANE_LIMIT>> &seen, vector<std::bitset<LANE_LIMIT>> &visit,
                             vector<std::bitset<LANE_LIMIT>> &visit_next) {
 	// D_ASSERT(info.context.csr_list[id]);
-	if(!info.context.csr_list[id]) 
-	{
+	if (!info.context.csr_list[id]) {
 		throw Exception("Csr with id does not exist");
 	}
 	// D_ASSERT(info.context.csr_list[id + 1]);
@@ -201,12 +199,10 @@ static int FindMode(int mode, size_t visit_list_len, size_t visit_limit, size_t 
 	return mode;
 }
 
-
-
 static int16_t InitialiseUnoptBfs(idx_t curr_batch, idx_t size, int64_t *src_data, const SelectionVector *src_sel,
-                             const ValidityMask &src_validity, vector<std::bitset<LANE_LIMIT>> &seen,
-                             vector<std::bitset<LANE_LIMIT>> &visit, vector<std::bitset<LANE_LIMIT>> &visit_next,
-                             unordered_map<int64_t, pair<int16_t, vector<int64_t>>> &lane_map) {
+                                  const ValidityMask &src_validity, vector<std::bitset<LANE_LIMIT>> &seen,
+                                  vector<std::bitset<LANE_LIMIT>> &visit, vector<std::bitset<LANE_LIMIT>> &visit_next,
+                                  unordered_map<int64_t, pair<int16_t, vector<int64_t>>> &lane_map) {
 	int16_t lanes = 0;
 	int16_t curr_batch_size = 0;
 
@@ -215,16 +211,16 @@ static int16_t InitialiseUnoptBfs(idx_t curr_batch, idx_t size, int64_t *src_dat
 
 		if (src_validity.RowIsValid(src_index)) {
 
-				seen[src_data[src_index]][lanes] = true;
-				visit[src_data[src_index]][lanes] = true;
-				lanes++;
+			seen[src_data[src_index]][lanes] = true;
+			visit[src_data[src_index]][lanes] = true;
+			lanes++;
 			curr_batch_size++;
 		}
 	}
 	return curr_batch_size;
 }
 
-//just for benchmaring the improvement with the optimisation. needs to be removed later. 
+// just for benchmaring the improvement with the optimisation. needs to be removed later.
 static void MsbfsUnOptFunction(DataChunk &args, ExpressionState &state, Vector &result) {
 	// D_ASSERT(args.ColumnCount() == 0);
 	auto &func_expr = (BoundFunctionExpression &)state.expr;
@@ -266,7 +262,7 @@ static void MsbfsUnOptFunction(DataChunk &args, ExpressionState &state, Vector &
 		unordered_map<int64_t, pair<int16_t, vector<int64_t>>> lane_map;
 		// init_profiler.Start();
 		auto curr_batch_size = InitialiseUnoptBfs(result_size, args.size(), src_data, vdata_src.sel, vdata_src.validity,
-		                                     seen, visit, visit_next, lane_map);
+		                                          seen, visit, visit_next, lane_map);
 		// init_profiler.End();
 		// log_file << "Init time: " << std::to_string(init_profiler.Elapsed()) << endl;
 		// int mode = 0;
@@ -277,12 +273,12 @@ static void MsbfsUnOptFunction(DataChunk &args, ExpressionState &state, Vector &
 			// log_file << "Iter " << std::to_string(iter) << endl;
 			// iter++;
 
-				// phase_profiler.Start();
-				exit_early = BfsWithoutArray(exit_early, id, input_size, info, seen, visit, visit_next);
-				// phase_profiler.End();
-				// log_file << "BFS time " << std::to_string(phase_profiler.Elapsed()) << endl;
+			// phase_profiler.Start();
+			exit_early = BfsWithoutArray(exit_early, id, input_size, info, seen, visit, visit_next);
+			// phase_profiler.End();
+			// log_file << "BFS time " << std::to_string(phase_profiler.Elapsed()) << endl;
 
-				// profiler.time;
+			// profiler.time;
 
 			visit = visit_next;
 			for (auto i = 0; i < input_size; i++) {
@@ -294,19 +290,18 @@ static void MsbfsUnOptFunction(DataChunk &args, ExpressionState &state, Vector &
 			auto target_index = vdata_target.sel->get_index(i);
 			auto bfs_num = target_index % LANE_LIMIT;
 			if (seen[target_data[target_index]][bfs_num] && seen[src_data[src_index]][bfs_num]) {
-					// if(is_bit_set(seen[target_data[index]], bfs_num) & is_bit_set(seen[value], bfs_num) ) {
-					result_data[target_index] = true;
-				} else {
-					result_data[target_index] = false;
-				}
+				// if(is_bit_set(seen[target_data[index]], bfs_num) & is_bit_set(seen[value], bfs_num) ) {
+				result_data[target_index] = true;
+			} else {
+				result_data[target_index] = false;
+			}
 		}
-		
+
 		result_size = result_size + curr_batch_size;
 		// log_file << "Batch size " << std::to_string(curr_batch_size) << endl;
 		// log_file << "Result size " << std::to_string(result_size) << endl;
 	}
 	// outer_profiler.End();
-	
 }
 
 static void MsbfsFunction(DataChunk &args, ExpressionState &state, Vector &result) {
@@ -419,7 +414,6 @@ static void MsbfsFunction(DataChunk &args, ExpressionState &state, Vector &resul
 	}
 	// outer_profiler.End();
 	// log_file << "Entire program time " << std::to_string(outer_profiler.Elapsed()) << endl;
-
 }
 
 static unique_ptr<FunctionData> MsbfsBind(ClientContext &context, ScalarFunction &bound_function,
@@ -446,7 +440,7 @@ void MsBfsFun::RegisterFunction(BuiltinFunctions &set) {
 	                               {LogicalType::INTEGER, LogicalType::BOOLEAN, LogicalType::BIGINT,
 	                                LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::VARCHAR},
 	                               LogicalType::BOOLEAN, MsbfsFunction, false, MsbfsBind));
-	//Just for benchmarking results. Will remove it in the final code. 
+	// Just for benchmarking results. Will remove it in the final code.
 	set.AddFunction(ScalarFunction(
 	    "reachability_unopt",
 	    {LogicalType::INTEGER, LogicalType::BOOLEAN, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT},

@@ -172,7 +172,7 @@ static unique_ptr<JoinRef> GetJoinRef(PropertyGraphTable *vertex_entry, Property
 	auto second_join_ref = make_unique<JoinRef>();
 	second_join_ref->type = JoinType::INNER;
 	auto edge_base_ref = make_unique<BaseTableRef>();
-	
+
 	edge_base_ref->table_name = edge_entry->name;
 	auto src_base_ref = make_unique<BaseTableRef>();
 	src_base_ref->table_name = vertex_entry->name;
@@ -221,7 +221,7 @@ static unique_ptr<FunctionExpression> CreateSumFunction(PropertyGraphTable *vert
 }
 
 static unique_ptr<SelectStatement> CreateInnerSelectStatement(PropertyGraphTable *vertex_entry,
-                                                        PropertyGraphTable *edge_entry) {
+                                                              PropertyGraphTable *edge_entry) {
 	auto inner_select_statment = make_unique<SelectStatement>();
 	auto inner_select_node = make_unique<SelectNode>();
 	auto c_rowid_colref = make_unique<ColumnRefExpression>("rowid", vertex_entry->name);
@@ -235,7 +235,7 @@ static unique_ptr<SelectStatement> CreateInnerSelectStatement(PropertyGraphTable
 	inner_select_node->select_list.push_back(move(c_rowid_colref));
 	inner_select_node->select_list.push_back(move(inner_count_function));
 	auto c_rowid_colref_1 = make_unique<ColumnRefExpression>("rowid", vertex_entry->name); // c label
-	
+
 	GroupByNode gnode;
 	vector<idx_t> indexes;
 	GroupingExpressionMap map;
@@ -252,23 +252,23 @@ static unique_ptr<SelectStatement> CreateInnerSelectStatement(PropertyGraphTable
 	inner_join_ref->right = move(right_base_ref);
 	// quals for ON
 	auto t_join_colref = make_unique<ColumnRefExpression>(edge_entry->source_key[0], edge_entry->name); // t label
-	auto c_join_colref = make_unique<ColumnRefExpression>(vertex_entry->keys[0], vertex_entry->name);               // c label
+	auto c_join_colref = make_unique<ColumnRefExpression>(vertex_entry->keys[0], vertex_entry->name);   // c label
 	inner_join_ref->condition =
 	    make_unique<ComparisonExpression>(ExpressionType::COMPARE_EQUAL, move(t_join_colref), move(c_join_colref));
-	
+
 	inner_select_node->from_table = move(inner_join_ref);
 	inner_select_statment->node = move(inner_select_node);
 	return inner_select_statment;
 }
 
 static unique_ptr<CastExpression> CreateCastExpression(PropertyGraphTable *vertex_entry,
-                                                        PropertyGraphTable *edge_entry) {
+                                                       PropertyGraphTable *edge_entry) {
 	auto cast_subquery_expr = make_unique<SubqueryExpression>();
 	auto cast_select_node = make_unique<SelectNode>();
 
 	auto inner_select_statement = CreateInnerSelectStatement(vertex_entry, edge_entry);
 	auto inner_from_subquery = make_unique<SubqueryRef>(move(inner_select_statement), "sub");
-	
+
 	cast_select_node->from_table = move(inner_from_subquery);
 	auto sum_function = CreateSumFunction(vertex_entry);
 	cast_select_node->select_list.push_back(move(sum_function));
@@ -310,7 +310,7 @@ static unique_ptr<FunctionExpression> CreateReachabilityFunction() {
 	auto cte_where_src_row = make_unique<ColumnRefExpression>("rowid", "src");
 	auto cte_where_dst_row = make_unique<ColumnRefExpression>("rowid", "dst");
 	auto cte_vcount = make_unique<ColumnRefExpression>("vcount", "cte1");
-	
+
 	auto reachability_id_constant = make_unique<ConstantExpression>(Value::INTEGER((int32_t)0));
 	auto reachability_is_variant = make_unique<ConstantExpression>(Value::BOOLEAN(false));
 	reachability_children.push_back(move(reachability_id_constant));
@@ -373,7 +373,7 @@ static unique_ptr<SelectStatement> CreateCTESelectStatement(PropertyGraphTable *
 	cte_col_ref->alias = "csr";
 	cte_select_node->select_list.push_back(move(src_cid_col_ref));
 	cte_select_node->select_list.push_back(move(dst_cid_col_ref));
-	
+
 	auto cte_ref = make_unique<BaseTableRef>();
 	cte_ref->schema_name = DEFAULT_SCHEMA;
 	cte_ref->table_name = "cte1";
@@ -401,7 +401,6 @@ static unique_ptr<SelectStatement> CreateCTESelectStatement(PropertyGraphTable *
 	cte_select_statement->node = move(cte_select_node);
 	return cte_select_statement;
 }
-
 
 unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
 	auto pg_table =
@@ -461,8 +460,7 @@ unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
 			case MatchStarPattern::ALL: {
 				flag = true;
 
-				cte_select_statement =
-				    CreateCTESelectStatement(previous_vertex_entry, edge_entry, vertex_entry);
+				cte_select_statement = CreateCTESelectStatement(previous_vertex_entry, edge_entry, vertex_entry);
 				//! Insert into from_tables and call continue with an alias. check if this can be use with BaseTableRef.
 				// outer_subquery_exp->subquery = move(outer_select_statment);
 				break;

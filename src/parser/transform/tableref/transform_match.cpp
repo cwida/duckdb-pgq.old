@@ -9,11 +9,13 @@ namespace duckdb {
 
 // using namespace duckdb_libpgquery;
 
-unique_ptr<GraphElementPattern> Transformer::TransformElementPattern(duckdb_libpgquery::PGGraphElementPattern *element_pattern) {
+unique_ptr<GraphElementPattern>
+Transformer::TransformElementPattern(duckdb_libpgquery::PGGraphElementPattern *element_pattern) {
 
 	MatchDirection direction;
 	string edge_alias, vertex_alias;
-	auto graph_variable = reinterpret_cast<duckdb_libpgquery::PGGraphVariablePattern *>(element_pattern->pattern_clause);
+	auto graph_variable =
+	    reinterpret_cast<duckdb_libpgquery::PGGraphVariablePattern *>(element_pattern->pattern_clause);
 
 	auto label_name = graph_variable->label_name ? graph_variable->label_name : "";
 

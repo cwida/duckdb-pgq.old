@@ -60,7 +60,8 @@ public:
 	}
 
 	GraphElementPattern(string alias_name, string label_name, bool is_vertex_pattern, MatchDirection direction,
-	                    MatchStarPattern star_pattern, MatchDistanceType distance_type, int lower_bound, int upper_bound) {
+	                    MatchStarPattern star_pattern, MatchDistanceType distance_type, int lower_bound,
+	                    int upper_bound) {
 		this->alias_name = alias_name;
 		this->label_name = label_name;
 		this->is_vertex_pattern = is_vertex_pattern;

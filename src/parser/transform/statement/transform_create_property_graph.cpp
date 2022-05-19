@@ -8,7 +8,7 @@ namespace duckdb {
 
 unique_ptr<PropertyGraphTable>
 Transformer::TransformPropertyGraphTable(duckdb_libpgquery::PGPropertyGraphTable *table,
-                                        unordered_map<string, PropertyGraphTable *> &label_map_1) {
+                                         unordered_map<string, PropertyGraphTable *> &label_map_1) {
 
 	vector<string> keys, labels, source_key, destination_key;
 	string name, source_key_reference, destination_key_reference;
@@ -44,11 +44,13 @@ Transformer::TransformPropertyGraphTable(duckdb_libpgquery::PGPropertyGraphTable
 		return pg_table;
 	} else {
 		for (auto kc = table->source_key->head; kc; kc = kc->next) {
-			source_key.emplace_back(string(reinterpret_cast<duckdb_libpgquery::PGValue *>(kc->data.ptr_value)->val.str));
+			source_key.emplace_back(
+			    string(reinterpret_cast<duckdb_libpgquery::PGValue *>(kc->data.ptr_value)->val.str));
 		}
 
 		for (auto kc = table->destination_key->head; kc; kc = kc->next) {
-			destination_key.emplace_back(string(reinterpret_cast<duckdb_libpgquery::PGValue *>(kc->data.ptr_value)->val.str));
+			destination_key.emplace_back(
+			    string(reinterpret_cast<duckdb_libpgquery::PGValue *>(kc->data.ptr_value)->val.str));
 		}
 
 		destination_key_reference = string(table->destination_key_reference->relname);

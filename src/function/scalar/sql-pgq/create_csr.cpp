@@ -14,7 +14,7 @@ struct CsrBindData : public FunctionData {
 	ClientContext &context;
 	int32_t id;
 	int32_t vertex_size;
-	
+
 	CsrBindData(ClientContext &context, int32_t id) : context(context), id(id) {
 	}
 
@@ -24,7 +24,7 @@ struct CsrBindData : public FunctionData {
 };
 
 static void CsrInitializeVertexOrEdge(ClientContext &context, int32_t id, int64_t v_size, int64_t e_size = 0,
-                                          bool is_vertex = true) {
+                                      bool is_vertex = true) {
 	if (is_vertex) {
 		lock_guard<mutex> csr_init_lock(context.csr_lock);
 		if (context.initialized_v) {
@@ -42,8 +42,7 @@ static void CsrInitializeVertexOrEdge(ClientContext &context, int32_t id, int64_
 			}
 			if (((u_int64_t)id) < context.csr_list.size()) {
 				context.csr_list[id] = move(csr);
-			}
-			else {
+			} else {
 				context.csr_list.push_back(move(csr));
 			}
 			// dont' forget to destroy
@@ -65,7 +64,7 @@ static void CsrInitializeVertexOrEdge(ClientContext &context, int32_t id, int64_
 			throw Exception("Unable to initialise vector of size for csr edge table representation");
 		}
 
-		//create running sum
+		// create running sum
 		for (auto i = 1; i < v_size + 2; i++) {
 			context.csr_list[id]->v[i] += context.csr_list[id]->v[i - 1];
 		}
@@ -82,7 +81,7 @@ static void CreateCsrVertexFunction(DataChunk &args, ExpressionState &state, Vec
 	if (!info.context.initialized_v) {
 		CsrInitializeVertexOrEdge(info.context, info.id, input_size, 0, true);
 	}
-	
+
 	BinaryExecutor::Execute<int64_t, int64_t, int64_t>(args.data[2], args.data[3], result, args.size(),
 	                                                   [&](int64_t src, int64_t cnt) {
 		                                                   int64_t edge_count = 0;
@@ -96,13 +95,13 @@ static void CreateCsrVertexFunction(DataChunk &args, ExpressionState &state, Vec
 }
 
 static unique_ptr<FunctionData> CreateCsrVertexBind(ClientContext &context, ScalarFunction &bound_function,
-                                                       vector<unique_ptr<Expression>> &arguments) {
+                                                    vector<unique_ptr<Expression>> &arguments) {
 	if (!arguments[0]->IsFoldable()) {
 		throw InvalidInputException("Id must be constant.");
 	}
 
 	Value id = ExpressionExecutor::EvaluateScalar(*arguments[0]);
-	
+
 	return make_unique<CsrBindData>(context, id.GetValue<int32_t>());
 }
 
@@ -127,7 +126,7 @@ static void CreateCsrEdgeFunction(DataChunk &args, ExpressionState &state, Vecto
 }
 
 static unique_ptr<FunctionData> CreateCsrEdgeBind(ClientContext &context, ScalarFunction &bound_function,
-                                                     vector<unique_ptr<Expression>> &arguments) {
+                                                  vector<unique_ptr<Expression>> &arguments) {
 	if (!arguments[0]->IsFoldable()) {
 		throw InvalidInputException("Id must be constant.");
 	}
