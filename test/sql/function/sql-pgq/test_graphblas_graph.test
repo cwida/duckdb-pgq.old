@@ -73,7 +73,7 @@ SELECT s.src, s.dst, any_shortest_path(s.id, false, v_size, s.src, s.dst) FROM s
 3	0	[3, 0]
 0	2	[0, 3, 2]
 0	6	[0, 1, 6]
-a
+
 #SELECT c.id, c2.id, shortest_path(s.id, false, v_size, s.src, s.dst) FROM src_dest s
 #LEFT JOIN Customer c ON s.src = c.rowid
 #LEFT JOIN Customer p2 ON s.dst = c2.rowid

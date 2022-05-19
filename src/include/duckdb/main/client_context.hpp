@@ -46,6 +46,10 @@ class Csr {
 public:
 	Csr() {
 	}
+	~Csr() {
+		delete[] v;
+		delete[] v_weight;
+	}
 
 	std::atomic<int64_t> *v;
 
@@ -122,7 +126,8 @@ public:
 	bool v_set = false;
 	bool initialized_e = false;
 	bool initialized_w = false;
-	bool init_m = false;
+	bool init_shortest_path = false;
+//	bool init_m = false;
 	vector<unique_ptr<Csr>> csr_list;
 	std::mutex csr_lock;
 

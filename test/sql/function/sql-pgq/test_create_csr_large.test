@@ -1,0 +1,131 @@
+require sqlpgq
+
+statement ok
+create table comment as (select * from '/home/daniel/Documents/ldbc_snb_datagen_spark/out-sf0.1/graphs/csv/bi/composite-merged-fk/initial_snapshot/dynamic/Comment/part-00001-47198ecc-269c-4c7f-99e0-26f1f3a15edd-c000.csv');
+
+statement ok
+select * from comment;
+
+statement ok
+create table post as (select * from '/home/daniel/Documents/ldbc_snb_datagen_spark/out-sf0.1/graphs/csv/bi/composite-merged-fk/initial_snapshot/dynamic/Post/part-00000-38b0ed70-f437-427a-9ddf-96c4c609a6ee-c000.csv');
+
+statement ok
+create table person_knows_person as (select * from '/home/daniel/Documents/ldbc_snb_datagen_spark/out-sf0.1/graphs/csv/bi/composite-merged-fk/initial_snapshot/dynamic/Person_knows_Person/part-00000-ec450818-55f1-47df-90a7-b73b5c67649c-c000.csv');
+
+statement ok
+CREATE TABLE Message as (SELECT p.id as messageid, NULL as ParentMessageId, p.CreatorPersonId
+     FROM Post p
+     UNION ALL
+     SELECT c.id                                    as messageid,
+            coalesce(ParentPostId, ParentCommentId) as ParentMessageId,
+            c.CreatorPersonid
+     FROM comment c);
+
+
+statement ok
+CREATE TABLE interactions as (select least(m1.creatorpersonid, m2.creatorpersonid) as src,
+                                         greatest(m1.creatorpersonid, m2.creatorpersonid) as dst,
+                                         count(*) as c
+                                  from Person_knows_person pp, Message m1, Message m2
+                                  where pp.person1id = m1.creatorpersonid and pp.person2id = m2.creatorpersonid and m1.parentmessageid = m2.messageid and m1.creatorpersonid <> m2.creatorpersonid
+                                  group by src, dst);
+
+statement ok
+CREATE TABLE weights as (select src, dst, weight from (
+                            select src, dst, 1.0::double precision / c as weight from interactions
+                            union all
+                            select dst, src, 1.0::double precision / c as weight from interactions)
+                        order by src, dst);
+
+statement ok
+CREATE TABLE PersonInteractions AS (SELECT DISTINCT id
+                                    FROM ((SELECT src as id
+                                           FROM weights)
+                                          UNION ALL
+                                          (SELECT dst AS id
+                                           FROM weights))
+                                    ORDER BY id);
+
+
+#statement ok
+#SELECT sum(CREATE_CSR_VERTEX(
+#           0,
+#           v.vcount,
+#           sub.dense_id,
+#           sub.cnt
+#           ))
+#FROM (SELECT p.rowid as dense_id, count(k.src) as cnt
+#      FROM PersonInteractions p
+#               LEFT JOIN weights k ON k.src = p.id
+#      GROUP BY p.rowid) sub,
+#     (SELECT count(p.id) as vcount FROM PersonInteractions p) v;
+#
+#statement ok
+#SELECT min(CREATE_CSR_EDGE(0, (SELECT count(c.id) as vcount FROM PersonInteractions c),
+#CAST ((SELECT sum(CREATE_CSR_VERTEX(0, (SELECT count(c.id) as vcount FROM PersonInteractions c),
+#sub.dense_id , sub.cnt )) AS numEdges
+#FROM (
+#    SELECT c.rowid as dense_id, count(t.src) as cnt
+#    FROM PersonInteractions c
+#    LEFT JOIN  weights t ON t.src = c.id
+#    GROUP BY c.rowid
+#) sub) AS BIGINT),
+#src.rowid, dst.rowid ))
+#FROM
+#  weights t
+#  JOIN PersonInteractions src ON t.src = src.id
+#  JOIN PersonInteractions dst ON t.dst = dst.id
+
+query II
+select e.ecount, v.vcount
+FROM
+  (select count(w.src) as ecount FROM weights w) e,
+ (SELECT count(p.id) as vcount FROM PersonInteractions p) v;
+----
+18140	1213
+
+
+statement ok
+SELECT CREATE_CSR(
+               0,
+               v.vcount,
+               e.ecount,
+               sub.dense_id,
+               sub.cnt,
+               r.src,
+               r.dst,
+               r.weight
+           )
+FROM (SELECT p.rowid as dense_id, count(k.src) as cnt
+      FROM PersonInteractions p
+               LEFT JOIN weights k ON k.src = p.id
+      GROUP BY p.rowid) sub,
+      (select count(w.src) as ecount FROM weights w) e,
+     (SELECT count(p.id) as vcount FROM PersonInteractions p) v,
+     (SELECT src.rowid as src, dst.rowid as dst, t.weight as weight
+      FROM weights t
+           JOIN PersonInteractions src ON t.src = src.id
+           JOIN PersonInteractions dst ON t.dst = dst.id) r
+WHERE r.src = sub.dense_id;
+
+
+
+SELECT (0,
+                       v.vcount,
+                       e.ecount,
+                       sub.cnt,
+                       r.src,
+                       r.dst,
+                       r.weight)
+
+        FROM (SELECT p.rowid as dense_id, count(k.src) as cnt
+              FROM PersonInteractions p
+                       LEFT JOIN weights k ON k.src = p.id
+              GROUP BY p.rowid) sub,
+              (select count(w.src) as ecount FROM weights w) e,
+             (SELECT count(p.id) as vcount FROM PersonInteractions p) v,
+             (SELECT src.rowid as src, dst.rowid as dst, t.weight as weight
+              FROM weights t
+                   JOIN PersonInteractions src ON t.src = src.id
+                   JOIN PersonInteractions dst ON t.dst = dst.id) r
+        WHERE r.src = sub.dense_id;

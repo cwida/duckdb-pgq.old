@@ -12,9 +12,8 @@
 namespace duckdb {
 
 template <typename T>
-std::ostream &operator<<(std::ostream &os, const std::vector<T> &v)
-{
-	for (T const &i: v) {
+std::ostream &operator<<(std::ostream &os, const std::vector<T> &v) {
+	for (T const &i : v) {
 		os << i << " ";
 	}
 	return os;
@@ -95,7 +94,6 @@ static int16_t InitialiseBfs(idx_t curr_batch, idx_t size, int64_t *src_data, co
 	return curr_batch_size;
 }
 
-
 static int16_t InitialiseBfs(idx_t curr_batch, idx_t size, int64_t *src_data, const SelectionVector *src_sel,
                              const ValidityMask &src_validity, vector<std::bitset<LANE_LIMIT>> &seen,
                              vector<std::bitset<LANE_LIMIT>> &visit, vector<std::bitset<LANE_LIMIT>> &visit_next,
@@ -166,6 +164,8 @@ static bool BfsWithoutArray(bool exit_early, int32_t id, int64_t input_size, Sho
 		for (auto index = (int64_t)info.context.csr_list[id]->v[i];
 		     index < (int64_t)info.context.csr_list[id]->v[i + 1]; // v or v_weight depending on what was last called?
 		     index++) {
+			std::cout << "index " << index << " i " << (int64_t)info.context.csr_list[id]->v[i] << " i+1 "
+			          << (int64_t)info.context.csr_list[id]->v[i + 1] << " i " << i << std::endl;
 			auto n = info.context.csr_list[id]->e[index];
 			visit_next[n] = visit_next[n] | visit[i];
 		}
@@ -187,8 +187,6 @@ static bool BfsWithoutArray(bool exit_early, int32_t id, int64_t input_size, Sho
 	}
 	return exit_early;
 }
-
-
 
 template <typename T>
 static bool BfsWithoutArray(bool exit_early, int32_t id, int64_t input_size, AnyShortestPathBindData &info,
@@ -218,8 +216,6 @@ static bool BfsWithoutArray(bool exit_early, int32_t id, int64_t input_size, Any
 		}
 	}
 
-
-
 	for (const auto &element : intermediate_path) {
 		for (uint64_t map_index = 0; map_index < intermediate_path[element.first].size(); map_index++) {
 			if (final_path[element.first][map_index] == -1 && intermediate_path[element.first][map_index].is_set) {
@@ -228,15 +224,6 @@ static bool BfsWithoutArray(bool exit_early, int32_t id, int64_t input_size, Any
 			}
 		}
 	}
-
-//	for (uint64_t path_index = 0; path_index < intermediate_path.size(); path_index++) {
-//		for (uint64_t map_index = 0; map_index < intermediate_path[element.first].size(); map_index++) {
-	//			if (final_path[element.first][map_index] == -1 && intermediate_path[element.first][map_index].is_set) {
-	//				final_path[element.first][map_index] = intermediate_path[element.first][map_index].index;
-	//				intermediate_path[element.first][map_index].index = map_index;
-	//			}
-	//		}
-//	}
 
 	for (uint64_t bfs_index = 0; bfs_index < visit_next.size(); bfs_index++) {
 		if (!visit_next[bfs_index].any()) {
@@ -315,7 +302,7 @@ static void ShortestPathFunction(DataChunk &args, ExpressionState &state, Vector
 	log_file << "Args size: " << std::to_string(args.size()) << endl;
 	outer_profiler.Start();
 
-//	info.context.init_m = true;
+	//	info.context.init_m = true;
 
 	while (result_size < args.size()) {
 		vector<std::bitset<LANE_LIMIT>> seen(input_size);
@@ -330,9 +317,8 @@ static void ShortestPathFunction(DataChunk &args, ExpressionState &state, Vector
 		unordered_map<int16_t, vector<uint32_t>> depth_map_uint32;
 		unordered_map<int16_t, vector<uint64_t>> depth_map_uint64;
 		uint64_t bfs_depth = 0;
-		auto curr_batch_size =
-		    InitialiseBfs(result_size, args.size(), src_data, vdata_src.sel, vdata_src.validity, seen, visit,
-		                  visit_next, lane_map, bfs_depth, depth_map_uint8, input_size);
+		auto curr_batch_size = InitialiseBfs(result_size, args.size(), src_data, vdata_src.sel, vdata_src.validity,
+		                                     seen, visit, visit_next, lane_map, bfs_depth, depth_map_uint8, input_size);
 		init_profiler.End();
 		log_file << "Init time: " << std::to_string(init_profiler.Elapsed()) << endl;
 		bool exit_early = false;
@@ -350,17 +336,17 @@ static void ShortestPathFunction(DataChunk &args, ExpressionState &state, Vector
 			phase_profiler.Start();
 
 			if (bfs_depth < UINT8_MAX) {
-				exit_early = BfsWithoutArray<uint8_t>(exit_early, id, input_size, info, seen, visit, visit_next, bfs_depth,
-				                             depth_map_uint8);
+				exit_early = BfsWithoutArray<uint8_t>(exit_early, id, input_size, info, seen, visit, visit_next,
+				                                      bfs_depth, depth_map_uint8);
 			} else if (bfs_depth >= UINT8_MAX && bfs_depth < UINT16_MAX) {
-				exit_early = BfsWithoutArray<uint16_t>(exit_early, id, input_size, info, seen, visit, visit_next, bfs_depth,
-				                             depth_map_uint16);
+				exit_early = BfsWithoutArray<uint16_t>(exit_early, id, input_size, info, seen, visit, visit_next,
+				                                       bfs_depth, depth_map_uint16);
 			} else if (bfs_depth >= UINT16_MAX && bfs_depth < UINT32_MAX) {
-				exit_early = BfsWithoutArray<uint32_t>(exit_early, id, input_size, info, seen, visit, visit_next, bfs_depth,
-				                             depth_map_uint32);
+				exit_early = BfsWithoutArray<uint32_t>(exit_early, id, input_size, info, seen, visit, visit_next,
+				                                       bfs_depth, depth_map_uint32);
 			} else if (bfs_depth >= UINT32_MAX && bfs_depth < UINT64_MAX) {
-				exit_early = BfsWithoutArray<uint64_t>(exit_early, id, input_size, info, seen, visit, visit_next, bfs_depth,
-				                             depth_map_uint64 );
+				exit_early = BfsWithoutArray<uint64_t>(exit_early, id, input_size, info, seen, visit, visit_next,
+				                                       bfs_depth, depth_map_uint64);
 			}
 			phase_profiler.End();
 			log_file << "BFS time: " << std::to_string(phase_profiler.Elapsed()) << endl;
@@ -393,6 +379,8 @@ static void ShortestPathFunction(DataChunk &args, ExpressionState &state, Vector
 	log_file << "Entire program time: " << std::to_string(outer_profiler.Elapsed()) << endl;
 	log_file << "-" << endl;
 	//	auto int_s = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+	info.context.init_shortest_path = true;
+
 }
 
 static void AnyShortestPathFunction(DataChunk &args, ExpressionState &state, Vector &result) {
@@ -418,7 +406,7 @@ static void AnyShortestPathFunction(DataChunk &args, ExpressionState &state, Vec
 	result.SetVectorType(VectorType::FLAT_VECTOR);
 	auto result_data = FlatVector::GetData<list_entry_t>(result);
 	auto &result_validity = FlatVector::Validity(result);
-//	info.context.init_m = true;
+	//	info.context.init_m = true;
 	idx_t total_len = 0;
 
 	while (result_size < args.size()) {
@@ -479,13 +467,12 @@ static void AnyShortestPathFunction(DataChunk &args, ExpressionState &state, Vec
 				result_validity.SetInvalid(i);
 			}
 
-
 			const auto &target_entry = target_data[target_index];
 			const auto &source_entry = src_data[source_index];
 			const auto &bfs_num = lane_map[source_entry].first;
 			auto index = target_entry;
 			std::vector<int64_t> output_vector;
-			if (index == -2) { // TODO TEST THIS
+			if (index == -2) {                                   // TODO TEST THIS
 				output_vector.push_back(src_data[target_index]); //! Source == target in this case
 				break;
 			}
@@ -508,14 +495,12 @@ static void AnyShortestPathFunction(DataChunk &args, ExpressionState &state, Vec
 			total_len += ListVector::GetListSize(*output);
 			ListVector::Append(result, ListVector::GetEntry(*output), ListVector::GetListSize(*output));
 
-//			result_data[i] = output_vector;
+			//			result_data[i] = output_vector;
 		}
 		result_size = result_size + curr_batch_size;
 	}
 	D_ASSERT(ListVector::GetListSize(result) == total_len);
-
 }
-
 
 static unique_ptr<FunctionData> ShortestPathBind(ClientContext &context, ScalarFunction &bound_function,
                                                  vector<unique_ptr<Expression>> &arguments) {

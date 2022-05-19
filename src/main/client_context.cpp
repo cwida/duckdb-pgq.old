@@ -92,11 +92,12 @@ void ClientContext::Cleanup() {
 }
 
 void ClientContext::CleanupCSR() {
-
-	delete[] csr_list[0]->v;
+	csr_list[0].reset();
 	initialized_v = false;
 	initialized_e = false;
-	init_m = false;
+	init_shortest_path = false;
+	csr_list.erase(csr_list.begin());
+//	init_m = false;
 }
 
 unique_ptr<DataChunk> ClientContext::Fetch() {
@@ -492,7 +493,7 @@ unique_ptr<QueryResult> ClientContext::RunStatementOrPreparedStatement(ClientCon
 		}
 	}
 	// TODO FIX Cleanup
-	if (initialized_v && initialized_e && init_m) {
+	if (initialized_v && initialized_e && init_shortest_path) {
 		CleanupCSR();
 	}
 	return result;
@@ -949,5 +950,4 @@ bool ClientContext::TryGetCurrentSetting(const std::string &key, Value &result) 
 	result = found_session_value ? session_value->second : global_value->second;
 	return true;
 }
-
 } // namespace duckdb
