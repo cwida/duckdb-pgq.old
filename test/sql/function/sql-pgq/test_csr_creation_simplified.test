@@ -59,13 +59,14 @@ statement ok
 SELECT DISTINCT CREATE_CSR(
 0,
 v.vcount,
-r.ecount,
+e.ecount,
 r.src,
 r.dst,
 r.weight
 )
    FROM (SELECT count(c.cid) as vcount FROM Customer c) v,
-    (SELECT src.rowid as src, dst.rowid as dst, t.amount as weight, count(src.rowid) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) as ecount
+   (SELECT count(t.from_id) as ecount FROM Transfers t) e,
+    (SELECT src.rowid as src, dst.rowid as dst, t.amount as weight
         FROM Transfers t
         JOIN Customer src ON t.from_id = src.cid
         JOIN Customer dst ON t.to_id = dst.cid

@@ -147,7 +147,7 @@ static void CreateCsrFunction(DataChunk &args, ExpressionState &state, Vector &r
 			    info.context.csr_list[info.id]->e[pos - 1] = dst;
 			    return 1;
 		    });
-	} else { // TODO Test for integer and float
+	} else {
 		auto weight_type = args.data[5].GetType().InternalType();
 		CsrInitializeWeight(info.context, info.id, input_size, edge_size, weight_type);
 		if (weight_type == PhysicalType::INT64) {

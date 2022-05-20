@@ -100,3 +100,5 @@ SELECT CREATE_CSR(
       FROM weights t
            JOIN PersonInteractions src ON t.src = src.id
            JOIN PersonInteractions dst ON t.dst = dst.id) r;
+
+
