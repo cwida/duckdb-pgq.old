@@ -377,7 +377,6 @@ static void ShortestPathFunction(DataChunk &args, ExpressionState &state, Vector
 	log_file << "Entire program time: " << std::to_string(outer_profiler.Elapsed()) << endl;
 	log_file << "-" << endl;
 	//	auto int_s = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-	info.context.init_shortest_path = true;
 
 }
 
@@ -502,7 +501,11 @@ static void AnyShortestPathFunction(DataChunk &args, ExpressionState &state, Vec
 
 static unique_ptr<FunctionData> ShortestPathBind(ClientContext &context, ScalarFunction &bound_function,
                                                  vector<unique_ptr<Expression>> &arguments) {
-	if (!(context.initialized_v && context.initialized_e)) {
+	int32_t id = ExpressionExecutor::EvaluateScalar(*arguments[0]).GetValue<int32_t>();
+	if (id + 1 > context.csr_list.size()) {
+		throw ConstraintException("Invalid ID");
+	}
+	if (!(context.csr_list[id]->initialized_v && context.csr_list[id]->initialized_e)) {
 		throw ConstraintException("Need to initialize CSR before doing shortest path");
 	}
 	string file_name;

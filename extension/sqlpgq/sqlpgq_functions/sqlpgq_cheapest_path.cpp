@@ -123,7 +123,6 @@ void TemplatedBellmanFord(CheapestPathBindData &info, DataChunk &args, int64_t i
 		}
 		result_size += curr_batch_size;
 	}
-	info.context.init_cheapest_path = true;
 }
 
 
@@ -158,12 +157,19 @@ static void CheapestPathFunction(DataChunk &args, ExpressionState &state, Vector
 
 static unique_ptr<FunctionData> CheapestPathBind(ClientContext &context, ScalarFunction &bound_function,
                                                  vector<unique_ptr<Expression>> &arguments) {
-	string file_name;
+
+	if (!arguments[0]->IsFoldable()) {
+		throw InvalidInputException("Id must be constant.");
+	}
 
 	int32_t id = ExpressionExecutor::EvaluateScalar(*arguments[0]).GetValue<int32_t>();
-	if (!(context.initialized_v && context.initialized_e && context.initialized_w)) {
+	if (id + 1 > context.csr_list.size()) {
+		throw ConstraintException("Invalid ID");
+	}
+	if (!(context.csr_list[id]->initialized_v && context.csr_list[id]->initialized_e && context.csr_list[id]->initialized_w)) {
 		throw ConstraintException("Need to initialize CSR before doing cheapest path");
 	}
+	string file_name;
 
 	if (context.csr_list[id]->w.empty()) {
 		bound_function.return_type = LogicalType::DOUBLE;
@@ -177,18 +183,11 @@ static unique_ptr<FunctionData> CheapestPathBind(ClientContext &context, ScalarF
 CreateScalarFunctionInfo SQLPGQFunctions::GetCheapestPathFunction() {
 	ScalarFunctionSet set("cheapest_path");
 
-//	set.AddFunction(ScalarFunction(
-//	    {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT},
-//	                          LogicalType::BIGINT, CheapestPathFunction, false, CheapestPathBind));
+
 	set.AddFunction(ScalarFunction(
 	    {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT},
 	    LogicalType::ANY, CheapestPathFunction, false, CheapestPathBind));
 
 	return CreateScalarFunctionInfo(set);
-
-//	auto fun = ScalarFunction("cheapest_path",
-//	                          {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT},
-//	                          LogicalType::BIGINT, CheapestPathFunction, false, CheapestPathBind);
-//	return CreateScalarFunctionInfo(fun);
 }
 } // namespace duckdb

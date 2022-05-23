@@ -1,5 +1,9 @@
 require sqlpgq
 
+
+statement ok
+create table person as (select * from '/home/daniel/Documents/ldbc_snb_datagen_spark/out-sf0.1/graphs/csv/bi/composite-merged-fk/initial_snapshot/dynamic/Person/part-00000-d1080d9d-1782-43d9-9819-774e8996b943-c000.csv');
+
 statement ok
 create table comment as (select * from '/home/daniel/Documents/ldbc_snb_datagen_spark/out-sf0.1/graphs/csv/bi/composite-merged-fk/initial_snapshot/dynamic/Comment/part-00001-47198ecc-269c-4c7f-99e0-26f1f3a15edd-c000.csv');
 
@@ -28,7 +32,8 @@ CREATE TABLE interactions as (select least(m1.creatorpersonid, m2.creatorpersoni
                                          count(*) as c
                                   from Person_knows_person pp, Message m1, Message m2
                                   where pp.person1id = m1.creatorpersonid and pp.person2id = m2.creatorpersonid and m1.parentmessageid = m2.messageid and m1.creatorpersonid <> m2.creatorpersonid
-                                  group by src, dst);
+                                  group by src, dst
+                                  order by src, dst);
 
 statement ok
 CREATE TABLE weights as (select src, dst, weight from (
@@ -45,36 +50,6 @@ CREATE TABLE PersonInteractions AS (SELECT DISTINCT id
                                           (SELECT dst AS id
                                            FROM weights))
                                     ORDER BY id);
-
-
-#statement ok
-#SELECT sum(CREATE_CSR_VERTEX(
-#           0,
-#           v.vcount,
-#           sub.dense_id,
-#           sub.cnt
-#           ))
-#FROM (SELECT p.rowid as dense_id, count(k.src) as cnt
-#      FROM PersonInteractions p
-#               LEFT JOIN weights k ON k.src = p.id
-#      GROUP BY p.rowid) sub,
-#     (SELECT count(p.id) as vcount FROM PersonInteractions p) v;
-#
-#statement ok
-#SELECT min(CREATE_CSR_EDGE(0, (SELECT count(c.id) as vcount FROM PersonInteractions c),
-#CAST ((SELECT sum(CREATE_CSR_VERTEX(0, (SELECT count(c.id) as vcount FROM PersonInteractions c),
-#sub.dense_id , sub.cnt )) AS numEdges
-#FROM (
-#    SELECT c.rowid as dense_id, count(t.src) as cnt
-#    FROM PersonInteractions c
-#    LEFT JOIN  weights t ON t.src = c.id
-#    GROUP BY c.rowid
-#) sub) AS BIGINT),
-#src.rowid, dst.rowid ))
-#FROM
-#  weights t
-#  JOIN PersonInteractions src ON t.src = src.id
-#  JOIN PersonInteractions dst ON t.dst = dst.id
 
 query II
 select e.ecount, v.vcount
@@ -102,3 +77,15 @@ SELECT CREATE_CSR(
            JOIN PersonInteractions dst ON t.dst = dst.id) r;
 
 
+query IIIII
+select s.id, s.locationcityid, s2.id, s2.locationcityid, cheapest_path(0, (select count(*) from PersonInteractions), s.rowid, s2.rowid) as weight from
+    (select pi.id, pi.rowid, p.locationcityid from personinteractions pi JOIN person p on p.id = pi.id where p.locationcityid = 117) s,
+    (select pi.id, pi.rowid, p.locationcityid from personinteractions pi JOIN person p on p.id = pi.id where p.locationcityid = 659) s2;
+----
+18140	117	18140	659	1
+18140	117	18140	659	1
+18140	117	18140	659	1
+18140	117	18140	659	1
+18140	117	18140	659	1
+18140	117	18140	659	1
+18140	117	18140	659	1

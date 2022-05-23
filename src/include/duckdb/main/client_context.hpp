@@ -60,6 +60,10 @@ public:
 
 	vector<int64_t> w;
 	vector<double_t> w_double;
+
+	bool initialized_v = false;
+	bool initialized_e = false;
+	bool initialized_w = false;
 };
 
 
@@ -121,13 +125,7 @@ public:
 	//! The random generator used by random(). Its seed value can be set by setseed().
 	std::mt19937 random_engine;
 
-	//! used by udfs to create vertex and edge tables csr representation
-	bool initialized_v = false;
-	bool v_set = false;
-	bool initialized_e = false;
-	bool initialized_w = false;
-	bool init_shortest_path = false;
-	bool init_cheapest_path = false;
+
 	vector<unique_ptr<Csr>> csr_list;
 	std::mutex csr_lock;
 
@@ -245,7 +243,7 @@ private:
 
 	bool UpdateFunctionInfoFromEntry(ScalarFunctionCatalogEntry *existing_function, CreateScalarFunctionInfo *new_info);
 
-	void CleanupCSR();
+//	void CleanupCSR();
 
 private:
 	//! The currently opened StreamQueryResult (if any)

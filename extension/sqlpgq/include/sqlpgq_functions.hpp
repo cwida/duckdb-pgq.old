@@ -27,12 +27,11 @@ public:
 
 		// Create functions
 		functions.push_back(GetCsrFunction());
-		functions.push_back(GetCsrVertexFunction());
-		functions.push_back(GetCsrEdgeFunction());
 		functions.push_back(GetShortestPathFunction());
 		functions.push_back(GetCheapestPathFunction());
 		functions.push_back(GetAnyShortestPathFunction());
 		functions.push_back(GetReachabilityFunction());
+		functions.push_back(GetDeleteCsrFunction());
 //		AddAliases({"to_json", "json_quote"}, GetToJSONFunction(), functions);
 //		functions.push_back(GetArrayToJSONFunction());
 //		functions.push_back(GetRowToJSONFunction());
@@ -52,12 +51,11 @@ public:
 
 private:
 	static CreateScalarFunctionInfo GetCsrFunction();
-	static CreateScalarFunctionInfo GetCsrVertexFunction();
-	static CreateScalarFunctionInfo GetCsrEdgeFunction();
 	static CreateScalarFunctionInfo GetShortestPathFunction();
 	static CreateScalarFunctionInfo GetCheapestPathFunction();
 	static CreateScalarFunctionInfo GetAnyShortestPathFunction();
 	static CreateScalarFunctionInfo GetReachabilityFunction();
+	static CreateScalarFunctionInfo GetDeleteCsrFunction();
 //	static CreateScalarFunctionInfo GetRowToJSONFunction();
 //
 //	static CreateScalarFunctionInfo GetStructureFunction();

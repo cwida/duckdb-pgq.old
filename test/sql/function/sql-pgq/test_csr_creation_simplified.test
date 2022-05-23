@@ -44,7 +44,7 @@ statement ok
 INSERT INTO src_dest VALUES(0, 6, 0, 5), (0, 6, 0, 4), (0, 6, 5, 3), (0, 6, 0, 2), (0, 6, 2, 3), (0, 6, 1, 5), (0, 6, 3, 2), (0, 6, 0, 1) ;
 
 query I
-SELECT shortest_path(id, false, v_size, src, dst) FROM src_dest;
+SELECT shortest_path(0, false, v_size, src, dst) FROM src_dest;
 ----
 1
 2
@@ -54,6 +54,11 @@ SELECT shortest_path(id, false, v_size, src, dst) FROM src_dest;
 2
 1
 1
+
+query I
+select delete_csr_by_id(0);
+----
+{'id': 0}
 
 statement ok
 SELECT DISTINCT CREATE_CSR(
@@ -83,6 +88,11 @@ SELECT cheapest_path(0, v_size, src, dst) FROM src_dest;
 80
 200
 100
+
+query I
+SELECT delete_csr_by_id(0);
+----
+{'id': 0}
 
 statement ok
 CREATE TABLE Transfers_float(tid bigint, from_id bigint, to_id bigint, amount double);
@@ -116,7 +126,6 @@ r.weight
         JOIN Customer dst ON t.to_id = dst.cid
         GROUP BY src.rowid, dst.rowid, t.amount) r;
 
-
 query I
 SELECT cheapest_path(0, v_size, src, dst) FROM src_dest;
 ----
@@ -129,10 +138,20 @@ SELECT cheapest_path(0, v_size, src, dst) FROM src_dest;
 200.300000
 100.100000
 
+query I
+SELECT delete_csr_by_id(0);
+----
+{'id': 0}
+
+
 # Cannot do cheapest path before CSR is created
 statement error
 SELECT cheapest_path(0, v_size, src, dst) FROM src_dest;
 
 # Cannot do shortest path before CSR is created
 statement error
-SELECT shortest_path(id, false, v_size, src, dst) FROM src_dest;
+SELECT shortest_path(0, false, v_size, src, dst) FROM src_dest;
+
+statement error
+SELECT delete_csr_by_id(1);
+

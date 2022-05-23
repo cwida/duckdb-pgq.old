@@ -3,10 +3,7 @@ cmake_minimum_required(VERSION 2.8.12)
 project(SQLPGQExtension)
 
 include_directories(include)
-#include_directories(vectorclass)
 add_subdirectory(sqlpgq_functions)
-#add_subdirectory(vectorclass)
-
 
 set(SQLPGQ_EXTENSION_FILES
     sqlpgq-extension.cpp
@@ -14,8 +11,7 @@ set(SQLPGQ_EXTENSION_FILES
     sqlpgq_functions/sqlpgq_shortest_path.cpp
     sqlpgq_functions/sqlpgq_csr_creation.cpp
     sqlpgq_functions/sqlpgq_reachability.cpp
-#        ${VECTORCLASS_OBJECT_FILES}
-    )
+    sqlpgq_functions/sqlpgq_csr_deletion.cpp)
 
 add_library(sqlpgq_extension STATIC ${SQLPGQ_EXTENSION_FILES})
 
