@@ -28,30 +28,36 @@ INSERT Into transfers VALUES (102001, 10, 20, '2020-01-01', 5000), (103001, 10, 
 statement ok
 CREATE PROPERTY GRAPH aml_complete
 VERTEX TABLES ( account KEY ( AID ) LABEL acct, customer KEY ( CID ) LABEL customer )
-EDGE TABLES ( transfers KEY ( from_id ) SOURCE KEY ( from_id ) REFERENCES account DESTINATION KEY ( to_id ) REFERENCES account LABEL transfers )
+EDGE TABLES ( transfers KEY ( from_id ) SOURCE KEY ( from_id ) REFERENCES account DESTINATION KEY ( to_id ) REFERENCES account LABEL transfers );
 
+statement ok
+select c1id, c2id from GRAPH_TABLE (aml_complete, MATCH CHEAPEST (c1 IS CUSTOMER)-[t1 IS TRANSFERS COST amount]-(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt;
 
 statement ok
 select c1id, c2id
-from GRAPH_TABLE (aml_complete, MATCH SHORTEST (c1 IS CUSTOMER)-[t1 IS TRANSFERS*]->(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
+from GRAPH_TABLE (aml_complete, MATCH SHORTEST (c1 IS CUSTOMER)-[t1 IS TRANSFERS*]->(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt;
 
 statement ok
 select c1id, c2id
-from GRAPH_TABLE (aml_complete, MATCH CHEAPEST (c1 IS CUSTOMER)-[t1 IS TRANSFERS]->(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
+from GRAPH_TABLE (aml_complete, MATCH CHEAPEST (c1 IS CUSTOMER)-[t1 IS TRANSFERS]->(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt;
 
 statement ok
 select c1id, c2id
-from GRAPH_TABLE (aml_complete, MATCH (c1 IS CUSTOMER)-[t1 IS TRANSFERS*]->(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
+from GRAPH_TABLE (aml_complete, MATCH (c1 IS CUSTOMER)-[t1 IS TRANSFERS*]->(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt;
 
 statement error
 select c1id, c2id
-from GRAPH_TABLE (aml_complete, MATCH LONGEST (c1 IS CUSTOMER)-[t1 IS TRANSFERS]->(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
+from GRAPH_TABLE (aml_complete, MATCH LONGEST (c1 IS CUSTOMER)-[t1 IS TRANSFERS]->(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt;
 
 statement error
 select c1id, c2id
-from GRAPH_TABLE (aml_complete, LONGEST MATCH (c1 IS CUSTOMER)-[t1 IS TRANSFERS]->(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
+from GRAPH_TABLE (aml_complete, LONGEST MATCH (c1 IS CUSTOMER)-[t1 IS TRANSFERS]->(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt;
 
-#
-#statement error
-#select c1id, c2id
-#from GRAPH_TABLE (aml_complete, LONGEST MATCH (c1 IS CUSTOMER)-[t1 IS TRANSFERS]->(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
+statement ok
+select c1id, c2id
+from GRAPH_TABLE (aml_complete, MATCH CHEAPEST (c1 IS CUSTOMER)-[t1 IS TRANSFERS COST amount]-(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt;
+
+statement error
+select c1id, c2id
+from GRAPH_TABLE (aml_complete, MATCH CHEAPEST (c1 IS CUSTOMER)-[t1 IS TRANSFERS COST]-(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt;
+

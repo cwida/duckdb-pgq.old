@@ -2116,6 +2116,7 @@ typedef struct PGGraphElementPattern {
 	//Only used for Edge pattern
 	PGMatchDirection direction;
 	PGMatchStarPattern star_pattern;
+	char *cost_pattern;
 	int lower_bound;
 	int upper_bound;
 } PGGraphElementPattern;

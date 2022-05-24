@@ -31,16 +31,30 @@ public:
 	}
 
 	GraphElementPattern(string alias_name, string label_name, bool is_vertex_pattern, MatchDirection direction,
-	                    MatchStarPattern star_pattern) {
+	                    MatchStarPattern star_pattern, string cost_pattern) {
 		this->alias_name = alias_name;
 		this->label_name = label_name;
 		this->is_vertex_pattern = is_vertex_pattern;
 		this->direction = direction;
 		this->star_pattern = star_pattern;
+		this->cost_name = cost_pattern;
 	}
 
 	GraphElementPattern(string alias_name, string label_name, bool is_vertex_pattern, MatchDirection direction,
-	                    MatchStarPattern star_pattern, MatchDistanceType distance_type) {
+	                    MatchStarPattern star_pattern, int lower_bound, int upper_bound, string cost_pattern) {
+		this->alias_name = alias_name;
+		this->label_name = label_name;
+		this->is_vertex_pattern = is_vertex_pattern;
+		this->direction = direction;
+		this->star_pattern = star_pattern;
+		this->lower_bound = lower_bound;
+		this->upper_bound = upper_bound;
+		this->cost_name = cost_pattern;
+
+	}
+
+	GraphElementPattern(string alias_name, string label_name, bool is_vertex_pattern, MatchDirection direction,
+	                    MatchStarPattern star_pattern) {
 		this->alias_name = alias_name;
 		this->label_name = label_name;
 		this->is_vertex_pattern = is_vertex_pattern;
@@ -59,26 +73,16 @@ public:
 		this->upper_bound = upper_bound;
 	}
 
-	GraphElementPattern(string alias_name, string label_name, bool is_vertex_pattern, MatchDirection direction,
-	                    MatchStarPattern star_pattern, MatchDistanceType distance_type, int lower_bound,
-	                    int upper_bound) {
-		this->alias_name = alias_name;
-		this->label_name = label_name;
-		this->is_vertex_pattern = is_vertex_pattern;
-		this->direction = direction;
-		this->star_pattern = star_pattern;
-		this->lower_bound = lower_bound;
-		this->upper_bound = upper_bound;
-	}
-
 	string alias_name;
 	string label_name;
+	string cost_name;
 	bool is_vertex_pattern;
 
 	MatchDirection direction;
 	MatchStarPattern star_pattern;
 	int lower_bound;
 	int upper_bound;
+
 	virtual ~GraphElementPattern() {
 	}
 

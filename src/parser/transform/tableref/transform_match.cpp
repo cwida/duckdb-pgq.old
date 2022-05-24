@@ -13,7 +13,7 @@ unique_ptr<GraphElementPattern>
 Transformer::TransformElementPattern(duckdb_libpgquery::PGGraphElementPattern *element_pattern) {
 
 	MatchDirection direction;
-	string edge_alias, vertex_alias;
+	string edge_alias, vertex_alias, cost_pattern;
 	auto graph_variable =
 	    reinterpret_cast<duckdb_libpgquery::PGGraphVariablePattern *>(element_pattern->pattern_clause);
 
@@ -25,7 +25,6 @@ Transformer::TransformElementPattern(duckdb_libpgquery::PGGraphElementPattern *e
 		} else {
 			vertex_alias = graph_variable->alias_name;
 		}
-		// return graph_element_pattern;
 
 		return make_unique<GraphElementPattern>(vertex_alias, label_name, element_pattern->is_vertex_pattern);
 	} else {
@@ -44,6 +43,10 @@ Transformer::TransformElementPattern(duckdb_libpgquery::PGGraphElementPattern *e
 			                              element_pattern->direction);
 		}
 
+		if (element_pattern->cost_pattern) {
+			cost_pattern = element_pattern->cost_pattern;
+		}
+
 		if (!graph_variable->alias_name) {
 			edge_alias = "__e__" + to_string(edge_id++);
 		} else {
@@ -53,10 +56,10 @@ Transformer::TransformElementPattern(duckdb_libpgquery::PGGraphElementPattern *e
 		switch (element_pattern->star_pattern) {
 		case duckdb_libpgquery::PG_STAR_NONE:
 			return make_unique<GraphElementPattern>(edge_alias, label_name, element_pattern->is_vertex_pattern,
-			                                        direction, MatchStarPattern::NONE);
+			                                        direction, MatchStarPattern::NONE, cost_pattern);
 		case duckdb_libpgquery::PG_STAR_ALL:
 			return make_unique<GraphElementPattern>(edge_alias, label_name, element_pattern->is_vertex_pattern,
-			                                        direction, MatchStarPattern::ALL);
+			                                        direction, MatchStarPattern::ALL, cost_pattern);
 		case duckdb_libpgquery::PG_STAR_BOUNDED: {
 			if (element_pattern->lower_bound < 0 || element_pattern->upper_bound < 0) {
 				throw ParserException("Lower and upper bound have to be greater and 0");
@@ -65,15 +68,13 @@ Transformer::TransformElementPattern(duckdb_libpgquery::PGGraphElementPattern *e
 			} else {
 				return make_unique<GraphElementPattern>(edge_alias, label_name, element_pattern->is_vertex_pattern,
 				                                        direction, MatchStarPattern::BOUNDED,
-				                                        element_pattern->lower_bound, element_pattern->upper_bound);
+				                                        element_pattern->lower_bound, element_pattern->upper_bound, cost_pattern);
 			}
 		}
 		default:
 			throw NotImplementedException("Element pattern direction %d not implemented yet",
 			                              element_pattern->direction);
 		}
-		// return make_unique<GraphElementPattern>(edge_alias, label_name, element_pattern->is_vertex_pattern,
-		// direction);
 	}
 }
 

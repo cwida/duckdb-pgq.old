@@ -334,6 +334,17 @@ FullEdgeAnyDirection:
                     n->star_pattern = PG_STAR_NONE;
                     $$ = (PGNode *) n;
                 }
+
+	    | '-' '[' ElementPatternFillerOptional COST ColId']' '-'
+		{
+		    PGGraphElementPattern *n = makeNode(PGGraphElementPattern);
+		    n->pattern_clause = $3;
+		    n->direction = PG_MATCH_DIR_ANY;
+		    n->is_vertex_pattern = false;
+		    n->star_pattern = PG_STAR_NONE;
+		    n->cost_pattern = $5;
+		    $$ = (PGNode *) n;
+		}
             ;
 
 //avoiding unions can scope out
