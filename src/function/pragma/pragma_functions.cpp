@@ -221,6 +221,16 @@ static void PragmaDisableOptimizer(ClientContext &context, const FunctionParamet
 	context.enable_optimizer = false;
 }
 
+static void PragmaDeleteCSR(ClientContext &context, const FunctionParameters &parameters) {
+	auto id = parameters.values[0].GetValue<int32_t>();
+	if ((uint64_t)id + 1 > context.csr_list.size()) {
+		throw ConstraintException("Invalid ID");
+	}
+	D_ASSERT(context.csr_list[id]);
+	context.csr_list[id].reset();
+	context.csr_list.erase(context.csr_list.begin() + id);
+}
+
 static void PragmaPerfectHashThreshold(ClientContext &context, const FunctionParameters &parameters) {
 	auto bits = parameters.values[0].GetValue<int32_t>();
 	;
@@ -331,6 +341,9 @@ void PragmaFunctions::RegisterFunction(BuiltinFunctions &set) {
 
 	set.AddFunction(PragmaFunction::PragmaStatement("enable_print_progress_bar", PragmaEnablePrintProgressBar));
 	set.AddFunction(PragmaFunction::PragmaStatement("disable_print_progress_bar", PragmaDisablePrintProgressBar));
+
+	set.AddFunction(
+	    PragmaFunction::PragmaAssignment("delete_csr", PragmaDeleteCSR, LogicalType::INTEGER));
 
 	set.AddFunction(
 	    PragmaFunction::PragmaAssignment("set_progress_bar_time", PragmaSetProgressBarWaitTime, LogicalType::INTEGER));

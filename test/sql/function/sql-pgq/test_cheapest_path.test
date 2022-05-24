@@ -3,8 +3,8 @@ require sqlpgq
 statement ok
 CREATE TABLE Customer(cid bigint not null, name string);
 
-#statement ok
-#CREATE TABLE Transfers(tid bigint, from_id bigint, to_id bigint, amount bigint);
+statement ok
+CREATE TABLE Transfers(tid bigint, from_id bigint, to_id bigint, amount bigint);
 
 statement ok
 INSERT INTO Customer VALUES (197, 'A'), (201, 'B'), (343, 'C'), (406, 'D'), (101, 'E'), (807, 'F');
@@ -98,25 +98,17 @@ SELECT DISTINCT CREATE_CSR(
 0,
 v.vcount,
 r.ecount,
-sub.dense_id,
-sub.cnt,
 r.src,
 r.dst,
 r.weight
 )
-FROM (
-    SELECT c.rowid as dense_id, count(t.from_id) as cnt
-    FROM Customer c
-    LEFT JOIN Transfers_float t ON t.from_id = c.cid
-    GROUP BY c.rowid
-) sub,
+FROM
     (SELECT count(c.cid) as vcount FROM Customer c) v,
     (SELECT src.rowid as src, dst.rowid as dst, t.amount as weight, count(src.rowid) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) as ecount
         FROM Transfers_float t
         JOIN Customer src ON t.from_id = src.cid
         JOIN Customer dst ON t.to_id = dst.cid
         GROUP BY src.rowid, dst.rowid, t.amount) r
-    WHERE r.src = sub.dense_id;
 #----
 #{'id': 0, 'vertices': 6, 'edges': 10, 'weight': double}
 
@@ -140,44 +132,5 @@ SELECT cheapest_path(0, v_size, src, dst) FROM src_dest;
 100.100000
 
 
-SELECT
-0,
-v.vcount,
-sub.cnt,
-r.src,
-r.dst,
-r.weight,
-r.ecount
-FROM (
-    SELECT c.rowid as dense_id, count(t.from_id) as cnt
-    FROM Customer c
-    LEFT JOIN Transfers_float t ON t.from_id = c.cid
-    GROUP BY c.rowid
-) sub,
-    (SELECT count(c.cid) as vcount FROM Customer c) v,
-    (SELECT src.rowid as src, dst.rowid as dst, t.amount as weight, count(src.rowid) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) as ecount
-        FROM Transfers_float t
-        JOIN Customer src ON t.from_id = src.cid
-        JOIN Customer dst ON t.to_id = dst.cid
-        GROUP BY src.rowid, dst.rowid, t.amount) r
-    WHERE r.src = sub.dense_id;
-
-SELECT
-0,
-v.vcount,
-sub.cnt,
-r.src,
-r.dst,
-r.weight
-FROM (
-    SELECT c.rowid as dense_id, count(t.from_id) as cnt
-    FROM Customer c
-    LEFT JOIN  Transfers_float t ON t.from_id = c.cid
-    GROUP BY c.rowid
-) sub,
-    (SELECT count(c.cid) as vcount FROM Customer c) v,
-    (SELECT src.rowid as src, dst.rowid as dst, t.amount as weight
-        FROM Transfers_float t
-        JOIN Customer src ON t.from_id = src.cid
-        JOIN Customer dst ON t.to_id = dst.cid) r
-    WHERE r.src = sub.dense_id;
+statement ok
+pragma delete_csr=0

@@ -55,10 +55,14 @@ SELECT shortest_path(0, false, v_size, src, dst) FROM src_dest;
 1
 1
 
-query I
-select delete_csr_by_id(0);
-----
-{'id': 0}
+statement ok
+pragma delete_csr=0
+
+statement error
+pragma delete_csr 1
+
+statement error
+pragma delete_csr=1
 
 statement ok
 SELECT DISTINCT CREATE_CSR(
@@ -89,10 +93,8 @@ SELECT cheapest_path(0, v_size, src, dst) FROM src_dest;
 200
 100
 
-query I
-SELECT delete_csr_by_id(0);
-----
-{'id': 0}
+statement ok
+pragma delete_csr=0
 
 statement ok
 CREATE TABLE Transfers_float(tid bigint, from_id bigint, to_id bigint, amount double);
@@ -138,11 +140,8 @@ SELECT cheapest_path(0, v_size, src, dst) FROM src_dest;
 200.300000
 100.100000
 
-query I
-SELECT delete_csr_by_id(0);
-----
-{'id': 0}
-
+statement ok
+pragma delete_csr=0
 
 # Cannot do cheapest path before CSR is created
 statement error
@@ -153,5 +152,4 @@ statement error
 SELECT shortest_path(0, false, v_size, src, dst) FROM src_dest;
 
 statement error
-SELECT delete_csr_by_id(1);
-
+pragma delete_csr=1

@@ -502,7 +502,7 @@ static void AnyShortestPathFunction(DataChunk &args, ExpressionState &state, Vec
 static unique_ptr<FunctionData> ShortestPathBind(ClientContext &context, ScalarFunction &bound_function,
                                                  vector<unique_ptr<Expression>> &arguments) {
 	int32_t id = ExpressionExecutor::EvaluateScalar(*arguments[0]).GetValue<int32_t>();
-	if (id + 1 > context.csr_list.size()) {
+	if ((uint64_t)id + 1 > context.csr_list.size()) {
 		throw ConstraintException("Invalid ID");
 	}
 	if (!(context.csr_list[id]->initialized_v && context.csr_list[id]->initialized_e)) {

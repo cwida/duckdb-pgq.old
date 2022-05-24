@@ -32,15 +32,16 @@ static int16_t InitialiseBellmanFord(ClientContext &context, const DataChunk &ar
 		dists[i] = std::vector<T>(args.size(), std::numeric_limits<T>::max());
 	}
 
-	//	int16_t lanes = 0;
+	int16_t lanes = 0;
 	int16_t curr_batch_size = 0;
-	for (idx_t i = result_size; i < args.size(); i++) { // && lanes < LANE_LIMIT
+	for (idx_t i = result_size; i < args.size() && lanes < LANE_LIMIT; i++) { // && lanes < LANE_LIMIT
 		auto src_index = vdata_src.sel->get_index(i);
 		if (vdata_src.validity.RowIsValid(src_index)) {
 			const int64_t &src_entry = src_data[src_index];
-			modified[src_entry][i] = true;
-			dists[src_entry][i] = 0;
+			modified[src_entry][lanes] = true;
+			dists[src_entry][lanes] = 0;
 			curr_batch_size++;
+			lanes++;
 		}
 	}
 	return curr_batch_size;
@@ -163,7 +164,7 @@ static unique_ptr<FunctionData> CheapestPathBind(ClientContext &context, ScalarF
 	}
 
 	int32_t id = ExpressionExecutor::EvaluateScalar(*arguments[0]).GetValue<int32_t>();
-	if (id + 1 > context.csr_list.size()) {
+	if ((uint64_t)id + 1 > context.csr_list.size()) {
 		throw ConstraintException("Invalid ID");
 	}
 	if (!(context.csr_list[id]->initialized_v && context.csr_list[id]->initialized_e && context.csr_list[id]->initialized_w)) {

@@ -11,7 +11,7 @@ set(SQLPGQ_EXTENSION_FILES
     sqlpgq_functions/sqlpgq_shortest_path.cpp
     sqlpgq_functions/sqlpgq_csr_creation.cpp
     sqlpgq_functions/sqlpgq_reachability.cpp
-    sqlpgq_functions/sqlpgq_csr_deletion.cpp)
+        )
 
 add_library(sqlpgq_extension STATIC ${SQLPGQ_EXTENSION_FILES})
 

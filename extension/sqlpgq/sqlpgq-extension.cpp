@@ -26,11 +26,6 @@ void SQLPGQExtension::Load(DuckDB &db) {
 std::string SQLPGQExtension::Name() {
 	return "sqlpgq";
 }
-
-//std::string SQLPGQExtension::Name() {
-//	return "sqlpgq";
-//}
-
 } // namespace duckdb
 
 extern "C" {

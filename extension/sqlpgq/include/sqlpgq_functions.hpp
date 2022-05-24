@@ -31,7 +31,6 @@ public:
 		functions.push_back(GetCheapestPathFunction());
 		functions.push_back(GetAnyShortestPathFunction());
 		functions.push_back(GetReachabilityFunction());
-		functions.push_back(GetDeleteCsrFunction());
 //		AddAliases({"to_json", "json_quote"}, GetToJSONFunction(), functions);
 //		functions.push_back(GetArrayToJSONFunction());
 //		functions.push_back(GetRowToJSONFunction());
@@ -55,7 +54,6 @@ private:
 	static CreateScalarFunctionInfo GetCheapestPathFunction();
 	static CreateScalarFunctionInfo GetAnyShortestPathFunction();
 	static CreateScalarFunctionInfo GetReachabilityFunction();
-	static CreateScalarFunctionInfo GetDeleteCsrFunction();
 //	static CreateScalarFunctionInfo GetRowToJSONFunction();
 //
 //	static CreateScalarFunctionInfo GetStructureFunction();
