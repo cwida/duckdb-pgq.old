@@ -62,6 +62,8 @@ unique_ptr<SQLStatement> Transformer::TransformStatement(duckdb_libpgquery::PGNo
 		return TransformCreateSequence(stmt);
 	case duckdb_libpgquery::T_PGCreateFunctionStmt:
 		return TransformCreateFunction(stmt);
+	case duckdb_libpgquery::T_PGCreatePropertyGraphStmt:
+		return TransformCreatePropertyGraph(stmt);
 	case duckdb_libpgquery::T_PGDropStmt:
 		return TransformDrop(stmt);
 	case duckdb_libpgquery::T_PGInsertStmt:

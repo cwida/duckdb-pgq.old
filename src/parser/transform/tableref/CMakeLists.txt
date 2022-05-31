@@ -6,7 +6,8 @@ add_library_unity(
   transform_from.cpp
   transform_subquery.cpp
   transform_table_function.cpp
-  transform_tableref.cpp)
+  transform_tableref.cpp
+  transform_match.cpp)
 set(ALL_OBJECT_FILES
     ${ALL_OBJECT_FILES} $<TARGET_OBJECTS:duckdb_transformer_tableref>
     PARENT_SCOPE)

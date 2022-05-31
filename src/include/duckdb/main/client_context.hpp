@@ -42,6 +42,26 @@ class ClientContextLock;
 struct CreateScalarFunctionInfo;
 class ScalarFunctionCatalogEntry;
 
+class Csr {
+public:
+	Csr() {
+	}
+
+	// vector<unique_ptr<std::atomic<int>>> v;
+	std::atomic<int64_t> *v;
+	// std::atomic<int32_t>* e;
+	vector<int64_t> e;
+	// int x;
+	// std::atomic<int> v;
+
+	// unique_ptr<std::atomic<int>> v;
+	// std::vector<std::unique_ptr<std::atomic<int>>> examp;
+	// vector<atomicwrapper<int>> v;
+	// vector<std::atomic<int>> e;
+	// csr() = delete;
+	// csr(const csr&) = delete;
+	// csr(csr&&) = default;
+};
 //! The ClientContext holds information relevant to the current client session
 //! during execution
 class ClientContext : public std::enable_shared_from_this<ClientContext> {
@@ -99,6 +119,13 @@ public:
 	ExplainOutputType explain_output_type = ExplainOutputType::PHYSICAL_ONLY;
 	//! The random generator used by random(). Its seed value can be set by setseed().
 	std::mt19937 random_engine;
+
+	//! used by udfs to create vertex and edge tables csr representation
+	bool initialized_v = false;
+	bool initialized_e = false;
+	bool init_m = false;
+	vector<unique_ptr<Csr>> csr_list;
+	std::mutex csr_lock;
 
 	const unique_ptr<CatalogSearchPath> catalog_search_path;
 
@@ -213,6 +240,8 @@ private:
 	unique_ptr<ClientContextLock> LockContext();
 
 	bool UpdateFunctionInfoFromEntry(ScalarFunctionCatalogEntry *existing_function, CreateScalarFunctionInfo *new_info);
+
+	void CleanupCSR();
 
 private:
 	//! The currently opened StreamQueryResult (if any)

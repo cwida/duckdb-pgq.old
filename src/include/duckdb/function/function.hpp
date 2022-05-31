@@ -237,6 +237,7 @@ private:
 	void RegisterStringFunctions();
 	void RegisterNestedFunctions();
 	void RegisterSequenceFunctions();
+	void RegisterSqlPgqFunctions();
 	void RegisterTrigonometricsFunctions();
 
 	// pragmas

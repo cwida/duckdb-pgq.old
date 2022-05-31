@@ -1,0 +1,25 @@
+# name: benchmark/micro/sql-pgq/create_csr_vertex.benchmark
+# description: Create CSR Vertex 
+# group: [sql-pgq]
+
+name Create CSR Vertex
+group sql-pgq
+
+init
+PRAGMA threads=4;
+
+load benchmark/micro/sql-pgq/create_csr.sql
+
+run
+SELECT min(CREATE_CSR_VERTEX(0, (SELECT count(p.personid) as vcount FROM Person p), 
+sub.dense_id , sub.cnt )) AS numEdges
+FROM (
+    SELECT p.rowid as dense_id, count(pkp.person1id) as cnt
+    FROM Person p  
+    LEFT JOIN  Person_knows_Person pkp ON pkp.person1id = p.personid
+    GROUP BY p.rowid
+) sub
+
+result I
+0
+

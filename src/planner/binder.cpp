@@ -147,6 +147,9 @@ unique_ptr<BoundTableRef> Binder::Bind(TableRef &ref) {
 	case TableReferenceType::EXPRESSION_LIST:
 		result = Bind((ExpressionListRef &)ref);
 		break;
+	case TableReferenceType::MATCH:
+		result = Bind((MatchRef &)ref);
+		break;
 	default:
 		throw InternalException("Unknown table ref type");
 	}

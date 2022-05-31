@@ -13,6 +13,7 @@
 #include "duckdb/catalog/catalog_entry/table_function_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/type_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/view_catalog_entry.hpp"
+#include "duckdb/catalog/catalog_entry/property_graph_catalog_entry.hpp"
 #include "duckdb/catalog/default/default_functions.hpp"
 #include "duckdb/catalog/default/default_views.hpp"
 #include "duckdb/common/exception.hpp"
@@ -27,6 +28,7 @@
 #include "duckdb/parser/parsed_data/create_table_function_info.hpp"
 #include "duckdb/parser/parsed_data/create_type_info.hpp"
 #include "duckdb/parser/parsed_data/create_view_info.hpp"
+#include "duckdb/parser/parsed_data/create_property_graph_info.hpp"
 #include "duckdb/parser/parsed_data/drop_info.hpp"
 #include "duckdb/planner/parsed_data/bound_create_table_info.hpp"
 #include "duckdb/storage/data_table.hpp"
@@ -108,6 +110,11 @@ CatalogEntry *SchemaCatalogEntry::CreateTable(ClientContext &context, BoundCreat
 CatalogEntry *SchemaCatalogEntry::CreateView(ClientContext &context, CreateViewInfo *info) {
 	auto view = make_unique<ViewCatalogEntry>(catalog, this, info);
 	return AddEntry(context, move(view), info->on_conflict);
+}
+
+CatalogEntry *SchemaCatalogEntry::CreatePropertyGraph(ClientContext &context, CreatePropertyGraphInfo *info) {
+	auto property_graph = make_unique<PropertyGraphCatalogEntry>(catalog, this, info);
+	return AddEntry(context, move(property_graph), info->on_conflict);
 }
 
 CatalogEntry *SchemaCatalogEntry::CreateIndex(ClientContext &context, CreateIndexInfo *info, TableCatalogEntry *table) {
@@ -219,6 +226,7 @@ string SchemaCatalogEntry::ToSQL() {
 CatalogSet &SchemaCatalogEntry::GetCatalogSet(CatalogType type) {
 	switch (type) {
 	case CatalogType::VIEW_ENTRY:
+	case CatalogType::PROPERTY_GRAPH_ENTRY:
 	case CatalogType::TABLE_ENTRY:
 		return tables;
 	case CatalogType::INDEX_ENTRY:

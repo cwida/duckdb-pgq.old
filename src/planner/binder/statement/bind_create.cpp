@@ -9,6 +9,7 @@
 #include "duckdb/parser/parsed_data/create_index_info.hpp"
 #include "duckdb/parser/parsed_data/create_macro_info.hpp"
 #include "duckdb/parser/parsed_data/create_view_info.hpp"
+#include "duckdb/parser/parsed_data/create_property_graph_info.hpp"
 #include "duckdb/parser/parsed_expression_iterator.hpp"
 #include "duckdb/parser/statement/create_statement.hpp"
 #include "duckdb/planner/binder.hpp"
@@ -26,6 +27,34 @@
 #include "duckdb/planner/tableref/bound_basetableref.hpp"
 
 namespace duckdb {
+/*
+static void CheckPropertyGraphTable(vector<unique_ptr<PropertyGraphTable>> element_tables, SchemaCatalogEntry *schema) {
+    for (idx_t i = 0; i < element_tables.size(); i++) {
+        auto &element_table = element_tables[i];
+
+        // DEFAULT_SCHEMA = main
+        // can schema of info and underlying table be different ?
+        auto table = Catalog::GetCatalog(context).GetEntry<TableCatalogEntry>(context, schema, element_table->name);
+
+        if (!table) {
+            throw BinderException("Table %s doesnot exist", element_table->name);
+        }
+        for (idx_t key_index = 0; key_index < vertex_table->keys.size(); key_index++) {
+            auto entry = table->name_map.find(vertex_table->keys[key_index]);
+
+            if (entry == table->name_map.end()) {
+                throw BinderException("Column %s not found in table %s", vertex_table->keys[key_index], table->name);
+            }
+        }
+        if(vertex_table->contains_discriminator) {
+            auto entry = table->name_map.find(vertex_table->discriminator);
+            if (entry == table->name_map.end()) {
+                throw BinderException("Column %s not found in table %s", vertex_table->keys[key_index], table->name);
+            }
+        }
+        // primary key constraint checked.
+    }
+}*/
 
 SchemaCatalogEntry *Binder::BindSchema(CreateInfo &info) {
 	if (info.schema.empty()) {
@@ -67,6 +96,44 @@ void Binder::BindCreateViewInfo(CreateViewInfo &base) {
 		base.aliases.push_back(query_node.names[i]);
 	}
 	base.types = query_node.types;
+}
+
+void Binder::BindCreatePropertyGraphInfo(CreatePropertyGraphInfo &info) {
+	// bind the view as if it were a query so we can catch errors
+	// note that we bind the original, and replace the original with a copy
+	// this is because the original has
+	// auto copy = base.Copy();
+
+	auto pg_table =
+	    Catalog::GetCatalog(context).GetEntry<PropertyGraphCatalogEntry>(context, info.schema, info.name, true);
+	if (pg_table) {
+		throw BinderException("Property Graph Table %s already exists", info.name);
+	}
+	for (idx_t i = 0; i < info.vertex_tables.size(); i++) {
+		auto &vertex_table = info.vertex_tables[i];
+
+		// DEFAULT_SCHEMA = main
+		// can schema of info and underlying table be different ?
+		auto table = Catalog::GetCatalog(context).GetEntry<TableCatalogEntry>(context, info.schema, vertex_table->name);
+
+		if (!table) {
+			throw BinderException("Table %s doesnot exist", vertex_table->name);
+		}
+		for (idx_t key_index = 0; key_index < vertex_table->keys.size(); key_index++) {
+			auto entry = table->name_map.find(vertex_table->keys[key_index]);
+
+			if (entry == table->name_map.end()) {
+				throw BinderException("Column %s not found in table %s", vertex_table->keys[key_index], table->name);
+			}
+		}
+		if (vertex_table->contains_discriminator) {
+			auto entry = table->name_map.find(vertex_table->discriminator);
+			if (entry == table->name_map.end()) {
+				throw BinderException("Column %s not found in table %s", vertex_table->discriminator, table->name);
+			}
+		}
+		// primary key constraint checked.
+	}
 }
 
 SchemaCatalogEntry *Binder::BindCreateFunctionInfo(CreateInfo &info) {
@@ -226,6 +293,17 @@ BoundStatement Binder::Bind(CreateStatement &stmt) {
 	case CatalogType::TYPE_ENTRY: {
 		auto schema = BindSchema(*stmt.info);
 		result.plan = make_unique<LogicalCreate>(LogicalOperatorType::LOGICAL_CREATE_TYPE, move(stmt.info), schema);
+		break;
+	}
+	case CatalogType::PROPERTY_GRAPH_ENTRY: {
+
+		auto &base = (CreatePropertyGraphInfo &)*stmt.info;
+		// bind the schema
+		auto schema = BindSchema(*stmt.info);
+
+		BindCreatePropertyGraphInfo(base);
+		result.plan =
+		    make_unique<LogicalCreate>(LogicalOperatorType::LOGICAL_CREATE_PROPERTY_GRAPH, move(stmt.info), schema);
 		break;
 	}
 	default:

@@ -1,0 +1,7 @@
+%type <list> VertexTableDefinitionList
+%type <list> LabelList
+%type <list> EdgeTableDefinitionList
+%type <list> GraphTableKeyClause
+%type <node> VertexTableDefinition
+%type <node> EdgeTableDefinition
+%type <str>  LabelEnd

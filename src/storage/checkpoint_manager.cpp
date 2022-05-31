@@ -7,6 +7,13 @@
 #include "duckdb/catalog/catalog_entry/table_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/type_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/view_catalog_entry.hpp"
+#include "duckdb/catalog/catalog_entry/property_graph_catalog_entry.hpp"
+
+#include "duckdb/parser/parsed_data/create_schema_info.hpp"
+#include "duckdb/parser/parsed_data/create_table_info.hpp"
+#include "duckdb/parser/parsed_data/create_view_info.hpp"
+#include "duckdb/parser/parsed_data/create_property_graph_info.hpp"
+
 #include "duckdb/common/serializer.hpp"
 #include "duckdb/common/types/null_value.hpp"
 #include "duckdb/common/vector_operations/vector_operations.hpp"
@@ -126,6 +133,7 @@ void CheckpointManager::WriteSchema(SchemaCatalogEntry &schema) {
 	// then, we fetch the tables/views/sequences information
 	vector<TableCatalogEntry *> tables;
 	vector<ViewCatalogEntry *> views;
+	vector<PropertyGraphCatalogEntry *> pg_tables;
 	schema.Scan(CatalogType::TABLE_ENTRY, [&](CatalogEntry *entry) {
 		if (entry->internal) {
 			return;
@@ -134,6 +142,8 @@ void CheckpointManager::WriteSchema(SchemaCatalogEntry &schema) {
 			tables.push_back((TableCatalogEntry *)entry);
 		} else if (entry->type == CatalogType::VIEW_ENTRY) {
 			views.push_back((ViewCatalogEntry *)entry);
+		} else if (entry->type == CatalogType::PROPERTY_GRAPH_ENTRY) {
+			pg_tables.push_back((PropertyGraphCatalogEntry *)entry);
 		} else {
 			throw NotImplementedException("Catalog type for entries");
 		}
@@ -187,6 +197,10 @@ void CheckpointManager::WriteSchema(SchemaCatalogEntry &schema) {
 	for (auto &macro : macros) {
 		WriteMacro(*macro);
 	}
+	// metadata_writer->Write<uint32_t>(pg_tables.size());
+	// for (auto &pg_table : pg_tables) {
+	// 	WritePropertyGraph(*pg_table);
+	// }
 }
 
 void CheckpointManager::ReadSchema(ClientContext &context, MetaBlockReader &reader) {
@@ -240,6 +254,20 @@ void CheckpointManager::ReadView(ClientContext &context, MetaBlockReader &reader
 	auto &catalog = Catalog::GetCatalog(db);
 	catalog.CreateView(context, info.get());
 }
+
+//===--------------------------------------------------------------------===//
+// Property Graph Tables
+//===--------------------------------------------------------------------===//
+/*void CheckpointManager::WritePropertyGraph(PropertyGraphCatalogEntry &pg_table) {
+    pg_table.Serialize(*metadata_writer);
+}
+
+void CheckpointManager::ReadPropertyGraph(ClientContext &context, MetaBlockReader &reader) {
+    auto info = PropertyGraphCatalogEntry::Deserialize(reader);
+
+    auto &catalog = Catalog::GetCatalog(db);
+    catalog.CreatePropertyGraph(context, info.get());
+}*/
 
 //===--------------------------------------------------------------------===//
 // Sequences

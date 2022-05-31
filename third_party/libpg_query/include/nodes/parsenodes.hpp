@@ -290,6 +290,7 @@ typedef struct PGFuncCall {
 	bool agg_within_group;    /* ORDER BY appeared in WITHIN GROUP */
 	bool agg_star;            /* argument was really '*' */
 	bool agg_distinct;        /* arguments were labeled DISTINCT */
+	bool agg_ignore_nulls;    /* arguments were labeled IGNORE NULLS */
 	bool func_variadic;       /* last argument was labeled VARIADIC */
 	struct PGWindowDef *over; /* OVER clause, if any */
 	int location;             /* token location, or -1 if unknown */
@@ -1794,9 +1795,14 @@ typedef struct PGViewStmt {
  *		Load Statement
  * ----------------------
  */
+
+typedef enum PGLoadInstallType { PG_LOAD_TYPE_LOAD,  PG_LOAD_TYPE_INSTALL, PG_LOAD_TYPE_FORCE_INSTALL } PGLoadInstallType;
+
+
 typedef struct PGLoadStmt {
 	PGNodeTag type;
-	char *filename; /* file to load */
+	const char *filename; /* file to load */
+	PGLoadInstallType load_type;
 } PGLoadStmt;
 
 /* ----------------------
@@ -1977,6 +1983,14 @@ typedef struct PGSampleOptions {
 	int location;             /* token location, or -1 if unknown */
 } PGSampleOptions;
 
+/* ----------------------
+ *              Limit Percentage
+ * ----------------------
+ */
+typedef struct PGLimitPercent {
+	PGNodeTag type;
+    PGNode* limit_percent;  /* limit percent */
+} PGLimitPercent;
 
 /* ----------------------
  *		Lambda Function
@@ -2014,5 +2028,97 @@ typedef struct PGCreateEnumStmt
 
 
 
+/* ----------------------
+ *		CREATE PROPERTY GRAPH Statement
+ * ----------------------
+ */
+typedef struct PGCreatePropertyGraphStmt {
+	PGNodeTag type;
+	char *name;
+	PGList *vertex_tables;
+	PGList *edge_tables;
+	// bool if_not_exists; /* just do nothing if schema already exists? */
+} PGCreatePropertyGraphStmt;
+
+typedef struct PGPropertyGraphTable {
+
+	PGNodeTag type;
+	/* Fields used for both edge and vertex table */
+	PGRangeVar *name;
+
+	PGList *labels; //verify if multi label
+	
+	PGList *keys;
+
+	bool contains_discriminator;
+	char *discriminator;
+
+	bool is_vertex_table;
+	
+	/* Fields only used for Edge Tables */
+	
+	PGList *source_key;
+	PGRangeVar *source_key_reference;
+	PGList *destination_key;
+	PGRangeVar *destination_key_reference;
+
+	/*TODO: Foreign key constraints */
+	// PGConstraint *source;
+	// PGConstraint *destination;
+} PGPropertyGraphTable;
+
+typedef enum PGDistanceType {
+	PG_DISTANCE_TYPE_SHORTEST,
+	PG_DISTANCE_TYPE_CHEAPEST
+} PGDistanceType;
+
+//typedef struct PGDistancePattern {
+//	PGNodeTag type;
+//	PGList *pattern;
+//	PGDistanceType distance_type;
+//} PGDistancePattern;
+
+typedef struct PGMatchPattern {
+	PGNodeTag type;
+	PGRangeVar *name;
+	char *pg_name;
+	PGDistanceType distance_type;
+	PGList *pattern;
+	PGNode *where_clause;
+	PGList *columns;
+} PGMatchPattern;
+
+
+
+typedef enum PGMatchDirection {
+	PG_MATCH_DIR_LEFT,
+	PG_MATCH_DIR_RIGHT,
+	PG_MATCH_DIR_ANY
+} PGMatchDirection;
+
+typedef enum PGMatchStarPattern {
+	PG_STAR_NONE,
+	PG_STAR_ALL,
+	PG_STAR_BOUNDED
+} PGMatchStarPattern;
+
+typedef struct PGGraphVariablePattern {
+	PGNodeTag type;
+	char *alias_name;
+	char *label_name;
+} PGGraphVariablePattern;
+
+typedef struct PGGraphElementPattern {
+	PGNodeTag type;
+	PGNode *pattern_clause;
+	bool is_vertex_pattern;
+	
+	//Only used for Edge pattern
+	PGMatchDirection direction;
+	PGMatchStarPattern star_pattern;
+	char *cost_pattern;
+	int lower_bound;
+	int upper_bound;
+} PGGraphElementPattern;
 
 }

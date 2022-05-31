@@ -812,6 +812,18 @@ std::string Transformer::NodetypeToString(duckdb_libpgquery::PGNodeTag type) { /
 		return "T_TsmRoutine";
 	case duckdb_libpgquery::T_PGForeignKeyCacheInfo:
 		return "T_ForeignKeyCacheInfo";
+	case duckdb_libpgquery::T_PGCreatePropertyGraphStmt:
+		return "T_CreatePropertyGraphStmt";
+	case duckdb_libpgquery::T_PGPropertyGraphTable:
+		return "T_PropertyGraphTable";
+	case duckdb_libpgquery::T_PGMatchPattern:
+		return "T_PGMatchPattern";
+	case duckdb_libpgquery::T_PGGraphVariablePattern:
+		return "T_PGGraphVariablePattern";
+	case duckdb_libpgquery::T_PGGraphElementPattern:
+		return "T_PGGraphElementPattern";
+	case duckdb_libpgquery::T_PGDistancePattern:
+		return "T_PGDistancePattern";
 	default:
 		return "(UNKNOWN)";
 	}

@@ -12,13 +12,14 @@
 #include "duckdb/common/enums/expression_type.hpp"
 #include "duckdb/common/types.hpp"
 #include "duckdb/common/unordered_map.hpp"
+#include "duckdb/parser/graph_element_pattern.hpp"
+#include "duckdb/parser/group_by_node.hpp"
+#include "duckdb/parser/parsed_data/create_info.hpp"
+#include "duckdb/parser/property_graph_table.hpp"
 #include "duckdb/parser/qualified_name.hpp"
 #include "duckdb/parser/tokens.hpp"
-#include "duckdb/parser/parsed_data/create_info.hpp"
-#include "duckdb/parser/group_by_node.hpp"
-
-#include "pg_definitions.hpp"
 #include "nodes/parsenodes.hpp"
+#include "pg_definitions.hpp"
 
 namespace duckdb {
 
@@ -54,6 +55,10 @@ private:
 	//! Holds window expressions defined by name. We need those when transforming the expressions referring to them.
 	unordered_map<string, duckdb_libpgquery::PGWindowDef *> window_clauses;
 
+	//! Used for anonymous variables for graph match statements where variables are not defined by the user.
+	int16_t vertex_id = 0;
+	int16_t edge_id = 0;
+
 	void SetParamCount(idx_t new_count) {
 		if (parent) {
 			parent->SetParamCount(new_count);
@@ -86,6 +91,9 @@ private:
 	unique_ptr<CreateStatement> TransformCreateView(duckdb_libpgquery::PGNode *node);
 	//! Transform a Postgres duckdb_libpgquery::T_PGIndexStmt node into CreateStatement
 	unique_ptr<CreateStatement> TransformCreateIndex(duckdb_libpgquery::PGNode *node);
+	//! Transform a Postgres T_PGCreatePropertyGraphStmt node into CreateStatement
+	unique_ptr<CreateStatement> TransformCreatePropertyGraph(duckdb_libpgquery::PGNode *node);
+	//! Transform a Postgres T_PGCreateFunctionStmt node into CreateStatement
 	//! Transform a Postgres duckdb_libpgquery::T_PGCreateFunctionStmt node into CreateStatement
 	unique_ptr<CreateStatement> TransformCreateFunction(duckdb_libpgquery::PGNode *node);
 	//! Transform a Postgres duckdb_libpgquery::T_PGCreateEnumStmt node into CreateStatement
@@ -194,6 +202,10 @@ private:
 	void TransformCTE(duckdb_libpgquery::PGWithClause *de_with_clause, QueryNode &select);
 	unique_ptr<SelectStatement> TransformRecursiveCTE(duckdb_libpgquery::PGCommonTableExpr *node,
 	                                                  CommonTableExpressionInfo &info);
+	unique_ptr<PropertyGraphTable>
+	TransformPropertyGraphTable(duckdb_libpgquery::PGPropertyGraphTable *table,
+	                            unordered_map<string, PropertyGraphTable *> &label_map_1);
+	unique_ptr<GraphElementPattern> TransformElementPattern(duckdb_libpgquery::PGGraphElementPattern *element_pattern);
 	// Operator String to ExpressionType (e.g. + => OPERATOR_ADD)
 	ExpressionType OperatorToExpressionType(const string &op);
 
@@ -217,6 +229,8 @@ private:
 	unique_ptr<TableRef> TransformRangeSubselect(duckdb_libpgquery::PGRangeSubselect *root);
 	//! Transform a VALUES list into a set of expressions
 	unique_ptr<TableRef> TransformValuesList(duckdb_libpgquery::PGList *list);
+	//! Tranform Match to a select subquery
+	unique_ptr<TableRef> TransformMatch(duckdb_libpgquery::PGMatchPattern *root);
 
 	//! Transform a range var into a (schema) qualified name
 	QualifiedName TransformQualifiedName(duckdb_libpgquery::PGRangeVar *root);

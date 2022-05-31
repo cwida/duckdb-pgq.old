@@ -1,0 +1,185 @@
+# name: test/pgq/test_create_property_graph.test
+# description: CREATE PROPERTY GRAPH
+# group: [pgq]
+
+
+# load __TEST_DIR__/test_create_property_graph.db
+
+statement ok
+CREATE TABLE customer (CID INTEGER PRIMARY KEY, NAME TEXT, CITY TEXT);
+
+statement ok
+INSERT Into customer VALUES (10, 'Joe', 'Amsterdam'), (20, 'Jane', 'Delft'), (30, 'Jeremy', 'Rotterdam');
+
+# statement ok
+# CREATE VIEW cust_view as select * from customer; 
+
+
+statement ok
+CREATE TABLE account (AID INTEGER);
+
+statement ok
+INSERT Into account VALUES (10), (20), (30);
+
+statement ok
+CREATE TABLE owns (OID INTEGER PRIMARY KEY, CID INTEGER, AID INTEGER, Since DATE);
+
+# statement ok
+# INSERT Into owns VALUES (110, 100, 10, '2019-01-01'), (220, 200, 20, '2019-02-02'), (330, 300, 30, '2019-03-03');
+
+statement ok
+CREATE TABLE transfers (TID INTEGER, FROM_ID INTEGER, TO_ID INTEGER, Transfer_Date DATE, Amount INTEGER);
+
+statement ok
+INSERT Into transfers VALUES (102001, 10, 20, '2020-01-01', 5000), (103001, 10, 30, '2020-01-01', 15000), (302001, 30, 20, '2020-02-01', 3000);
+
+# Statement should pass
+statement ok
+CREATE PROPERTY GRAPH aml 
+VERTEX TABLES ( account KEY ( AID ) LABEL account, customer KEY ( CID ) LABEL c )
+EDGE TABLES ( transfers KEY ( from_id ) SOURCE KEY ( from_id ) REFERENCES account DESTINATION KEY ( to_id ) REFERENCES account LABEL t )
+
+# restart
+#Binder error graph already exists
+statement error
+CREATE PROPERTY GRAPH aml 
+VERTEX TABLES ( account KEY ( AID ) LABEL account, customer KEY ( CID ) LABEL c )
+EDGE TABLES ( transfers KEY ( tid ) SOURCE KEY ( from_id ) REFERENCES account DESTINATION KEY ( to_id ) REFERENCES account LABEL t )
+
+#incorrect column name of vertex table
+statement error
+CREATE PROPERTY GRAPH aml 
+VERTEX TABLES ( account KEY ( AID1 ) LABEL account, customer KEY ( CID ) LABEL c )
+EDGE TABLES ( transfers KEY ( from_id ) SOURCE KEY ( from_id ) REFERENCES account DESTINATION KEY ( to_id ) REFERENCES account LABEL t )
+
+#missing edge tables
+# statement error
+# CREATE PROPERTY GRAPH aml 
+# VERTEX TABLES ( account KEY ( AID1 ) LABEL account, customer KEY ( CID ) LABEL c )
+
+#label account repeated in vertex tables
+# statement error
+# CREATE PROPERTY GRAPH aml2 
+# VERTEX TABLES ( account KEY ( AID ) LABEL account, customer KEY ( CID ) LABEL account )
+# EDGE TABLES ( transfers KEY ( from_id ) SOURCE KEY ( from_id ) REFERENCES account DESTINATION KEY ( to_id ) REFERENCES account LABEL t )
+
+#label c repeated in edge and vertex tables
+# statement error
+# CREATE PROPERTY GRAPH aml1 
+# VERTEX TABLES ( account KEY ( AID ) LABEL account, customer KEY ( CID ) LABEL c )
+# EDGE TABLES ( transfers KEY ( from_id ) SOURCE KEY ( from_id ) REFERENCES account DESTINATION KEY ( to_id ) REFERENCES account LABEL c )
+
+
+# statement ok
+# select c1id, c2id, c3id from GRAPH_TABLE (aml, 
+# MATCH 
+#     (c1 IS customer)-[IS transfers]->
+#     (c2 IS customer)-[IS transfers]->
+#     (c3 IS customer)-[IS transfers]->(c1)
+#     COLUMNS (
+#         c1.cid AS c1id,
+#         c2.cid AS c2id,
+#         c3.cid AS c3id
+#     )
+# )
+
+statement ok
+SELECT c1id, c2id 
+FROM
+(SELECT c1.cid AS c1id, c2.cid AS c2id 
+FROM customer c1, customer c2, transfers t1
+WHERE c1.cid = t1.from_id
+    AND c2.cid = t1.to_id) gt
+
+# and, a_expr, column_ref, 
+
+# statement ok 
+# select c1id, c2id 
+# from GRAPH_TABLE (aml, MATCH (c1 IS c)-[t1 IS t]->(c2 IS c) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
+# # # -[IS transfers]->(c2 IS customer)-[IS transfers]-(c3 IS customer)-[IS transfers]-(c1) COLUMNS (c1.cid AS c1id, c2.cid AS c2id, c3.cid AS c3id)
+
+# statement ok 
+# select c1id, c2id 
+# from GRAPH_TABLE (aml, MATCH (c1 IS c)<-[t1 IS t]-(c2 IS c) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
+
+# statement ok 
+# select c1id, c2id 
+# from GRAPH_TABLE (aml, MATCH (c1 IS c)-[t1 IS t]-(c2 IS c) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
+
+# statement error
+# select c1id, c2id 
+# from GRAPH_TABLE (aml, MATCH (c1 IS c)<-[t1 IS t]->(c2 IS c) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
+
+
+# statement error 
+# select c1id, c2id 
+# from GRAPH_TABLE (aml, MATCH (c1 IS customer)-[t1 IS t]->(c2 IS c) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
+
+# statement error
+# select c1id, c2id 
+# from GRAPH_TABLE (aml, MATCH (C1 IS c)-[c1 IS t]->(C2 IS c) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt1
+
+# statement ok
+# select c1id
+# from GRAPH_TABLE (aml, MATCH (C1 IS c)-[T1 IS t]->(C1 IS c) COLUMNS (c1.cid AS c1id)) gt1
+
+#Label for c1 already seen, so it should pass
+statement ok
+select c1id
+from GRAPH_TABLE (aml, MATCH (c1 IS c)-[t1 IS t]->(c1) COLUMNS (c1.cid AS c1id)) gt1
+
+#Label for c3 not seen before
+statement error
+select c1id
+from GRAPH_TABLE (aml, MATCH (c1 IS c)-[T1 IS t]->(c3) COLUMNS (c1.cid AS c1id)) gt1
+
+
+statement ok
+select c1id
+from GRAPH_TABLE (aml, MATCH (C1 IS c) COLUMNS (c1.cid AS c1id)) gt1
+
+statement ok 
+select c1id, c2id
+from GRAPH_TABLE (aml, MATCH (c1 IS c)-[t1 IS t]->(c2 IS c)-[t2 is t]-(c3 is C)-[t3 is t]->(c1 is c) COLUMNS (c1.cid AS c1id, c2.cid AS c2id, c3.cid AS c3id)) gt3 
+
+
+query II
+select c1id, c2id 
+from GRAPH_TABLE (aml, MATCH (c1 IS c)-[t1 IS t]->(c2 is c) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
+ORDER by c1id, c2id;
+----
+10	20
+10	30
+30	20
+
+
+query I
+select c1id
+from GRAPH_TABLE (aml, MATCH (C1 IS c) COLUMNS (c1.cid AS c1id)) gt1
+----
+10
+20
+30
+
+statement ok
+SELECT c1id
+FROM
+(SELECT c1.cid AS c1id 
+FROM customer c1) gt1
+
+# (c1 IS c)-[t1 IS transfers]->(c2 IS customer)-[t2 IS transfers]->(c1) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt2
+# (c3 IS customer)-[t3 IS transfers]->
+# statement ok
+# select c1id, c2id, c3id 
+# from GRAPH_TABLE (aml, MATCH (c1 IS customer)-(c2) COLUMNS (c1.cid AS c1id, c2.cid AS c2id, c3.cid AS c3id)
+# ) gt
+# statement ok
+# DESCRIBE transfers
+# statement ok
+# PRAGMA table_info('aml')
+
+
+
+
+
+

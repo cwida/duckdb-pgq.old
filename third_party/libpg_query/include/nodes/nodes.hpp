@@ -421,6 +421,7 @@ typedef enum PGNodeTag {
 	T_PGPragmaStmt,
 	T_PGExportStmt,
 	T_PGImportStmt,
+	T_PGCreatePropertyGraphStmt,
 
 	/*
 	 * TAGS FOR PARSE TREE NODES (parsenodes.h)
@@ -479,7 +480,13 @@ typedef enum PGNodeTag {
 	T_PGIntervalConstant,
 	T_PGSampleSize,
 	T_PGSampleOptions,
+	T_PGLimitPercent,
 	T_PGPositionalReference,
+	T_PGPropertyGraphTable,
+	T_PGMatchPattern,
+	T_PGGraphVariablePattern,
+	T_PGGraphElementPattern,
+	T_PGDistancePattern,
 
 	/*
 	 * TAGS FOR REPLICATION GRAMMAR PARSE NODES (replnodes.h)

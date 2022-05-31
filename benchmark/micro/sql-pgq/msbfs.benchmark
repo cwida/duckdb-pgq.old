@@ -1,0 +1,22 @@
+# name: benchmark/micro/sql-pgq/msbfs.benchmark
+# description: MSBFS 
+# group: [sql-pgq]
+
+name MSBFS
+group sql-pgq
+
+init
+PRAGMA threads=4;
+
+load benchmark/micro/sql-pgq/snb.sql
+
+run
+
+WITH cte as (
+		SELECT min(id) AS id FROM t
+	)
+SELECT min(src) 
+FROM cte, src_dest where reach(src_dest.id, is_variant, 1700, src, dst, 'benchmark/micro/sql-pgq/debug/thread/0.1/msbfs/sf0.1_thread4_4.out') = cte.id;
+
+result I
+0

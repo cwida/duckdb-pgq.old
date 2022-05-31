@@ -15,6 +15,7 @@
 #include "duckdb/main/client_context.hpp"
 #include "test_helpers.hpp"
 #include "duckdb/main/query_profiler.hpp"
+// #include "iostream"
 
 namespace duckdb {
 
@@ -80,6 +81,8 @@ public:
 	void Run(BenchmarkState *state_p) override {
 		auto state = (DuckDBBenchmarkState *)state_p;
 		string query = GetQuery();
+		// std::cout<<"Query "<<query;
+		fprintf(stderr, "Query %s\n", query.c_str());
 		if (query.empty()) {
 			RunBenchmark(state);
 		} else {

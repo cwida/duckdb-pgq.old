@@ -10,6 +10,7 @@ add_subdirectory(string)
 add_subdirectory(struct)
 add_subdirectory(system)
 add_subdirectory(uuid)
+add_subdirectory(sql-pgq)
 
 add_library_unity(
   duckdb_func_scalar
@@ -22,6 +23,7 @@ add_library_unity(
   operators.cpp
   pragma_functions.cpp
   sequence_functions.cpp
+  sql_pgq_functions.cpp
   trigonometrics_functions.cpp)
 set(ALL_OBJECT_FILES
     ${ALL_OBJECT_FILES} $<TARGET_OBJECTS:duckdb_func_scalar>

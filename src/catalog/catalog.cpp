@@ -23,6 +23,8 @@
 #include "duckdb/parser/parsed_data/create_view_info.hpp"
 #include "duckdb/parser/parsed_data/drop_info.hpp"
 #include "duckdb/planner/parsed_data/bound_create_table_info.hpp"
+#include "duckdb/parser/parsed_data/create_property_graph_info.hpp"
+#include "duckdb/planner/binder.hpp"
 
 namespace duckdb {
 
@@ -60,6 +62,17 @@ CatalogEntry *Catalog::CreateView(ClientContext &context, CreateViewInfo *info) 
 
 CatalogEntry *Catalog::CreateView(ClientContext &context, SchemaCatalogEntry *schema, CreateViewInfo *info) {
 	return schema->CreateView(context, info);
+}
+
+CatalogEntry *Catalog::CreatePropertyGraph(ClientContext &context, CreatePropertyGraphInfo *info) {
+	auto schema = GetSchema(context, info->schema);
+	return CreatePropertyGraph(context, schema, info);
+}
+
+CatalogEntry *Catalog::CreatePropertyGraph(ClientContext &context, SchemaCatalogEntry *schema,
+                                           CreatePropertyGraphInfo *info) {
+	ModifyCatalog();
+	return schema->CreatePropertyGraph(context, info);
 }
 
 CatalogEntry *Catalog::CreateSequence(ClientContext &context, CreateSequenceInfo *info) {
@@ -279,6 +292,16 @@ CatalogEntryLookup Catalog::LookupEntry(ClientContext &context, CatalogType type
 CatalogEntry *Catalog::GetEntry(ClientContext &context, CatalogType type, const string &schema_name, const string &name,
                                 bool if_exists, QueryErrorContext error_context) {
 	return LookupEntry(context, type, schema_name, name, if_exists, error_context).entry;
+}
+
+template <>
+PropertyGraphCatalogEntry *Catalog::GetEntry(ClientContext &context, const string &schema_name, const string &name,
+                                             bool if_exists, QueryErrorContext error_context) {
+	auto entry = GetEntry(context, CatalogType::PROPERTY_GRAPH_ENTRY, schema_name, name, if_exists);
+	if (!entry) {
+		return nullptr;
+	}
+	return (PropertyGraphCatalogEntry *)entry;
 }
 
 template <>

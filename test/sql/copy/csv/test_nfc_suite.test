@@ -4,7 +4,7 @@
 
 # http:www.unicode.org/Public/UCD/latest/ucd/NormalizationTest.txt
 statement ok
-CREATE TABLE nfcstrings (source STRING, nfc STRING, nfd STRING);
+CREATE TABLE nfcstrings (src STRING, nfc STRING, nfd STRING);
 
 query I
 COPY nfcstrings FROM 'test/sql/copy/csv/data/real/nfc_normalization.csv' DELIMITER '|';
@@ -17,7 +17,7 @@ SELECT COUNT(*) FROM nfcstrings
 18819
 
 query I
-SELECT COUNT(*) FROM nfcstrings WHERE source COLLATE NFC=nfc
+SELECT COUNT(*) FROM nfcstrings WHERE src COLLATE NFC=nfc
 ----
 18819
 

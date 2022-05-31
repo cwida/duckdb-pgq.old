@@ -3,6 +3,8 @@
 #include "duckdb/catalog/catalog.hpp"
 #include "duckdb/catalog/catalog_entry/table_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/view_catalog_entry.hpp"
+#include "duckdb/catalog/catalog_entry/property_graph_catalog_entry.hpp"
+
 #include "duckdb/parser/qualified_name.hpp"
 #include "duckdb/planner/constraints/bound_not_null_constraint.hpp"
 #include "duckdb/planner/constraints/bound_unique_constraint.hpp"
@@ -158,6 +160,17 @@ static void PragmaTableInfoView(PragmaTableOperatorData &data, ViewCatalogEntry 
 	data.offset = next;
 }
 
+static void PragmaTableInfoPropertyGraph(PragmaTableOperatorData &data, PropertyGraphCatalogEntry *pg_table,
+                                         DataChunk &output) {
+	if (data.offset >= pg_table->types.size()) {
+		// finished returning values
+		return;
+	}
+	// either fill up the chunk or return all the remaining columns
+	idx_t next = MinValue<idx_t>(data.offset + STANDARD_VECTOR_SIZE, pg_table->types.size());
+	output.SetCardinality(next - data.offset);
+}
+
 static void PragmaTableInfoFunction(ClientContext &context, const FunctionData *bind_data_p,
                                     FunctionOperatorData *operator_state, DataChunk *input, DataChunk &output) {
 	auto &bind_data = (PragmaTableFunctionData &)*bind_data_p;
@@ -168,6 +181,9 @@ static void PragmaTableInfoFunction(ClientContext &context, const FunctionData *
 		break;
 	case CatalogType::VIEW_ENTRY:
 		PragmaTableInfoView(state, (ViewCatalogEntry *)bind_data.entry, output);
+		break;
+	case CatalogType::PROPERTY_GRAPH_ENTRY:
+		PragmaTableInfoPropertyGraph(state, (PropertyGraphCatalogEntry *)bind_data.entry, output);
 		break;
 	default:
 		throw NotImplementedException("Unimplemented catalog type for pragma_table_info");

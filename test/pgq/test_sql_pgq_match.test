@@ -1,0 +1,148 @@
+# name: test/pgq/test_sql_pgq_match.test
+# description: MATCH 
+# group: [pgq]
+
+
+statement ok
+CREATE TABLE customer (CID INTEGER PRIMARY KEY, NAME TEXT, CITY TEXT);
+
+statement ok
+INSERT Into customer VALUES (10, 'Joe', 'Amsterdam'), (20, 'Jane', 'Delft'), (30, 'Jeremy', 'Rotterdam');
+
+statement ok
+CREATE TABLE account (AID INTEGER);
+
+statement ok
+INSERT Into account VALUES (10), (20), (30);
+
+statement ok
+CREATE TABLE owns (OID INTEGER PRIMARY KEY, CID INTEGER, AID INTEGER, Since DATE);
+
+statement ok
+INSERT Into owns VALUES (110, 100, 10, '2019-01-01'), (220, 200, 20, '2019-02-02'), (330, 300, 30, '2019-03-03');
+
+statement ok
+CREATE TABLE transfers (TID INTEGER, FROM_ID INTEGER, TO_ID INTEGER, Transfer_Date DATE, Amount INTEGER);
+
+statement ok
+INSERT Into transfers VALUES (102001, 10, 20, '2020-01-01', 5000), (103001, 10, 30, '2020-01-01', 15000), (302001, 30, 20, '2020-02-01', 3000);
+
+# Statement should pass
+statement ok
+CREATE PROPERTY GRAPH aml_complete 
+VERTEX TABLES ( account KEY ( AID ) LABEL acct, customer KEY ( CID ) LABEL customer )
+EDGE TABLES ( transfers KEY ( from_id ) SOURCE KEY ( from_id ) REFERENCES account DESTINATION KEY ( to_id ) REFERENCES account LABEL transfers )
+
+#property graph aml_complete already exists
+statement error
+CREATE PROPERTY GRAPH aml_complete 
+VERTEX TABLES ( account KEY ( AID ) LABEL acct, customer KEY ( CID ) LABEL customer DISCRIMINATOR city)
+EDGE TABLES ( transfers KEY ( from_id ) SOURCE KEY ( from_id ) REFERENCES account DESTINATION KEY ( to_id ) REFERENCES account LABEL transfers )
+
+
+statement ok
+CREATE PROPERTY GRAPH aml_abbr
+VERTEX TABLES ( account KEY ( AID ) LABEL account, customer KEY ( CID ) LABEL customer )
+EDGE TABLES ( transfers KEY ( from_id ) SOURCE KEY ( from_id ) REFERENCES account DESTINATION KEY ( to_id ) REFERENCES account LABEL transfer )
+
+statement ok
+select c1id, c2id
+from GRAPH_TABLE (aml_complete, MATCH (c1 IS CUSTOMER)-[t1 IS TRANSFERS]->(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
+
+#above MATCH will be translated to this SQL statement
+statement ok
+SELECT c1id, c2id
+FROM
+(SELECT c1.cid AS c1id, c2.cid AS c2id
+FROM customer c1, customer c2, transfers t1
+WHERE c1.cid = t1.from_id
+ AND c2.cid = t1.to_id) gt
+
+statement ok
+select c1id, c2id
+from GRAPH_TABLE (aml_complete, MATCH (c1 IS CUSTOMER)<-[t1 IS TRANSFERS]-(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
+
+statement ok
+select c1id, c2id
+from GRAPH_TABLE (aml_complete, MATCH (c1 IS CUSTOMER)-[t1 IS TRANSFERS]-(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
+
+#left and right arrows on the same edge lead to the parser error
+statement error
+select c1id, c2id
+from GRAPH_TABLE (aml_complete, MATCH (c1 IS CUSTOMER)<-[t1 IS TRANSFERS]->(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
+
+#missing vertex entry
+statement error
+select c1id
+from GRAPH_TABLE (aml_complete, MATCH -[IS customer]-> COLUMNS (c1.cid AS c1id)
+) gt
+
+#missing edge entry
+statement error
+select c1id, c2id, c3id
+from GRAPH_TABLE (aml_complete, MATCH (c1 IS customer)-(c2) COLUMNS (c1.cid AS c1id, c2.cid AS c2id, c3.cid AS c3id)
+) gt
+
+#aml property graph does not exist.
+statement error
+select c1id, c2id
+from GRAPH_TABLE (aml, MATCH (c1 IS CUSTOMER)-[t1 IS TRANSFERS]->(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
+
+statement ok
+select c1id
+from GRAPH_TABLE (aml_complete, MATCH (C1 IS CUSTOMER)-[T1 IS TRANSFERS]->(C1 IS CUSTOMER) COLUMNS (c1.cid AS c1id)) gt1
+
+statement ok
+select c1id
+from GRAPH_TABLE (aml_complete, MATCH (C1 IS CUSTOMER) COLUMNS (c1.cid AS c1id)) gt1
+
+statement ok
+select c1id, c2id
+from GRAPH_TABLE (aml_complete, MATCH (c1 IS CUSTOMER)-[t1 IS TRANSFERS]->(c2 IS CUSTOMER)-[t2 IS TRANSFERS]-(c3 IS CUSTOMER)-[t3 IS TRANSFERS]->(c1 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id, c3.cid AS c3id)) gt3
+
+
+query II
+select c1id, c2id
+from GRAPH_TABLE (aml_complete, MATCH (c1 IS CUSTOMER)-[t1 IS TRANSFERS]->(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
+ORDER by c1id, c2id;
+----
+10	20
+10	30
+30	20
+
+query I
+select c1id
+from GRAPH_TABLE (aml_complete, MATCH (C1 IS CUSTOMER) COLUMNS (c1.cid AS c1id)) gt1
+----
+10
+20
+30
+
+statement ok
+SELECT c1.cid as c1id, c2.cid as c2id, c3.cid as c3id
+FROM customer c1, transfers t1, customer c2, transfers t2, customer c3, transfers t3
+WHERE c1.cid = t1.from_id
+    AND c2.cid = t1.to_id
+    AND c2.cid = t2.from_id
+    AND c3.cid = t2.to_id
+    AND t3.from_id = c3.cid 
+    AND t3.to_id = c1.cid
+
+statement ok
+select c1id, c2id, c3id
+from GRAPH_TABLE (aml_complete, MATCH (c1 IS customer)-[IS transfers]->(c2 IS customer)-[IS transfers]->(c3 IS customer)-[IS transfers]->(c1) COLUMNS (c1.cid AS c1id, c2.cid AS c2id, c3.cid AS c3id)
+) gt
+
+#no c3 exists in the MATCH clause
+statement error
+select c1id, c2id, c3id
+from GRAPH_TABLE (aml_complete, MATCH (c1 IS customer)-[IS transfers]->(c2) COLUMNS (c1.cid AS c1id, c2.cid AS c2id, c3.cid AS c3id)
+) gt
+
+#since we already know that c1 is a Customer, we don't need to define c1 IS CUSTOMER in the last VERTEX entry 
+statement ok
+select c1id, c2id, c3id
+from GRAPH_TABLE (aml_complete,
+MATCH (c1 IS customer)-[IS transfers]->(c2 IS customer)-[t2 IS transfers]->(c3 IS customer)-[t3 IS transfers]->(c1)
+COLUMNS (c1.cid AS c1id, c2.cid AS c2id, c3.cid AS c3id)) gt
+

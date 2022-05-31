@@ -10,6 +10,7 @@ add_library_unity(
   physical_create_table_as.cpp
   physical_create_view.cpp
   physical_create_function.cpp
+  physical_create_property_graph.cpp
   physical_drop.cpp)
 set(ALL_OBJECT_FILES
     ${ALL_OBJECT_FILES} $<TARGET_OBJECTS:duckdb_operator_schema>

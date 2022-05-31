@@ -27,11 +27,13 @@ class LimitModifier;
 class OrderBinder;
 class TableCatalogEntry;
 class ViewCatalogEntry;
+class PropertyGraphTable;
 
 struct CreateInfo;
 struct BoundCreateTableInfo;
 struct BoundCreateFunctionInfo;
 struct CommonTableExpressionInfo;
+struct CreatePropertyGraphInfo;
 
 struct CorrelatedColumnInfo {
 	ColumnBinding binding;
@@ -94,6 +96,7 @@ public:
 	void BindCreateViewInfo(CreateViewInfo &base);
 	SchemaCatalogEntry *BindSchema(CreateInfo &info);
 	SchemaCatalogEntry *BindCreateFunctionInfo(CreateInfo &info);
+	void BindCreatePropertyGraphInfo(CreatePropertyGraphInfo &info);
 
 	//! Check usage, and cast named parameters to their types
 	static void BindNamedParameters(unordered_map<string, LogicalType> &types, unordered_map<string, Value> &values,
@@ -208,6 +211,7 @@ private:
 	unique_ptr<BoundTableRef> Bind(TableFunctionRef &ref);
 	unique_ptr<BoundTableRef> Bind(EmptyTableRef &ref);
 	unique_ptr<BoundTableRef> Bind(ExpressionListRef &ref);
+	unique_ptr<BoundTableRef> Bind(MatchRef &ref);
 
 	bool BindFunctionParameters(vector<unique_ptr<ParsedExpression>> &expressions, vector<LogicalType> &arguments,
 	                            vector<Value> &parameters, unordered_map<string, Value> &named_parameters,
@@ -225,6 +229,7 @@ private:
 	unique_ptr<LogicalOperator> BindTable(TableCatalogEntry &table, BaseTableRef &ref);
 	unique_ptr<LogicalOperator> BindView(ViewCatalogEntry &view, BaseTableRef &ref);
 	unique_ptr<LogicalOperator> BindTableOrView(BaseTableRef &ref);
+	// unique_ptr<LogicalOperator> BindPropertyGraph(PropertyGraphCatalogEntry &pg_table, BaseTableRef &ref);
 
 	BoundStatement BindCopyTo(CopyStatement &stmt);
 	BoundStatement BindCopyFrom(CopyStatement &stmt);
@@ -247,10 +252,15 @@ private:
 
 	string FindBinding(const string &using_column, const string &join_side);
 	bool TryFindBinding(const string &using_column, const string &join_side, string &result);
-
 	void AddUsingBindingSet(unique_ptr<UsingColumnSet> set);
 	string RetrieveUsingBinding(Binder &current_binder, UsingColumnSet *current_set, const string &column_name,
 	                            const string &join_side, UsingColumnSet *new_set);
+	PropertyGraphTable *GetPropertyGraphEntry(PropertyGraphCatalogEntry *pg_table, string &label_name);
+	unique_ptr<ParsedExpression> CreateExpression(vector<string> &vertex_columns, vector<string> &edge_columns,
+	                                              string &vertex_table_name, string &edge_table_name);
+	unique_ptr<ParsedExpression> AndExpression(vector<unique_ptr<ParsedExpression>> conditions);
+	bool CheckAliasUsage(unordered_map<string, std::tuple<string, bool, string>> &alias_table_map, string &alias,
+	                     string &table_name, bool is_vertex_pattern, string &label);
 
 public:
 	// This should really be a private constructor, but make_shared does not allow it...

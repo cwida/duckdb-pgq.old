@@ -91,6 +91,14 @@ void ClientContext::Cleanup() {
 	CleanupInternal(*lock);
 }
 
+void ClientContext::CleanupCSR() {
+
+	delete[] csr_list[0]->v;
+	initialized_v = false;
+	initialized_e = false;
+	init_m = false;
+}
+
 unique_ptr<DataChunk> ClientContext::Fetch() {
 	auto lock = LockContext();
 	if (!open_result) {
@@ -482,6 +490,9 @@ unique_ptr<QueryResult> ClientContext::RunStatementOrPreparedStatement(ClientCon
 			// failure in committing transaction
 			return make_unique<MaterializedQueryResult>(error);
 		}
+	}
+	if (initialized_v && initialized_e && init_m) {
+		CleanupCSR();
 	}
 	return result;
 }

@@ -30,6 +30,7 @@ class TypeCatalogEntry;
 class TableCatalogEntry;
 class Transaction;
 class TransactionManager;
+// class PropertyGraphCatalogEntry;
 
 //! The WriteAheadLog (WAL) is a log that is used to provide durability. Prior
 //! to committing a transaction it writes the changes the transaction made to
@@ -70,6 +71,8 @@ public:
 
 	void WriteCreateMacro(MacroCatalogEntry *entry);
 	void WriteDropMacro(MacroCatalogEntry *entry);
+
+	// void WriteCreatePropertyGraph(PropertyGraphCatalogEntry *entry);
 
 	void WriteCreateType(TypeCatalogEntry *entry);
 	void WriteDropType(TypeCatalogEntry *entry);
