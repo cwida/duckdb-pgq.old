@@ -16,9 +16,6 @@ struct CsrBindData : public FunctionData {
 	int32_t id;
 	bool weighted = false;
 
-	//	int64_t num_of_vertices = 0;
-	//	int64_t num_of_edges = 0;
-
 	CsrBindData(ClientContext &context, int32_t id, bool weighted) : context(context), id(id), weighted(weighted) {
 	}
 
@@ -77,7 +74,7 @@ static void CsrInitializeEdge(ClientContext &context, int32_t id, int64_t v_size
 	return;
 }
 
-static void CsrInitializeWeight(ClientContext &context, int32_t id, int64_t v_size, int64_t e_size,
+static void CsrInitializeWeight(ClientContext &context, int32_t id, int64_t e_size,
                                 PhysicalType weight_type) {
 	lock_guard<mutex> csr_init_lock(context.csr_lock);
 	if (context.csr_list[id]->initialized_w) {
@@ -99,32 +96,21 @@ static void CsrInitializeWeight(ClientContext &context, int32_t id, int64_t v_si
 	return;
 }
 
-//static unique_ptr<FunctionData> CreateCsrVertexBind(ClientContext &context, ScalarFunction &bound_function,
-//                                                    vector<unique_ptr<Expression>> &arguments) {
-//	if (!arguments[0]->IsFoldable()) {
-//		throw InvalidInputException("Id must be constant.");
-//	}
-//
-//	Value id = ExpressionExecutor::EvaluateScalar(*arguments[0]);
-//
-//	return make_unique<CsrBindData>(context, id.GetValue<int32_t>(), false);
-//}
-
 static unique_ptr<FunctionData> CreateCsrBind(ClientContext &context, ScalarFunction &bound_function,
                                               vector<unique_ptr<Expression>> &arguments) {
 	if (!arguments[0]->IsFoldable()) {
 		throw InvalidInputException("Id must be constant.");
 	}
 
-//	child_list_t<LogicalType> struct_children;
-//	 # TODO convert input and edge size to constant vectors
-//	struct_children.push_back(make_pair("id", LogicalType::INTEGER));
-//	struct_children.push_back(make_pair("vertices", LogicalType::BIGINT));
-//	struct_children.push_back(make_pair("edges", LogicalType::BIGINT));
-//	struct_children.push_back(make_pair("weight", LogicalType::VARCHAR));
+	child_list_t<LogicalType> struct_children;
+	// TODO convert input and edge size to constant vectors
+	struct_children.push_back(make_pair("id", LogicalType::INTEGER));
+	struct_children.push_back(make_pair("vertices", LogicalType::BIGINT));
+	struct_children.push_back(make_pair("edges", LogicalType::BIGINT));
+	struct_children.push_back(make_pair("weighted", LogicalType::INTEGER));
 
 	Value id = ExpressionExecutor::EvaluateScalar(*arguments[0]);
-//	bound_function.return_type = LogicalType::STRUCT(move(struct_children));
+	bound_function.return_type = LogicalType::STRUCT(move(struct_children));
 	return make_unique<CsrBindData>(context, id.GetValue<int32_t>(), false); // TODO Add unweighted version as well
 }
 
@@ -137,9 +123,12 @@ static void CreateCsrFunction(DataChunk &args, ExpressionState &state, Vector &r
 
 	CsrInitializeVertex(info.context, info.id, input_size);
 	CsrInitializeEdge(info.context, info.id, input_size, edge_size);
+	auto &child_entries = StructVector::GetEntries(result);
+
+	bool weighted = false;
 	if (args.ColumnCount() == 5) { //! Unweighted variant
 		BinaryExecutor::Execute<int64_t, int64_t, int64_t>(
-		    args.data[3], args.data[4], result, args.size(),
+		    args.data[3], args.data[4], *child_entries[1], args.size(),
 		    [&](int64_t src, int64_t dst) {
 			    if (info.context.csr_list[info.id]->v[src + 1] == 0) {
 				    info.context.csr_list[info.id]->v[src + 1] += info.context.csr_list[info.id]->v[src];
@@ -150,10 +139,11 @@ static void CreateCsrFunction(DataChunk &args, ExpressionState &state, Vector &r
 		    });
 	} else {
 		auto weight_type = args.data[5].GetType().InternalType();
-		CsrInitializeWeight(info.context, info.id, input_size, edge_size, weight_type);
+		CsrInitializeWeight(info.context, info.id, edge_size, weight_type);
+		weighted = true;
 		if (weight_type == PhysicalType::INT64) {
 			TernaryExecutor::Execute<int64_t, int64_t, int64_t, int64_t>(
-			    args.data[3], args.data[4], args.data[5], result, args.size(),
+			    args.data[3], args.data[4], args.data[5], *child_entries[1], args.size(),
 			    [&](int64_t src, int64_t dst, int64_t weight) {
 				    if (info.context.csr_list[info.id]->v[src + 1] == 0) {
 					    info.context.csr_list[info.id]->v[src + 1] += info.context.csr_list[info.id]->v[src];
@@ -167,7 +157,7 @@ static void CreateCsrFunction(DataChunk &args, ExpressionState &state, Vector &r
 			    });
 		} else {
 			TernaryExecutor::Execute<int64_t, int64_t, double_t, int64_t>(
-			    args.data[3], args.data[4], args.data[5], result, args.size(),
+			    args.data[3], args.data[4], args.data[5], *child_entries[1], args.size(),
 			    [&](int64_t src, int64_t dst, double_t weight) {
 				    if (info.context.csr_list[info.id]->v[src + 1] == 0) {
 					    info.context.csr_list[info.id]->v[src + 1] += info.context.csr_list[info.id]->v[src];
@@ -183,21 +173,11 @@ static void CreateCsrFunction(DataChunk &args, ExpressionState &state, Vector &r
 
 	}
 
-
-
-//	bool weighted = false;
-// # TODO Change to column count as in list_contains_or_position.cpp
-//	if (args.data.size() == 8) { //! 7th argument defines the weights of the edges. If there are 6 arguments, the edges are unweighted.
-//		weighted = true;
-//	}
-
-//	result.SetVectorType(VectorType::CONSTANT_VECTOR);
-//	child_entries[0]->Reference(args.data[0]);
-//	child_entries[1]->Reference(Value(input_size));
-//	child_entries[2]->Reference(Value((int64_t)args.size()));
-//	if (!weighted) { // TODO Test if works.
-//		child_entries[3]->Reference(Value("none"));
-//	}
+	result.SetVectorType(VectorType::CONSTANT_VECTOR);
+	child_entries[0]->Reference(args.data[0]);
+	child_entries[1]->Reference(input_size);
+	child_entries[2]->Reference(edge_size);
+	child_entries[3]->Reference(weighted);
 	return;
 }
 
@@ -218,19 +198,5 @@ CreateScalarFunctionInfo SQLPGQFunctions::GetCsrFunction() {
 	    ));
 	return CreateScalarFunctionInfo(set);
 }
-//
-//CreateScalarFunctionInfo SQLPGQFunctions::GetCsrEdgeFunction() {
-//	ScalarFunctionSet set("create_csr_edge");
-//	set.AddFunction(ScalarFunction(
-//	    {LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT},
-//	    LogicalType::INTEGER, CreateCsrEdgeFunction, false, CreateCsrEdgeBind));
-//	set.AddFunction(ScalarFunction({LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT,
-//	                                LogicalType::BIGINT, LogicalType::BIGINT},
-//	                               LogicalType::INTEGER, CreateCsrEdgeFunction, false, CreateCsrWeightBind));
-//	set.AddFunction(ScalarFunction({LogicalType::INTEGER, LogicalType::BIGINT, LogicalType::BIGINT, LogicalType::BIGINT,
-//	                                LogicalType::BIGINT, LogicalType::DOUBLE},
-//	                               LogicalType::INTEGER, CreateCsrEdgeFunction, false, CreateCsrWeightBind));
-//
-//	return CreateScalarFunctionInfo(set);
-//}
+
 } // namespace duckdb

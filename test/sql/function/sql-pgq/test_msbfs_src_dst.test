@@ -2,6 +2,8 @@
 # description: Test msbfs threads 
 # group: [sql-pgq]
 
+require sqlpgq
+
 # statement ok
 # PRAGMA enable_verification;
 # statement ok
@@ -58,22 +60,38 @@ statement ok
 INSERT INTO src_dest VALUES(0, 4, 0, 1), (0, 4, 0, 2), (0, 4, 0, 3),(0, 4, 1, 0), (0, 4, 1, 2), (0, 4, 1, 3), (0, 4, 2, 0),
 (0, 4, 2, 1), (0, 4, 2, 3), (0, 4, 3, 0), (0, 4, 3, 1), (0, 4, 3, 2);
 
+statement ok
+SELECT DISTINCT CREATE_CSR(
+0,
+v.vcount,
+r.ecount,
+r.src,
+r.dst
+)
+FROM
+    (SELECT count(c.cid) as vcount FROM Customer c) v,
+    (SELECT src.rowid as src, dst.rowid as dst, count(src.rowid) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) as ecount
+        FROM Transfers t
+        JOIN Customer src ON t.from_id = src.cid
+        JOIN Customer dst ON t.to_id = dst.cid
+        GROUP BY src.rowid, dst.rowid, t.amount) r
 
 statement ok
-SELECT CREATE_CSR_EDGE(0, (SELECT count(c.cid) as vcount FROM Customer c), 
-CAST ((SELECT sum(CREATE_CSR_VERTEX(0, (SELECT count(c.cid) as vcount FROM Customer c), 
-sub.dense_id , sub.cnt )) AS numEdges
-FROM (
-    SELECT c.rowid as dense_id, count(t.from_id) as cnt
-    FROM Customer c  
-    LEFT JOIN  Transfers t ON t.from_id = c.cid
-    GROUP BY c.rowid
-) sub) AS BIGINT), 
-src.rowid, dst.rowid )
-FROM 
-  Transfers t 
-  JOIN Customer src ON t.from_id = src.cid
-  JOIN Customer dst ON t.to_id = dst.cid
+SELECT DISTINCT CREATE_CSR(
+1,
+v.vcount,
+r.ecount,
+r.src,
+r.dst
+)
+FROM
+    (SELECT count(c.cid) as vcount FROM Customer c) v,
+    (SELECT src.rowid as src, dst.rowid as dst, count(src.rowid) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) as ecount
+        FROM Transfers t
+        JOIN Customer src ON t.from_id = src.cid
+        JOIN Customer dst ON t.to_id = dst.cid
+        GROUP BY src.rowid, dst.rowid, t.amount) r
+
 
 
 query T
@@ -91,6 +109,32 @@ SELECT reachability(id, false, v_size, src, dst) FROM src_dest;
 0
 0
 0
+
+
+query T
+SELECT shortest_path(0, false, v_size, src, dst) FROM src_dest;
+----
+1
+1
+2
+NULL
+1
+2
+NULL
+NULL
+1
+NULL
+NULL
+NULL
+
+
+statement ok
+pragma delete_csr=1
+
+statement ok
+pragma delete_csr=0
+
+
 # statement ok
 # CREATE TABLE src_dest(id int, v_size bigint, src bigint, dst bigint);
 

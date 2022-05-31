@@ -22,7 +22,7 @@ INSERT INTO Transfers VALUES
   (127, 101, 406, 150),
   (126, 807, 101, 100);
 
-statement ok
+query I
 SELECT DISTINCT CREATE_CSR(
 0,
 v.vcount,
@@ -36,6 +36,8 @@ r.dst
         JOIN Customer src ON t.from_id = src.cid
         JOIN Customer dst ON t.to_id = dst.cid
         GROUP BY src.rowid, dst.rowid, t.amount) r
+----
+{'id': 0, 'vertices': 6, 'edges': 10, 'weighted': 0}
 
 statement ok
 CREATE TABLE src_dest(id int, v_size bigint, src bigint, dst bigint);
@@ -64,7 +66,7 @@ pragma delete_csr 1
 statement error
 pragma delete_csr=1
 
-statement ok
+query I
 SELECT DISTINCT CREATE_CSR(
 0,
 v.vcount,
@@ -80,6 +82,8 @@ r.weight
         JOIN Customer src ON t.from_id = src.cid
         JOIN Customer dst ON t.to_id = dst.cid
         GROUP BY src.rowid, dst.rowid, t.amount) r;
+----
+{'id': 0, 'vertices': 6, 'edges': 10, 'weighted': 1}
 
 query I
 SELECT cheapest_path(0, v_size, src, dst) FROM src_dest;
@@ -112,7 +116,7 @@ INSERT INTO Transfers_float VALUES
   (127, 101, 406, 150.3),
   (126, 807, 101, 100.5);
 
-statement ok
+query I
 SELECT DISTINCT CREATE_CSR(
 0,
 v.vcount,
@@ -127,6 +131,8 @@ r.weight
         JOIN Customer src ON t.from_id = src.cid
         JOIN Customer dst ON t.to_id = dst.cid
         GROUP BY src.rowid, dst.rowid, t.amount) r;
+----
+{'id': 0, 'vertices': 6, 'edges': 10, 'weighted': 1}
 
 query I
 SELECT cheapest_path(0, v_size, src, dst) FROM src_dest;

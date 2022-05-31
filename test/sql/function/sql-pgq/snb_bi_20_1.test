@@ -20,9 +20,21 @@ statement ok
 insert into person_studyat_university (select * from '/home/daniel/Documents/ldbc_snb_datagen_spark/out-sf1/graphs/csv/bi/composite-merged-fk/initial_snapshot/dynamic/Person_studyAt_University/part-00000-a7960d43-e786-49e2-b86e-f47edafde7fb-c000.csv');
 
 statement ok
+create table person_workat_company as (select * from read_csv_auto('/home/daniel/Documents/ldbc_snb_datagen_spark/out-sf1/graphs/csv/bi/composite-merged-fk/initial_snapshot/dynamic/Person_workAt_Company/part-00001-2c95aeeb-87c8-470d-8438-3b6ad49a5131-c000.csv', SAMPLE_SIZE=-1));
+
+statement ok
+insert into person_workat_company (select * from '/home/daniel/Documents/ldbc_snb_datagen_spark/out-sf1/graphs/csv/bi/composite-merged-fk/initial_snapshot/dynamic/Person_workAt_Company/part-00000-2c95aeeb-87c8-470d-8438-3b6ad49a5131-c000.csv');
+
+statement ok
+create table organisation as (select * from read_csv_auto('/home/daniel/Documents/ldbc_snb_datagen_spark/out-sf1/graphs/csv/bi/composite-merged-fk/initial_snapshot/static/Organisation/part-00000-c885b73f-7f2e-4109-9acd-65fabee6c16a-c000.csv', SAMPLE_SIZE=-1));
+
+statement ok
+create view company as (select * from organisation where type = 'Company');
+
+statement ok
 CREATE TABLE Person_UniversityKnows_Person AS (SELECT p.id                                     as Person1id,
                                                       p2.id                                    as Person2id,
-                                                      min(abs(u.classYear - u2.classYear) + 1) as weight --
+                                                      min(abs(u.classYear - u2.classYear) + 1) as weight
                                                FROM Person p
                                                         JOIN Person_knows_Person k on p.id = k.Person1id
                                                         JOIN Person p2 on p2.id = k.Person2id
@@ -42,21 +54,21 @@ CREATE TABLE PersonUniversity AS (SELECT DISTINCT Person1id as id
                                  ORDER BY id);
 
 
-statement ok
-SELECT DISTINCT CREATE_CSR(
-               0,
-               v.vcount,
-               e.ecount,
-               r.src,
-               r.dst,
-               r.weight
-           )
-FROM (SELECT count(p.id) as vcount FROM PersonUniversity p) v,
-     (select count(t.Person1id) as ecount FROM Person_UniversityKnows_Person t) e,
-     (SELECT src.rowid as src, dst.rowid as dst, t.weight as weight
-      FROM Person_UniversityKnows_Person t
-       JOIN PersonUniversity src ON t.Person1id = src.id
-       JOIN PersonUniversity dst ON t.Person2id = dst.id) r;
+#statement ok
+#SELECT DISTINCT CREATE_CSR(
+#               0,
+#               v.vcount,
+#               e.ecount,
+#               r.src,
+#               r.dst,
+#               r.weight
+#           )
+#FROM (SELECT count(p.id) as vcount FROM PersonUniversity p) v,
+#     (select count(t.Person1id) as ecount FROM Person_UniversityKnows_Person t) e,
+#     (SELECT src.rowid as src, dst.rowid as dst, t.weight as weight
+#      FROM Person_UniversityKnows_Person t
+#       JOIN PersonUniversity src ON t.Person1id = src.id
+#       JOIN PersonUniversity dst ON t.Person2id = dst.id) r;
 
 
 statement ok
@@ -72,49 +84,34 @@ FROM (SELECT count(p.id) as vcount FROM PersonUniversity p) v,
      (SELECT src.rowid as src, dst.rowid as dst, t.weight as weight, count(src.rowid) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) as ecount
       FROM Person_UniversityKnows_Person t
        JOIN PersonUniversity src ON t.Person1id = src.id
-       JOIN PersonUniversity dst ON t.Person2id = dst.id) r;
+       JOIN PersonUniversity dst ON t.Person2id = dst.id
+       ORDER BY src.rowid, dst.rowid) r;
 
-statement ok
-SELECT DISTINCT CREATE_CSR(
-               0,
-               v.vcount,
-               e.ecount,
-               r.src,
-               r.dst,
-               r.weight
-           )
-FROM (SELECT count(p.id) as vcount FROM PersonUniversity p) v,
-     (SELECT count(t.Person1id) as ecount from Person_UniversityKnows_Person t) e,
-     (SELECT src.rowid as src, dst.rowid as dst, t.weight as weight
-      FROM Person_UniversityKnows_Person t
-       JOIN PersonUniversity src ON t.Person1id = src.id
-       JOIN PersonUniversity dst ON t.Person2id = dst.id) r;
+#statement ok
+#SELECT DISTINCT CREATE_CSR(
+#               0,
+#               v.vcount,
+#               e.ecount,
+#               r.src,
+#               r.dst,
+#               r.weight
+#           )
+#FROM (SELECT count(p.id) as vcount FROM PersonUniversity p) v,
+#     (SELECT count(t.Person1id) as ecount from Person_UniversityKnows_Person t) e,
+#     (SELECT src.rowid as src, dst.rowid as dst, t.weight as weight
+#      FROM Person_UniversityKnows_Person t
+#       JOIN PersonUniversity src ON t.Person1id = src.id
+#       JOIN PersonUniversity dst ON t.Person2id = dst.id) r;
 
-
-SELECT sum(CREATE_CSR_VERTEX(
-           0,
-           v.vcount,
-           sub.dense_id,
-           sub.cnt
-           ))
-FROM (SELECT p.rowid as dense_id, count(k.Person1id) as cnt
-      FROM PersonUniversity p
-       LEFT JOIN Person_UniversityKnows_Person k ON k.Person1id = p.id
-      GROUP BY p.rowid) sub,
-     (SELECT count(p.id) as vcount FROM PersonUniversity p) v;
-
-
-SELECT min(CREATE_CSR_EDGE(0, (SELECT count(c.id) as vcount FROM PersonUniversity c),
-CAST ((SELECT sum(CREATE_CSR_VERTEX(0, (SELECT count(c.id) as vcount FROM PersonUniversity c),
-sub.dense_id , sub.cnt )) AS numEdges
-FROM (
-    SELECT c.rowid as dense_id, count(t.Person1id) as cnt
-    FROM PersonUniversity c
-    LEFT JOIN  Person_UniversityKnows_Person t ON t.Person1id = c.id
-    GROUP BY c.rowid
-) sub) AS BIGINT),
-src.rowid, dst.rowid, t.weight ))
-FROM
-  Person_UniversityKnows_Person t
-  JOIN PersonUniversity src ON t.Person1id = src.id
-  JOIN PersonUniversity dst ON t.Person2id = dst.id;
+query IIII
+SELECT  p.id                                                                           as Person1id,
+        p2.id                                                                          as Person2id,
+        c.name                                                                         as Company,
+        cheapest_path(0, (select count(*) from PersonUniversity p), p.rowid, p2.rowid) as weight
+FROM    PersonUniversity p
+JOIN    Person_workAt_Company pwc on p.id = pwc.PersonId
+JOIN    Company c on (pwc.CompanyId = c.id AND c.name = 'Macedonian_Airlines')
+JOIN    PersonUniversity p2 on p2.id = 28587302322576
+order by weight, p.id;
+----
+1	2	'Macedonian_Airlines'	4

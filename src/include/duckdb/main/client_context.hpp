@@ -128,6 +128,8 @@ public:
 
 	vector<unique_ptr<Csr>> csr_list;
 	std::mutex csr_lock;
+	//!For experimental purposes
+	int16_t lane_limit = 1024;
 
 	const unique_ptr<CatalogSearchPath> catalog_search_path;
 

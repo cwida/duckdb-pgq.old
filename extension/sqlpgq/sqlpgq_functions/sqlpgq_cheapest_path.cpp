@@ -4,7 +4,10 @@
 #include "duckdb/planner/expression/bound_function_expression.hpp"
 #include "sqlpgq_functions.hpp"
 
+#include <chrono>
 #include <float.h>
+#include <iostream>
+using namespace std::chrono;
 
 namespace duckdb {
 
@@ -23,18 +26,19 @@ struct CheapestPathBindData : public FunctionData {
 template <typename T>
 static int16_t InitialiseBellmanFord(ClientContext &context, const DataChunk &args, int64_t input_size,
                                      const VectorData &vdata_src, const int64_t *src_data, idx_t result_size,
-                                     unordered_map<int64_t, vector<int64_t>> &modified,
+                                     unordered_map<int64_t, std::vector<bool>> &modified,
                                      unordered_map<int64_t, vector<T>> &dists) {
+//	auto start = high_resolution_clock::now();
 	for (int64_t i = 0; i < input_size; i++) {
 		//! Whatever is in v[i] is the offset to the start of the edge indexes. Not the vertex id itself.
 		//! auto offset = (int64_t)context.csr_list[id]->v[i];
-		modified[i] = std::vector<int64_t>(args.size(), false);
+		modified[i] = std::vector<bool>(args.size(), false);
 		dists[i] = std::vector<T>(args.size(), std::numeric_limits<T>::max());
 	}
 
 	int16_t lanes = 0;
 	int16_t curr_batch_size = 0;
-	for (idx_t i = result_size; i < args.size() && lanes < LANE_LIMIT; i++) { // && lanes < LANE_LIMIT
+	for (idx_t i = result_size; i < args.size() && lanes < context.lane_limit; i++) { // && lanes < LANE_LIMIT
 		auto src_index = vdata_src.sel->get_index(i);
 		if (vdata_src.validity.RowIsValid(src_index)) {
 			const int64_t &src_entry = src_data[src_index];
@@ -42,14 +46,21 @@ static int16_t InitialiseBellmanFord(ClientContext &context, const DataChunk &ar
 			dists[src_entry][lanes] = 0;
 			curr_batch_size++;
 			lanes++;
+//			std::cout << "Number of lanes: " << lanes << std::endl;
 		}
 	}
+//	auto stop = high_resolution_clock::now();
+//	auto duration = duration_cast<microseconds>(stop - start);
+//
+//	std::cout << "Initialization time: " <<  duration.count() << std::endl;
 	return curr_batch_size;
 }
 
 template <typename T>
-void CheckUpdateDistance(int64_t v, int64_t n, T weight, unordered_map<int64_t, vector<int64_t>> &modified,
+void CheckUpdateDistance(int64_t v, int64_t n, T weight, unordered_map<int64_t, std::vector<bool>> &modified,
                          unordered_map<int64_t, vector<T>> &dists, bool &changed) {
+//	auto start = high_resolution_clock::now();
+
 	for (uint64_t i = 0; i < modified[v].size(); i++) {
 		if (modified[v][i]) {
 			auto new_dist = std::min(dists[n][i], dists[v][i] + weight);
@@ -62,6 +73,10 @@ void CheckUpdateDistance(int64_t v, int64_t n, T weight, unordered_map<int64_t, 
 			}
 		}
 	}
+//	auto stop = high_resolution_clock::now();
+//	auto duration = duration_cast<microseconds>(stop - start);
+//
+//	std::cout << "Update checking time: " <<  duration.count() << std::endl;
 }
 template <typename T>
 void TemplatedBellmanFord(CheapestPathBindData &info, DataChunk &args, int64_t input_size, Vector &result,
@@ -71,9 +86,9 @@ void TemplatedBellmanFord(CheapestPathBindData &info, DataChunk &args, int64_t i
 	result.SetVectorType(VectorType::FLAT_VECTOR);
 	auto result_data = FlatVector::GetData<T>(result);
 	auto &result_validity = FlatVector::Validity(result);
-	unordered_map<int64_t, vector<int64_t>> modified;
+	unordered_map<int64_t, std::vector<bool>> modified;
 	unordered_map<int64_t, vector<T>> dists;
-
+//	std::cout << info.context.lane_limit << std::endl;
 	while (result_size < args.size()) {
 		int16_t curr_batch_size = 0;
 		curr_batch_size =
@@ -81,20 +96,39 @@ void TemplatedBellmanFord(CheapestPathBindData &info, DataChunk &args, int64_t i
 		bool changed = true;
 		while (changed) {
 			changed = false;
-			//! For every v in the graph
+			//! For every v in the input
 			for (int64_t v = 0; v < input_size; v++) {
 				//! not modified[v].empty()
 				if (!std::all_of(modified[v].begin(), modified[v].end(), [](bool v) { return !v; })) {
-					//! Loop through all the neighbours of v
-					for (auto index = (int64_t)info.context.csr_list[id]->v_weight[v];
-					     index < (int64_t)info.context.csr_list[id]->v_weight[v + 1]; index++) {
-						//! Get weight of (v,n)
-						int64_t n = info.context.csr_list[id]->e[index];
-						if (is_double) {
-							CheckUpdateDistance<T>(v, n, info.context.csr_list[id]->w_double[index], modified, dists, changed);
-						} else {
+					//! Loop through all the n neighbours of v
+					if (is_double) {
+//						auto start = high_resolution_clock::now();
+
+						for (auto index = (int64_t)info.context.csr_list[id]->v_weight[v];
+						     index < (int64_t)info.context.csr_list[id]->v_weight[v + 1]; index++) {
+							//! Get weight of (v,n)
+							int64_t n = info.context.csr_list[id]->e[index];
+							CheckUpdateDistance<T>(v, n, info.context.csr_list[id]->w_double[index], modified, dists,
+							                       changed);
+						}
+//						auto stop = high_resolution_clock::now();
+//						auto duration = duration_cast<microseconds>(stop - start);
+//
+//						std::cout << "Edge updating time: " <<  duration.count() << std::endl;
+
+					} else {
+//						auto start = high_resolution_clock::now();
+
+						for (auto index = (int64_t)info.context.csr_list[id]->v_weight[v];
+							 index < (int64_t)info.context.csr_list[id]->v_weight[v + 1]; index++) {
+							//! Get weight of (v,n)
+							int64_t n = info.context.csr_list[id]->e[index];
 							CheckUpdateDistance<T>(v, n, info.context.csr_list[id]->w[index], modified, dists, changed);
 						}
+//						auto stop = high_resolution_clock::now();
+//						auto duration = duration_cast<microseconds>(stop - start);
+//
+//						std::cout << "Edge updating time: " <<  duration.count() << std::endl;
 					}
 				}
 			}
@@ -131,8 +165,6 @@ static void CheapestPathFunction(DataChunk &args, ExpressionState &state, Vector
 	auto &func_expr = (BoundFunctionExpression &)state.expr;
 	auto &info = (CheapestPathBindData &)*func_expr.bind_info;
 
-	// TODO Add check if the csr was initialized
-	//	D_ASSERT(info.context.initialized_w);
 	int32_t id = args.data[0].GetValue(0).GetValue<int32_t>();
 	int64_t input_size = args.data[1].GetValue(0).GetValue<int64_t>();
 
@@ -146,7 +178,9 @@ static void CheapestPathFunction(DataChunk &args, ExpressionState &state, Vector
 	auto &target = args.data[3];
 	target.Orrify(args.size(), vdata_target);
 	auto target_data = (int64_t *)vdata_target.data;
+//	std::cout << "LANES: " << info.context.lane_limit << std::endl;
 
+//	auto start = high_resolution_clock::now();
 	if (info.context.csr_list[id]->w.empty()) {
 		TemplatedBellmanFord<double_t>(info, args, input_size, result, vdata_src, src_data, vdata_target, target_data,
 		                               id, true);
@@ -154,6 +188,13 @@ static void CheapestPathFunction(DataChunk &args, ExpressionState &state, Vector
 		TemplatedBellmanFord<int64_t>(info, args, input_size, result, vdata_src, src_data, vdata_target, target_data,
 		                              id, false);
 	}
+//	auto stop = high_resolution_clock::now();
+
+//	auto duration = duration_cast<microseconds>(stop - start);
+
+// 	std::cout << "Total time: " <<  duration.count() << std::endl;
+
+
 }
 
 static unique_ptr<FunctionData> CheapestPathBind(ClientContext &context, ScalarFunction &bound_function,

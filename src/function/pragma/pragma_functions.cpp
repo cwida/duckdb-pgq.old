@@ -231,6 +231,15 @@ static void PragmaDeleteCSR(ClientContext &context, const FunctionParameters &pa
 	context.csr_list.erase(context.csr_list.begin() + id);
 }
 
+static void PragmaSetLaneLimit(ClientContext &context, const FunctionParameters &parameters) {
+	auto lane_limit = parameters.values[0].GetValue<int32_t>();
+	if (ceil(log2(lane_limit)) == floor(log2(lane_limit)) && lane_limit <= 1024 && lane_limit > 0) {
+		context.lane_limit = lane_limit;
+	} else {
+		throw ParserException("Lane limiit should be a power of 2 and <= 1024");
+	}
+}
+
 static void PragmaPerfectHashThreshold(ClientContext &context, const FunctionParameters &parameters) {
 	auto bits = parameters.values[0].GetValue<int32_t>();
 	;
@@ -342,8 +351,7 @@ void PragmaFunctions::RegisterFunction(BuiltinFunctions &set) {
 	set.AddFunction(PragmaFunction::PragmaStatement("enable_print_progress_bar", PragmaEnablePrintProgressBar));
 	set.AddFunction(PragmaFunction::PragmaStatement("disable_print_progress_bar", PragmaDisablePrintProgressBar));
 
-	set.AddFunction(
-	    PragmaFunction::PragmaAssignment("delete_csr", PragmaDeleteCSR, LogicalType::INTEGER));
+	set.AddFunction(PragmaFunction::PragmaAssignment("delete_csr", PragmaDeleteCSR, LogicalType::INTEGER));
 
 	set.AddFunction(
 	    PragmaFunction::PragmaAssignment("set_progress_bar_time", PragmaSetProgressBarWaitTime, LogicalType::INTEGER));
@@ -356,19 +364,21 @@ void PragmaFunctions::RegisterFunction(BuiltinFunctions &set) {
 	    PragmaFunction::PragmaAssignment("perfect_ht_threshold", PragmaPerfectHashThreshold, LogicalType::INTEGER));
 
 	set.AddFunction(
+	    PragmaFunction::PragmaAssignment("set_lane_limit", PragmaSetLaneLimit, LogicalType::INTEGER));
+
+	set.AddFunction(
 	    PragmaFunction::PragmaAssignment("wal_autocheckpoint", PragmaAutoCheckpointThreshold, LogicalType::VARCHAR));
-	set.AddFunction(
-	    PragmaFunction::PragmaAssignment("checkpoint_threshold", PragmaAutoCheckpointThreshold, LogicalType::VARCHAR));
+set.AddFunction(
+	PragmaFunction::PragmaAssignment("checkpoint_threshold", PragmaAutoCheckpointThreshold, LogicalType::VARCHAR));
 
-	set.AddFunction(
-	    PragmaFunction::PragmaAssignment("debug_checkpoint_abort", PragmaDebugCheckpointAbort, LogicalType::VARCHAR));
+set.AddFunction(
+	PragmaFunction::PragmaAssignment("debug_checkpoint_abort", PragmaDebugCheckpointAbort, LogicalType::VARCHAR));
 
-	set.AddFunction(PragmaFunction::PragmaAssignment("temp_directory", PragmaSetTempDirectory, LogicalType::VARCHAR));
+set.AddFunction(PragmaFunction::PragmaAssignment("temp_directory", PragmaSetTempDirectory, LogicalType::VARCHAR));
 
-	set.AddFunction(
-	    PragmaFunction::PragmaAssignment("force_compression", PragmaForceCompression, LogicalType::VARCHAR));
+set.AddFunction(PragmaFunction::PragmaAssignment("force_compression", PragmaForceCompression, LogicalType::VARCHAR));
 
-	set.AddFunction(PragmaFunction::PragmaStatement("debug_many_free_list_blocks", PragmaDebugManyFreeListBlocks));
+set.AddFunction(PragmaFunction::PragmaStatement("debug_many_free_list_blocks", PragmaDebugManyFreeListBlocks));
 }
 
 } // namespace duckdb
