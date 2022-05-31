@@ -21,7 +21,7 @@ INSERT INTO Transfers VALUES
 statement ok
 CREATE PROPERTY GRAPH aml
 VERTEX TABLES ( customer KEY ( CID ) LABEL customer )
-EDGE TABLES ( transfers KEY ( from_id ) SOURCE KEY ( from_id ) REFERENCES customer DESTINATION KEY ( to_id ) REFERENCES customer LABEL transfers )
+EDGE TABLES ( transfers KEY ( from_id ) SOURCE KEY ( from_id ) REFERENCES customer DESTINATION KEY ( to_id ) REFERENCES customer LABEL transfers );
 
 
 # statement ok
@@ -44,6 +44,37 @@ from GRAPH_TABLE (aml, MATCH (c1 IS CUSTOMER)-[t1 IS TRANSFERS]->(c2 IS CUSTOMER
 478	297
 
 query II rowsort
+select gt.c1id, gt.c2id
+from GRAPH_TABLE (aml, MATCH (c1 IS CUSTOMER)-[t1 IS TRANSFERS*]-(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
+----
+173	173
+173	297
+173	478
+173	869
+297	297	
+297	869
+478	297
+478	478
+478	869
+869	869
+
+#Columns besides the key can be used in the SELECT
+query IIT rowsort
+select gt.c1id, gt.c2id, gt.cname 
+from GRAPH_TABLE (aml, MATCH (c1 IS CUSTOMER)-[t1 IS TRANSFERS*]-(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c1.name AS cname, c2.cid AS c2id)) gt
+----
+173	173	A
+173	297	A
+173	478	A
+173	869	A
+297	297	C
+297	869	C
+478	297	B
+478	478	B
+478	869	B
+869	869	D
+
+query II rowsort
 select c1id, c2id
 from GRAPH_TABLE (aml, MATCH (c1 IS CUSTOMER)-[t1 IS TRANSFERS * 3..3]->(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
 ----
@@ -53,18 +84,3 @@ from GRAPH_TABLE (aml, MATCH (c1 IS CUSTOMER)-[t1 IS TRANSFERS * 3..3]->(c2 IS C
 297	869
 478	297
 478	869
-
-query II rowsort
-select gt.c1id, gt.c2id
-from GRAPH_TABLE (aml, MATCH (c1 IS CUSTOMER)-[t1 IS TRANSFERS*]-(c2 IS CUSTOMER) COLUMNS (c1.cid AS c1id, c2.cid AS c2id)) gt
-----
-173	173
-173	297
-173	478
-173	869
-297	297
-297	869
-478	297
-478	478
-478	869
-869	869

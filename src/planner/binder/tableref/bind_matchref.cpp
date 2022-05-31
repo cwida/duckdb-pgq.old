@@ -305,17 +305,38 @@ static unique_ptr<FunctionExpression> CreateCsrEdgeFunction(PropertyGraphTable *
 	return make_unique<FunctionExpression>("create_csr_edge", move(csr_edge_children));
 }
 
-static unique_ptr<FunctionExpression> CreateReachabilityFunction() {
+static unique_ptr<SubqueryExpression> GetColumnFromCTE(string cte_name, string column) {
+
+	auto cte_col_subquery = make_unique<SubqueryExpression>();
+	cte_col_subquery->subquery_type = SubqueryType::SCALAR;
+	auto cte_col_ref = make_unique<ColumnRefExpression>(column, cte_name);
+
+	auto cte_select_stmt = make_unique<SelectStatement>();
+	auto cte_select_node = make_unique<SelectNode>();
+	auto cte_ref = make_unique<BaseTableRef>();
+	cte_ref->schema_name = DEFAULT_SCHEMA;
+	cte_ref->table_name = cte_name;
+
+	cte_select_node->select_list.push_back(move(cte_col_ref));
+	cte_select_node->from_table = move(cte_ref);
+
+	cte_select_stmt->node = move(cte_select_node);
+	cte_col_subquery->subquery = move(cte_select_stmt);
+	return cte_col_subquery;
+}
+
+static unique_ptr<FunctionExpression> CreateReachabilityFunction(const string &previous_vertex_alias, 
+															const string &vertex_alias) {
 	vector<unique_ptr<ParsedExpression>> reachability_children;
-	auto cte_where_src_row = make_unique<ColumnRefExpression>("rowid", "src");
-	auto cte_where_dst_row = make_unique<ColumnRefExpression>("rowid", "dst");
-	auto cte_vcount = make_unique<ColumnRefExpression>("vcount", "cte1");
+	auto cte_where_src_row = make_unique<ColumnRefExpression>("rowid", previous_vertex_alias);
+	auto cte_where_dst_row = make_unique<ColumnRefExpression>("rowid", vertex_alias);
+	// auto cte_vcount = make_unique<ColumnRefExpression>("vcount", "cte1");
 
 	auto reachability_id_constant = make_unique<ConstantExpression>(Value::INTEGER((int32_t)0));
 	auto reachability_is_variant = make_unique<ConstantExpression>(Value::BOOLEAN(false));
 	reachability_children.push_back(move(reachability_id_constant));
 	reachability_children.push_back(move(reachability_is_variant));
-	reachability_children.push_back(move(cte_vcount));
+	reachability_children.push_back(move(GetColumnFromCTE("cte1", "vcount")));
 	reachability_children.push_back(move(cte_where_src_row));
 	reachability_children.push_back(move(cte_where_dst_row));
 
@@ -351,7 +372,10 @@ static unique_ptr<SelectStatement> CreateOuterSelectStatement(PropertyGraphTable
 
 static unique_ptr<SelectStatement> CreateCTESelectStatement(PropertyGraphTable *previous_vertex,
                                                             PropertyGraphTable *edge_entry,
-                                                            PropertyGraphTable *vertex_entry) {
+                                                            PropertyGraphTable *vertex_entry,
+															const string &previous_vertex_alias, 
+															const string &vertex_alias,
+															vector<unique_ptr<ParsedExpression>> &columns) {
 
 	auto info = make_unique<CommonTableExpressionInfo>();
 	auto cte_select_statement = make_unique<SelectStatement>();
@@ -365,37 +389,26 @@ static unique_ptr<SelectStatement> CreateCTESelectStatement(PropertyGraphTable *
 	// TODO: handle multiple
 	cte_select_node->cte_map["cte1"] = move(info);
 
-	auto src_cid_col_ref = make_unique<ColumnRefExpression>(vertex_entry->keys[0], "src");
-	src_cid_col_ref->alias = "c1id";
-	auto dst_cid_col_ref = make_unique<ColumnRefExpression>(vertex_entry->keys[0], "dst");
-	dst_cid_col_ref->alias = "c2id";
 	auto cte_col_ref = make_unique<ColumnRefExpression>("temp", "cte1");
 	cte_col_ref->alias = "csr";
-	cte_select_node->select_list.push_back(move(src_cid_col_ref));
-	cte_select_node->select_list.push_back(move(dst_cid_col_ref));
+	cte_select_node->select_list = move(columns);
 
-	auto cte_ref = make_unique<BaseTableRef>();
-	cte_ref->schema_name = DEFAULT_SCHEMA;
-	cte_ref->table_name = "cte1";
-	auto outer_cross_ref = make_unique<CrossProductRef>();
-	outer_cross_ref->left = move(cte_ref);
 	auto src_base_ref = make_unique<BaseTableRef>();
 	src_base_ref->table_name = vertex_entry->name;
-	src_base_ref->alias = "src";
-	outer_cross_ref->right = move(src_base_ref);
-
+	src_base_ref->alias = previous_vertex_alias;
+	
 	auto dst_base_ref = make_unique<BaseTableRef>();
 	dst_base_ref->table_name = vertex_entry->name;
-	dst_base_ref->alias = "dst";
+	dst_base_ref->alias = vertex_alias;
 	auto cross_ref = make_unique<CrossProductRef>();
-	cross_ref->left = move(outer_cross_ref);
+	cross_ref->left = move(src_base_ref);
 	cross_ref->right = move(dst_base_ref);
 	cte_select_node->from_table = move(cross_ref);
 
 	vector<unique_ptr<ParsedExpression>> cte_conditions;
-	auto reachability_function = CreateReachabilityFunction();
+	auto reachability_function = CreateReachabilityFunction(previous_vertex_alias, vertex_alias);
 	auto cte_where_expression = make_unique<ComparisonExpression>(ExpressionType::COMPARE_EQUAL,
-	                                                              move(reachability_function), move(cte_col_ref));
+	                                                              move(reachability_function), move(GetColumnFromCTE("cte1", "temp")));
 
 	cte_select_node->where_clause = move(cte_where_expression);
 	cte_select_statement->node = move(cte_select_node);
@@ -460,7 +473,7 @@ unique_ptr<BoundTableRef> Binder::Bind(MatchRef &ref) {
 			case MatchStarPattern::ALL: {
 				flag = true;
 
-				cte_select_statement = CreateCTESelectStatement(previous_vertex_entry, edge_entry, vertex_entry);
+				cte_select_statement = CreateCTESelectStatement(previous_vertex_entry, edge_entry, vertex_entry, previous_vertex_pattern->alias_name, vertex_pattern->alias_name, ref.columns);
 				//! Insert into from_tables and call continue with an alias. check if this can be use with BaseTableRef.
 				// outer_subquery_exp->subquery = move(outer_select_statment);
 				break;
