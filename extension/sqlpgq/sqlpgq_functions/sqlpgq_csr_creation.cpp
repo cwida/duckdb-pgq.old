@@ -242,7 +242,7 @@ static void CreateCsrEdgeFunction(DataChunk &args, ExpressionState &state, Vecto
 		                                                   return 1;
 	                                                   });
 	if (info.weight_type != LogicalType::SQLNULL) {
-F		auto weight_type = args.data[5].GetType().InternalType();
+		auto weight_type = args.data[5].GetType().InternalType();
 		if (!csr_entry->second->initialized_w) {
 			CsrInitializeWeight(info.context, info.id, vertex_size, edge_size, args.data[5].GetType().InternalType());
 		}
