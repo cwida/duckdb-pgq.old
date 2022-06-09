@@ -242,17 +242,18 @@ static void CreateCsrEdgeFunction(DataChunk &args, ExpressionState &state, Vecto
 		                                                   return 1;
 	                                                   });
 	if (info.weight_type != LogicalType::SQLNULL) {
+F		auto weight_type = args.data[5].GetType().InternalType();
 		if (!csr_entry->second->initialized_w) {
 			CsrInitializeWeight(info.context, info.id, vertex_size, edge_size, args.data[5].GetType().InternalType());
 		}
-		if (info.weight_type == LogicalType::BIGINT) {
+		if (weight_type == PhysicalType::INT64) {
 			BinaryExecutor::Execute<int64_t, int64_t, int32_t>(
 			    args.data[3], args.data[5], result, args.size(), [&](int64_t src, int64_t weight) {
 				    auto pos = ++csr_entry->second->v_weight[src + 1];
 				    csr_entry->second->w[(int64_t)pos - 1] = weight;
 				    return 1;
 			    });
-		} else if (info.weight_type == LogicalType::DOUBLE) {
+		} else if (weight_type == PhysicalType::DOUBLE) {
 			BinaryExecutor::Execute<int64_t, double_t, int32_t>(
 			    args.data[3], args.data[5], result, args.size(), [&](int64_t src, double_t weight) {
 				    auto pos = ++csr_entry->second->v_weight[src + 1];
