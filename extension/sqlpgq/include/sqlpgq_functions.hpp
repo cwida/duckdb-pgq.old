@@ -26,7 +26,9 @@ public:
 //		AddAliases({"json_extract_string", "json_extract_path_text", "->>"}, GetExtractStringFunction(), functions);
 
 		// Create functions
-		functions.push_back(GetCsrFunction());
+		functions.push_back(GetCsrVertexFunction());
+		functions.push_back(GetCsrEdgeFunction());
+//		functions.push_back(GetCsrFunction());
 		functions.push_back(GetShortestPathFunction());
 		functions.push_back(GetCheapestPathFunction());
 		functions.push_back(GetAnyShortestPathFunction());
@@ -49,7 +51,10 @@ public:
 	}
 
 private:
-	static CreateScalarFunctionInfo GetCsrFunction();
+
+	static CreateScalarFunctionInfo GetCsrVertexFunction();
+	static CreateScalarFunctionInfo GetCsrEdgeFunction();
+//	static CreateScalarFunctionInfo GetCsrFunction();
 	static CreateScalarFunctionInfo GetShortestPathFunction();
 	static CreateScalarFunctionInfo GetCheapestPathFunction();
 	static CreateScalarFunctionInfo GetAnyShortestPathFunction();

@@ -223,12 +223,10 @@ static void PragmaDisableOptimizer(ClientContext &context, const FunctionParamet
 
 static void PragmaDeleteCSR(ClientContext &context, const FunctionParameters &parameters) {
 	auto id = parameters.values[0].GetValue<int32_t>();
-	if ((uint64_t)id + 1 > context.csr_list.size()) {
-		throw ConstraintException("Invalid ID");
-	}
-	D_ASSERT(context.csr_list[id]);
-	context.csr_list[id].reset();
-	context.csr_list.erase(context.csr_list.begin() + id);
+	auto csr_entry = context.csr_list.find(id);
+	D_ASSERT(csr_entry != context.csr_list.end());
+	csr_entry->second.reset();
+	context.csr_list.erase(id);
 }
 
 static void PragmaSetLaneLimit(ClientContext &context, const FunctionParameters &parameters) {

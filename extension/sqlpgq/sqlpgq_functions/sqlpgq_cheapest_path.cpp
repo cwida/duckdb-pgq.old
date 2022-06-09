@@ -30,8 +30,6 @@ static int16_t InitialiseBellmanFord(ClientContext &context, const DataChunk &ar
                                      unordered_map<int64_t, vector<T>> &dists) {
 //	auto start = high_resolution_clock::now();
 	for (int64_t i = 0; i < input_size; i++) {
-		//! Whatever is in v[i] is the offset to the start of the edge indexes. Not the vertex id itself.
-		//! auto offset = (int64_t)context.csr_list[id]->v[i];
 		modified[i] = std::vector<bool>(args.size(), false);
 		dists[i] = std::vector<T>(args.size(), std::numeric_limits<T>::max());
 	}
@@ -208,7 +206,12 @@ static unique_ptr<FunctionData> CheapestPathBind(ClientContext &context, ScalarF
 	if ((uint64_t)id + 1 > context.csr_list.size()) {
 		throw ConstraintException("Invalid ID");
 	}
-	if (!(context.csr_list[id]->initialized_v && context.csr_list[id]->initialized_e && context.csr_list[id]->initialized_w)) {
+	auto csr_entry = context.csr_list.find((uint64_t)id);
+	if (csr_entry == context.csr_list.end()) {
+		throw ConstraintException("Need to initialize CSR before doing cheapest path");
+	}
+
+	if (!(csr_entry->second->initialized_v && csr_entry->second->initialized_e && csr_entry->second->initialized_w)) {
 		throw ConstraintException("Need to initialize CSR before doing cheapest path");
 	}
 	string file_name;

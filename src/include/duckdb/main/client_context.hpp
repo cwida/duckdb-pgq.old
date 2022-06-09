@@ -126,7 +126,7 @@ public:
 	std::mt19937 random_engine;
 
 
-	vector<unique_ptr<Csr>> csr_list;
+	std::unordered_map<int32_t, unique_ptr<Csr>> csr_list;
 	std::mutex csr_lock;
 	//!For experimental purposes
 	int16_t lane_limit = 1024;

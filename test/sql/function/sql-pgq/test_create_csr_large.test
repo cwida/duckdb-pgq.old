@@ -59,23 +59,55 @@ FROM
 ----
 26062	1412
 
+statement ok
+SELECT CREATE_CSR_VERTEX(
+0,
+v.vcount,
+sub.dense_id,
+sub.cnt
+) AS numEdges
+FROM (
+    SELECT c.rowid as dense_id, count(t.person1id) as cnt
+    FROM PersonInteractions c
+    LEFT JOIN  weights t ON t.person1id = c.id
+    GROUP BY c.rowid
+) sub, (SELECT count(c.id) as vcount FROM PersonInteractions c) v
 
-query I
-SELECT DISTINCT CREATE_CSR(
-               0,
-               v.vcount,
-               r.ecount,
-               r.src,
-               r.dst,
-               r.weight
-           ) AS numEdges
-FROM (SELECT count(p.id) as vcount FROM PersonInteractions p) v,
-     (SELECT src.rowid as src, dst.rowid as dst, t.weight as weight, count(src.rowid) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) as ecount
-      FROM weights t
-           JOIN PersonInteractions src ON t.Person1id = src.id
-           JOIN PersonInteractions dst ON t.Person2id = dst.id) r;
-----
-{'id': 0, 'vertices': 1412, 'edges': 26062, 'weighted': 1}
+
+statement ok
+SELECT min(CREATE_CSR_EDGE(0, (SELECT count(c.id) as vcount FROM PersonInteractions c),
+CAST ((SELECT sum(CREATE_CSR_VERTEX(0, (SELECT count(c.id) as vcount FROM PersonInteractions c),
+sub.dense_id, sub.cnt)) AS numEdges
+FROM (
+    SELECT c.rowid as dense_id, count(t.person1id) as cnt
+    FROM PersonInteractions c
+    LEFT JOIN  weights t ON t.person1id = c.id
+    GROUP BY c.rowid
+) sub) AS BIGINT),
+src.rowid, dst.rowid, t.weight))
+FROM
+  weights t
+  JOIN PersonInteractions src ON t.person1id = src.id
+  JOIN PersonInteractions dst ON t.person2id = dst.id
+
+
+
+#query I
+#SELECT DISTINCT CREATE_CSR(
+#               0,
+#               v.vcount,
+#               r.ecount,
+#               r.src,
+#               r.dst,
+#               r.weight
+#           ) AS numEdges
+#FROM (SELECT count(p.id) as vcount FROM PersonInteractions p) v,
+#     (SELECT src.rowid as src, dst.rowid as dst, t.weight as weight, count(src.rowid) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) as ecount
+#      FROM weights t
+#           JOIN PersonInteractions src ON t.Person1id = src.id
+#           JOIN PersonInteractions dst ON t.Person2id = dst.id) r;
+#----
+#{'id': 0, 'vertices': 1412, 'edges': 26062, 'weighted': 1}
 
 statement ok
 pragma set_lane_limit=32;
